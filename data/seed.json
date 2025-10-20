@@ -1,0 +1,13 @@
+[
+  {
+    "id": "seed1",
+    "url": "https://www.theguardian.com/world",
+    "title": "Global tensions reshape policy agendas",
+    "source": "theguardian.com",
+    "image": "/cover.jpg",
+    "category": "world",
+    "publishedAt": "2025-10-20T09:00:00Z",
+    "summary": "Governments recalibrate policy in response to shifting alliances and economic uncertainty. Analysts cite risks to growth and public services.",
+    "debateJson": "{\"socialist\": {\"name\": \"Jessica Rebella\", \"open\": \"Power shifts always land on workers\\u2019 backs. Tax capital, fund unions, end wars that drain hospitals and schools.\"}, \"rightwing\": {\"name\": \"John Davis\", \"open\": \"Strength and borders first. Cut red tape, unleash energy, and stop apologizing for defending our interests.\"}, \"conspiracy\": {\"name\": \"Joe Musk\", \"open\": \"SPECULATION: This \\u2018recalibration\\u2019 was drafted years ago\\u2014agencies and contractors choreograph the map while we watch pressers.\"}}"
+  }
+]

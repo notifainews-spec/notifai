@@ -1,0 +1,7 @@
+# never commit secrets
+.env
+# local data cache (optional)
+data/articles.json
+# os junk
+.DS_Store
+Thumbs.db
