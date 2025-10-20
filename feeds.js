@@ -1,4 +1,4 @@
-// feeds.js — Notifai
+// feeds.js — NotifAi (stable sources)
 export const CATEGORIES = [
   { key: "us",           label: "US" },
   { key: "world",        label: "World" },

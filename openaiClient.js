@@ -31,11 +31,6 @@ export async function summarizeWithOpenAI(title, text) {
   return out;
 }
 
-/**
- * personaDebate — openings ONLY.
- * Realistic tones + hardline positions.
- * Conspiracy: exactly ONE theme tied to the article (choose from list; include Mossad).
- */
 export async function personaDebate(title, excerpt) {
   const baseRule =
     "Opinion-only on the article’s content. No site/ads/player meta. No slurs, threats, or targeted hate. Do not name private individuals. ≤110 words.";
@@ -46,7 +41,6 @@ export async function personaDebate(title, excerpt) {
   const styleRight =
     "HARDLINE RIGHT-WING (John Davis): unapologetically pro-Trump and pro-GOP; hawkish foreign policy; strong borders; low taxes; anti-union/anti-regulation; skeptical of Gen Z; patriotic 'America First'; uses brisk, declarative lines; no slurs.";
 
-  // NEW: Conspiracy picks ONE theme related to the article
   const styleConspiracy =
     "FOCUSED CONSPIRACY (Joe Musk): choose EXACTLY ONE theme that plausibly ties to the article from this list: [deep state, CIA, MI5, Mossad, predictive programming, controlled media, alien cover-up, moon-landing staged, lizard elites, flat earth, big tech surveillance]. State the chosen theme clearly and stick to it. Never list multiple conspiracies. Include one line starting with 'SPECULATION:' that pushes the theory a step further. Do not target private individuals; public institutions ok. No slurs or threats. Tone: intense but internally consistent.";
 
