@@ -1,10 +1,9 @@
-// server.js — NotifAi (OpenAI) — CORS on, robust RSS ingest, no dynamic imports
+// server.js — NotifAi (OpenAI) — tougher fetch, retries, self-diagnose
 
 import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import Parser from "rss-parser";
-import fetch from "node-fetch";
 import { nanoid } from "nanoid";
 import fs from "fs";
 import path from "path";
@@ -14,6 +13,7 @@ import * as cheerio from "cheerio";
 import { FEEDS, CATEGORIES } from "./feeds.js";
 import { summarizeWithOpenAI, personaDebate } from "./openaiClient.js";
 
+// ---------- App & paths ----------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const app  = express();
@@ -26,20 +26,7 @@ app.use(express.static(path.join(__dirname, "public")));
 const DATA = path.join(__dirname, "data", "articles.json");
 const SEED = path.join(__dirname, "data", "seed.json");
 
-const parser = new Parser({
-  requestOptions: {
-    headers: { "User-Agent": "Mozilla/5.0 NotifAi/1.0" },
-    timeout: 15000
-  },
-  customFields: {
-    item: [
-      ['media:content',   'mediaContent',    { keepArray: true }],
-      ['media:thumbnail', 'mediaThumbnail',  { keepArray: true }],
-      ['content:encoded', 'contentEncoded']
-    ]
-  }
-});
-
+// ---------- Helpers ----------
 function loadArticles() {
   try { return JSON.parse(fs.readFileSync(DATA, "utf-8")); }
   catch { return []; }
@@ -82,11 +69,35 @@ function pickLargestFromSrcset($img, baseUrl) {
   return null;
 }
 
-async function tryParseFeed(url, attempts = 2) {
+// ---------- RSS parser (with media fields) ----------
+const parser = new Parser({
+  requestOptions: {
+    headers: {
+      // some feeds block default Node UA; this works widely
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NotifAi/1.0"
+    },
+    timeout: 20000  // bump timeout
+  },
+  customFields: {
+    item: [
+      ['media:content',   'mediaContent',    { keepArray: true }],
+      ['media:thumbnail', 'mediaThumbnail',  { keepArray: true }],
+      ['content:encoded', 'contentEncoded']
+    ]
+  }
+});
+
+// retry wrapper for parser
+async function tryParseFeed(url, attempts = 3) {
   let last;
   for (let i=0;i<attempts;i++) {
-    try { return await parser.parseURL(url); }
-    catch (e) { last = e; await new Promise(r => setTimeout(r, 600)); }
+    try {
+      const feed = await parser.parseURL(url);
+      return feed;
+    } catch (e) {
+      last = e;
+      await new Promise(r => setTimeout(r, 900)); // backoff
+    }
   }
   throw last;
 }
@@ -153,9 +164,10 @@ function getFeedPool(items) {
   });
 }
 
+// ---------- Ingest ----------
 const MAX_PER_CATEGORY = parseInt(process.env.MAX_PER_CATEGORY || "6", 10);
 
-async function ingestOnce(){
+async function ingestOnce() {
   console.log("Starting ingestOnce...");
   let articles = loadArticles();
   if (!Array.isArray(articles)) articles = [];
@@ -169,8 +181,8 @@ async function ingestOnce(){
 
     for (const feedUrl of FEEDS[cat]) {
       try {
-        const feed = await tryParseFeed(feedUrl, 2);
-        bucket.push(...(feed.items || []).slice(0, 24));
+        const feed = await tryParseFeed(feedUrl, 3);
+        bucket.push(...(feed.items || []).slice(0, 30));
       } catch (e) {
         console.error("Feed error", cat, feedUrl, e.message || e);
       }
@@ -198,14 +210,15 @@ async function ingestOnce(){
         const rssText = (it.contentSnippet || it.content || it.summary || "").toString();
         const text = htmlToText(rssText).slice(0, 4000);
 
+        // summary with OpenAI (falls back to local if API fails)
         let summary = "";
-        try {
-          summary = await summarizeWithOpenAI(title, text || title);
-        } catch {
+        try { summary = await summarizeWithOpenAI(title, text || title); }
+        catch {
           const words = (text || title).split(/\s+/).slice(0, 120);
           summary = words.join(" ") + (words.length >= 120 ? "…" : "");
         }
 
+        // persona openings only (no moderator)
         let debateJson = "{}";
         try {
           const debate = await personaDebate(title, (text || title).slice(0, 600));
@@ -234,6 +247,7 @@ async function ingestOnce(){
 
   if (results.length) saveArticles(articles);
   else {
+    // seed if nothing fetched so UI isn't empty
     try {
       const seed = JSON.parse(fs.readFileSync(SEED, "utf-8"));
       const seeded = loadArticles();
@@ -253,7 +267,7 @@ async function ingestOnce(){
   return { added: results.length, detail };
 }
 
-// ===== API =====
+// ---------- API ----------
 app.get("/api/articles", (req, res) => {
   try {
     const articles = loadArticles();
@@ -269,30 +283,59 @@ app.get("/api/articles", (req, res) => {
     res.status(500).json({ error: e.message || String(e) });
   }
 });
+
 app.get("/api/article/:id", (req, res) => {
   const row = loadArticles().find(a => a.id === req.params.id);
   if (!row) return res.status(404).json({ error: "not found" });
   res.json(row);
 });
+
+// Synchronous ingest
 app.get("/api/cron", async (req, res) => {
-  try {
-    const r = await ingestOnce();
-    res.json(r);
-  } catch (e) { res.status(500).json({ error: e.message || String(e) }); }
+  try { res.json(await ingestOnce()); }
+  catch (e) { res.status(500).json({ error: e.message || String(e) }); }
 });
+
+// Background ingest (non-blocking)
 app.get("/api/cron-bg", (req, res) => {
   setTimeout(() => { ingestOnce().catch(e => console.error("bg ingest:", e.message || e)); }, 10);
   res.json({ queued: true });
 });
+
+// Self-test & diagnostics
 app.get("/api/selftest", (req, res) => {
-  res.json({ site: SITE_NAME, hasKey: !!process.env.OPENAI_API_KEY, maxPerCategory: MAX_PER_CATEGORY });
+  res.json({
+    site: SITE_NAME,
+    hasKey: !!process.env.OPENAI_API_KEY,
+    maxPerCategory: MAX_PER_CATEGORY,
+    categories: CATEGORIES.map(c => c.key)
+  });
+});
+app.get("/api/diagnose", async (req, res) => {
+  const tests = [
+    { name: "bbc_world",     url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
+    { name: "guardian_world",url: "https://www.theguardian.com/world/rss" },
+    { name: "guardian_us",   url: "https://www.theguardian.com/us-news/rss" }
+  ];
+  const out = [];
+  for (const t of tests) {
+    try {
+      const f = await tryParseFeed(t.url, 1);
+      out.push({ name: t.name, ok: true, items: (f.items||[]).length });
+    } catch (e) {
+      out.push({ name: t.name, ok: false, error: e.message || String(e) });
+    }
+  }
+  res.json({ ok: true, tests: out });
 });
 
+// Hourly refresh
 setInterval(() => {
   ingestOnce().catch(e => console.error("timer ingest error:", e.message || e));
 }, 60 * 60 * 1000);
 
 app.listen(PORT, () => {
   console.log(`▶ NotifAi (OpenAI) on http://localhost:${PORT}`);
+  // kick a first run so UI has content
   ingestOnce().catch(e => console.error("startup ingest error:", e.message || e));
 });

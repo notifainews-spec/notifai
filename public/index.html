@@ -3,33 +3,44 @@
 <head>
   <meta charset="utf-8" />
   <title>NotifAi News</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="/styles.css" rel="stylesheet" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
-<body class="bg">
-  <header class="container header">
-    <a class="brand" href="/">NotifAi News</a>
-    <nav class="toolbar">
-      <a class="btn ghost" href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
-      <a class="btn ghost" href="/about.html">About</a>
-      <button id="refreshBtn" class="btn">↻ Refresh</button>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
+        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
+        <span class="sr-only">NotifAi News</span>
+      </a>
+    </div>
+
+    <nav class="main-nav">
+      <button data-cat="us" class="nav-btn active">US</button>
+      <button data-cat="world" class="nav-btn">World</button>
+      <button data-cat="entertainment" class="nav-btn">Entertainment</button>
+      <button data-cat="finance" class="nav-btn">Finance</button>
     </nav>
+
+    <div class="actions">
+      <a class="nav-link" href="./about.html">About</a>
+      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
+      <button id="refreshBtn" title="Fetch latest">↻ Refresh</button>
+    </div>
   </header>
 
   <main class="container">
-    <div id="error" class="alert hide"></div>
-    <div id="tabs" class="tabs"></div>
+    <div id="notice" class="notice" hidden></div>
     <div id="grid" class="grid"></div>
   </main>
 
-  <footer class="container footer">
-    <div>© <span id="year"></span> NotifAi News — AI summaries & bold perspectives.</div>
+  <footer class="site-footer">
+    <div>© <span id="year"></span> NotifAi News</div>
+    <a href="https://x.com/notifainews" target="_blank" rel="noopener">Follow on X</a>
   </footer>
 
-  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
-  <script>
-    window.API_BASE = window.API_BASE || "http://localhost:8080";
-  </script>
-  <script type="module" src="/app.js"></script>
+  <!-- If your API is on Render/elsewhere, uncomment and set this: -->
+  <!-- <script>window.API_BASE="https://YOUR-RENDER.onrender.com";</script> -->
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

@@ -2,65 +2,79 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>About • NotifAi News</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="/styles.css" rel="stylesheet" />
+  <title>About — NotifAi News</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
-<body class="bg">
-  <header class="container header">
-    <a class="brand" href="/">NotifAi News</a>
-    <nav class="toolbar">
-      <a class="btn ghost" href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
-      <a class="btn ghost" href="/">Home</a>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
+        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
+        <span class="sr-only">NotifAi News</span>
+      </a>
+    </div>
+
+    <nav class="main-nav">
+      <a class="nav-link" href="./index.html">Home</a>
     </nav>
+
+    <div class="actions">
+      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
+    </div>
   </header>
 
   <main class="container">
-    <article class="card p-4">
-      <h1 class="h1">About NotifAi News</h1>
-      <p class="body mt-2">
-        NotifAi News is a faster, sharper way to follow the world. We blend machine-precision summaries with
-        clear, contrasting perspectives — side-by-side — so you grasp the story and the arguments in under a minute.
-      </p>
+    <article class="page">
+      <h1>About NotifAi News</h1>
+      <p><strong>NotifAi News</strong> is an AI-driven news platform that summarizes, analyzes, and debates the biggest headlines. Our goal is to make the news fast to skim, balanced to consider, and engaging to discuss.</p>
 
-      <h3 class="h3 mt-3">What we do</h3>
-      <ul class="body">
-        <li>Curate top headlines across US, World, Entertainment, and Finance.</li>
-        <li>Generate concise AI summaries (≤ 120 words) that cut fluff and boilerplate.</li>
-        <li>Reveal distinct viewpoints via three personas:</li>
-      </ul>
-      <ul class="body mt-2">
-        <li><strong>Jessica Rebella</strong> — hardline socialist: pro-labour, anti-imperialist.</li>
-        <li><strong>John Davis</strong> — hardline right-wing: America-first, hawkish.</li>
-        <li><strong>Joe Musk</strong> — focused conspiracy: one cohesive theory (never a list).</li>
-      </ul>
+      <p>We currently fetch and summarize global stories <strong>every hour</strong>. We’re actively building a faster pipeline to refresh as often as <strong>every 30 seconds</strong> for near real-time coverage.</p>
 
-      <h3 class="h3 mt-3">Why we exist</h3>
-      <p class="body">
-        Most news apps bury you in tabs and ads. We show the essential facts, then the likely arguments — without the
-        doomscroll. You decide what to read deeper.
-      </p>
+      <p>What’s next: expand our source list across more verified global outlets, launch mobile apps for <strong>Android</strong> and <strong>iOS</strong>, and evolve the debates from single takes into <strong>proper back-and-forth conversations</strong> between our AI personas.</p>
 
-      <h3 class="h3 mt-3">Safety & boundaries</h3>
-      <p class="body">
-        Personas never use slurs, issue threats, or target private individuals. Opinions focus on public policy,
-        institutions, and ideas.
-      </p>
-
-      <h3 class="h3 mt-3">What’s next</h3>
-      <ul class="body">
-        <li><strong>NotifAi News app</strong> with personalized feeds and alerts.</li>
-        <li>True back-and-forth debates between personas.</li>
-        <li>Create-your-own personas for custom lenses on the news.</li>
-      </ul>
-
-      <p class="body mt-3">Follow us on <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>.</p>
+      <p>We also plan to introduce a community-driven <strong>NotifAi Token</strong> to help fund ongoing development: website scaling, mobile apps, and custom LLMs fine-tuned for summarization and debate quality.</p>
     </article>
+
+    <section class="about-team">
+      <h2>The AI Personalities</h2>
+
+      <div class="personality">
+        <h3>Jessica Rebella</h3>
+        <p>
+          Jessica is our left-wing voice: pro-labor, anti-corporate capture, inspired by New Deal energy (think FDR).
+          She prioritizes worker power, social welfare, and global justice, and pushes hard against austerity, colonial hangovers,
+          and privatization.
+        </p>
+      </div>
+
+      <div class="personality">
+        <h3>John Davis</h3>
+        <p>
+          John is a hardline conservative: pro-GOP, hawkish on defense, tax-cut-first economics, and strongly nationalist.
+          He’s skeptical of big government and “woke” culture, champions border enforcement, and argues that prosperity
+          flows from free enterprise and order.
+        </p>
+      </div>
+
+      <div class="personality">
+        <h3>Joe Musk</h3>
+        <p>
+          Joe is our conspiracy outlier: suspicious of agencies like CIA/MI5/Mossad, pits elites and tech giants in shadowy
+          networks, and occasionally drifts toward aliens or simulation talk. He’s here to stress-test narratives—without slurs
+          or targeted harassment.
+        </p>
+      </div>
+    </section>
   </main>
 
-  <footer class="container footer">
+  <footer class="site-footer">
     <div>© <span id="year"></span> NotifAi News</div>
+    <a href="https://x.com/notifainews" target="_blank" rel="noopener">Follow on X</a>
   </footer>
-  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
 </body>
 </html>

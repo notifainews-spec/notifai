@@ -2,29 +2,73 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Article • NotifAi News</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="/styles.css" rel="stylesheet" />
+  <title>NotifAi News — Article</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
-<body class="bg">
-  <header class="container header">
-    <a class="brand" href="/">NotifAi News</a>
-    <nav class="toolbar">
-      <a class="btn ghost" href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
-      <a class="btn ghost" href="/">Home</a>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
+        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
+        <span class="sr-only">NotifAi News</span>
+      </a>
+    </div>
+
+    <nav class="main-nav">
+      <a class="nav-link" href="./index.html">Home</a>
     </nav>
+
+    <div class="actions">
+      <a class="nav-link" href="./about.html">About</a>
+      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
+      <a id="openSource" class="nav-link" target="_blank" rel="noopener">Open Source</a>
+    </div>
   </header>
 
-  <main class="container" id="article-root"></main>
+  <main class="container article-view">
+    <h1 id="title" class="a-title"></h1>
+    <div class="byline">
+      <span id="source"></span>
+      <span class="dot">•</span>
+      <time id="when"></time>
+    </div>
 
-  <footer class="container footer">
+    <div class="hero">
+      <img id="hero" src="/cover.jpg" alt="" onerror="this.onerror=null;this.src='/cover.jpg';" />
+    </div>
+
+    <section class="summary-block">
+      <h2>Summary</h2>
+      <p id="summary"></p>
+    </section>
+
+    <section class="debate">
+      <h2>Perspectives</h2>
+      <div class="voices">
+        <div class="voice">
+          <h3>Jessica Rebella</h3>
+          <p id="v-socialist"></p>
+        </div>
+        <div class="voice">
+          <h3>John Davis</h3>
+          <p id="v-rightwing"></p>
+        </div>
+        <div class="voice">
+          <h3>Joe Musk</h3>
+          <p id="v-conspiracy"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
     <div>© <span id="year"></span> NotifAi News</div>
+    <a href="https://x.com/notifainews" target="_blank" rel="noopener">Follow on X</a>
   </footer>
 
-  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
-  <script>
-    window.API_BASE = window.API_BASE || "http://localhost:8080";
-  </script>
-  <script type="module" src="/article.js"></script>
+  <!-- Optional remote API base -->
+  <!-- <script>window.API_BASE="https://YOUR-RENDER.onrender.com";</script> -->
+  <script type="module" src="./article.js"></script>
 </body>
 </html>
