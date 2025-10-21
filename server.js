@@ -46,27 +46,27 @@ const parser = new Parser({
   }
 });
 
-// Feeds (add more if you like)
+// Feeds chosen for better reliability from server-side networks
 const FEEDS = {
   us: [
     "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
-    "https://rss.cnn.com/rss/edition_us.rss",
-    "https://www.npr.org/rss/rss.php?id=1001",
+    "https://www.theguardian.com/us-news/rss",
+    "https://feeds.npr.org/1001/rss.xml" // new NPR endpoint (replaces rss.php?id=1001)
   ],
   world: [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
     "https://www.theguardian.com/world/rss",
-    "https://rss.cnn.com/rss/edition_world.rss",
+    "https://rss.cnn.com/rss/edition_world.rss" // keep world (tends to be steadier than US)
   ],
   entertainment: [
     "https://www.rollingstone.com/music/music-news/feed/",
     "https://www.theverge.com/rss/entertainment/index.xml",
-    "https://www.hollywoodreporter.com/tv/tv-news/feed/",
+    "https://www.hollywoodreporter.com/tv/tv-news/feed/"
   ],
   finance: [
     "https://www.ft.com/world/us/rss",
     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-    "https://www.investopedia.com/feedbuilder/feed/getfeed?feedName=news",
+    "https://www.investopedia.com/feedbuilder/feed/getfeed?feedName=news"
   ],
 };
 
@@ -209,15 +209,54 @@ async function fetchArticlePage(url) {
   }
 }
 
+// Robust RSS fetch: try direct; if that fails, try a read-proxy (bypasses some TLS quirks)
+// Also includes simple retries with backoff.
+async function fetchRssText(url, { retries = 2 } = {}) {
+  const ua = { "User-Agent": "Mozilla/5.0 NotifAi/1.0 (+https://www.notifai.news)" };
+
+  // attempt 1: direct
+  try {
+    const r = await fetch(url, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
+    if (r.ok) return await r.text();
+    throw new Error(`HTTP ${r.status}`);
+  } catch (e) {
+    if (retries <= 0) throw e;
+  }
+
+  // attempt 2: fallback via a public read-proxy (turns http(s) URL into plain text body)
+  // NOTE: this proxy simply fetches the URL server-side and returns the content; good for reading public RSS.
+  try {
+    const proxied = `https://r.jina.ai/http://${url.replace(/^https?:\/\//i, "")}`;
+    const r2 = await fetch(proxied, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
+    if (r2.ok) return await r2.text();
+    throw new Error(`Proxy HTTP ${r2.status}`);
+  } catch (e2) {
+    if (retries <= 0) throw e2;
+    // small backoff then final retry (direct)
+    await new Promise(res => setTimeout(res, 500));
+    const r3 = await fetch(url, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
+    if (!r3.ok) throw new Error(`HTTP ${r3.status}`);
+    return await r3.text();
+  }
+}
+
+// Parse RSS text via rss-parser's parser.parseString (lets us control fetching ourselves)
+async function parseRssFromText(text) {
+  // Reuse the global `parser` you already created
+  return await parser.parseString(text);
+}
+
 async function fetchItemsFromFeed(feedUrl, takeN) {
   try {
-    const feed = await parser.parseURL(feedUrl);
+    const xml = await fetchRssText(feedUrl, { retries: 2 });
+    const feed = await parseRssFromText(xml);
+
     const items = (feed.items || [])
       .filter(i => i.link && i.title)
       .slice(0, takeN);
 
-    // Concurrency limiter
     const out = [];
+    // Concurrency limiter already present above; keep same pattern
     for (let i = 0; i < items.length; i += FETCH_CONCURRENCY) {
       const batch = items.slice(i, i + FETCH_CONCURRENCY);
       const settled = await Promise.allSettled(
