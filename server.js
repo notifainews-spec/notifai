@@ -314,3 +314,30 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`▶ NotifAi News on http://localhost:${PORT}`);
 });
+
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`▶ NotifAi News on http://localhost:${PORT}`);
+});
+
+/* === Auto-ingest on boot + interval === */
+(async () => {
+  try {
+    console.time("first-ingest");
+    console.log("Kicking off first ingest…");
+    await ingestOnce();
+    console.timeEnd("first-ingest");
+  } catch (e) {
+    console.error("First ingest failed:", e?.message || e);
+  }
+  const minutes = parseInt(process.env.INGEST_MINUTES || "60", 10);
+  console.log(`Auto-ingest interval set to ${minutes} minute(s).`);
+  setInterval(() => {
+    console.time("auto-ingest");
+    console.log("Auto-ingest tick…");
+    ingestOnce()
+      .then(() => console.timeEnd("auto-ingest"))
+      .catch(err => console.error("Auto-ingest failed:", err?.message || err));
+  }, minutes * 60 * 1000);
+})();
+
