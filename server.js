@@ -13,9 +13,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* --------------------------------------------------------
-   CONFIG / CONSTANTS
+   CONFIG
 --------------------------------------------------------- */
-const PORT = process.env.PORT || 8080;                // ← define ONCE
+// How many new items to ingest per category (upper bound)
+const INGEST_MAX_PER_CAT = parseInt(process.env.INGEST_MAX_PER_CAT || "12", 10);
+// How many items to take from each feed (upper bound)
+const INGEST_PER_FEED    = parseInt(process.env.INGEST_PER_FEED    || "5", 10);
+// Concurrency limiter for fetching article pages (avoid hammering)
+const FETCH_CONCURRENCY  = parseInt(process.env.FETCH_CONCURRENCY  || "3", 10);
+// Articles endpoint per-category display cap
+const MAX_PER_CATEGORY   = parseInt(process.env.MAX_PER_CATEGORY   || "12", 10);
+// Auto-ingest interval (minutes)
+const INGEST_MINUTES     = parseInt(process.env.INGEST_MINUTES     || "60", 10);
+
+const PORT = process.env.PORT || 8080;
 const DATA_DIR = path.join(__dirname, "data");
 const STORE    = path.join(DATA_DIR, "articles.json");
 const SEED     = path.join(DATA_DIR, "seed.json");
@@ -35,23 +46,27 @@ const parser = new Parser({
   }
 });
 
-// FEEDS (you can tweak)
+// Feeds (add more if you like)
 const FEEDS = {
   us: [
     "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
     "https://rss.cnn.com/rss/edition_us.rss",
+    "https://www.npr.org/rss/rss.php?id=1001",
   ],
   world: [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
     "https://www.theguardian.com/world/rss",
+    "https://rss.cnn.com/rss/edition_world.rss",
   ],
   entertainment: [
     "https://www.rollingstone.com/music/music-news/feed/",
     "https://www.theverge.com/rss/entertainment/index.xml",
+    "https://www.hollywoodreporter.com/tv/tv-news/feed/",
   ],
   finance: [
     "https://www.ft.com/world/us/rss",
     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    "https://www.investopedia.com/feedbuilder/feed/getfeed?feedName=news",
   ],
 };
 
@@ -69,17 +84,9 @@ function saveArticles(list) {
 /* --------------------------------------------------------
    HELPERS
 --------------------------------------------------------- */
-function looksLikeUrl(u = "") {
-  return typeof u === "string" && /^https?:\/\//i.test(u);
-}
-function upgradeHttps(u) {
-  try { return new URL(u).toString().replace(/^http:\/\//i, "https://"); }
-  catch { return ""; }
-}
-function absoluteUrlMaybe(src, pageUrl) {
-  try { return new URL(src, pageUrl).toString(); }
-  catch { return src; }
-}
+function looksLikeUrl(u = "") { return typeof u === "string" && /^https?:\/\//i.test(u); }
+function upgradeHttps(u) { try { return new URL(u).toString().replace(/^http:\/\//i, "https://"); } catch { return ""; } }
+function absoluteUrlMaybe(src, pageUrl) { try { return new URL(src, pageUrl).toString(); } catch { return src; } }
 
 function getImageReferer(u) {
   try {
@@ -87,11 +94,18 @@ function getImageReferer(u) {
     if (host.endsWith("theguardian.com") || host.endsWith("guim.co.uk")) return "https://www.theguardian.com/";
     if (host.endsWith("rollingstone.com")) return "https://www.rollingstone.com/";
     if (host.endsWith("techcrunch.com") || host.endsWith("tctechcrunch2011.files.wordpress.com")) return "https://techcrunch.com/";
-    // default
     return "https://google.com/";
-  } catch {
-    return "https://google.com/";
+  } catch { return "https://google.com/"; }
+}
+
+function uniqBy(arr, keyFn) {
+  const seen = new Set();
+  const out = [];
+  for (const it of arr) {
+    const k = keyFn(it);
+    if (!seen.has(k)) { seen.add(k); out.push(it); }
   }
+  return out;
 }
 
 /* --------------------------------------------------------
@@ -138,7 +152,7 @@ async function personaDebate(title, text) {
 }
 
 /* --------------------------------------------------------
-   HTML extraction (stronger OG detection)
+   HTML extraction
 --------------------------------------------------------- */
 function extractText(html) {
   const $ = cheerio.load(html || "");
@@ -158,10 +172,8 @@ function pickOgImage(html, pageUrl) {
     $('meta[name="thumbnail"]').attr("content"),
   ].filter(Boolean);
 
-  // Guardian often hosts on guim.co.uk with relative/protocol-relative URLs
   let found = candidates.find(Boolean);
   if (!found) {
-    // try first <img> src or srcset
     const first = $("img[src]").first();
     found = first.attr("src") || first.attr("data-src") || "";
     if (!found && first.attr("srcset")) {
@@ -171,7 +183,6 @@ function pickOgImage(html, pageUrl) {
   }
   if (!found) return "";
 
-  // resolve relative/protocol-relative and upgrade to https
   if (found.startsWith("//")) found = "https:" + found;
   found = absoluteUrlMaybe(found, pageUrl);
   found = upgradeHttps(found);
@@ -179,102 +190,119 @@ function pickOgImage(html, pageUrl) {
 }
 
 /* --------------------------------------------------------
-   INGEST
+   INGEST (MULTI-ITEM)
 --------------------------------------------------------- */
-async function fetchTopItem(feedUrl) {
+async function fetchArticlePage(url) {
   try {
-    const feed = await parser.parseURL(feedUrl);
-    const item = feed.items.find(i => i.link && i.title);
-    if (!item) return null;
-
-    const url = new URL(item.link).toString();
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 NotifAi/1.0" },
       redirect: "follow",
       signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) {
-      return {
-        url,
-        title: item.title.trim(),
-        html: "",
-        text: "",
-        image: "",
-        source: new URL(feedUrl).hostname,
-        publishedAt: item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString()
-      };
-    }
+    if (!res.ok) return { html: "", text: "", image: "" };
     const html = await res.text();
     const text = extractText(html).slice(0, 7000);
     const image = pickOgImage(html, url);
-    return {
-      url,
-      title: item.title.trim(),
-      html,
-      text,
-      image,
-      source: new URL(feedUrl).hostname,
-      publishedAt: item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString()
-    };
+    return { html, text, image };
+  } catch {
+    return { html: "", text: "", image: "" };
+  }
+}
+
+async function fetchItemsFromFeed(feedUrl, takeN) {
+  try {
+    const feed = await parser.parseURL(feedUrl);
+    const items = (feed.items || [])
+      .filter(i => i.link && i.title)
+      .slice(0, takeN);
+
+    // Concurrency limiter
+    const out = [];
+    for (let i = 0; i < items.length; i += FETCH_CONCURRENCY) {
+      const batch = items.slice(i, i + FETCH_CONCURRENCY);
+      const settled = await Promise.allSettled(
+        batch.map(async it => {
+          const url = new URL(it.link).toString();
+          const page = await fetchArticlePage(url);
+          return {
+            url,
+            title: String(it.title || "").trim(),
+            source: new URL(feedUrl).hostname,
+            publishedAt: it.isoDate ? new Date(it.isoDate).toISOString() : new Date().toISOString(),
+            ...page
+          };
+        })
+      );
+      settled.forEach(s => { if (s.status === "fulfilled" && s.value) out.push(s.value); });
+    }
+    return out;
   } catch (e) {
-    console.error("Feed item error", feedUrl, e.message || e);
-    return null;
+    console.error("Feed error", feedUrl, e.message || e);
+    return [];
   }
 }
 
 async function ingestCategory(cat) {
-  for (const f of FEEDS[cat]) {
-    const one = await fetchTopItem(f);
-    if (one) return one;
+  const feeds = FEEDS[cat] || [];
+  let collected = [];
+  for (const f of feeds) {
+    const list = await fetchItemsFromFeed(f, INGEST_PER_FEED);
+    collected = collected.concat(list);
+    if (collected.length >= INGEST_MAX_PER_CAT) break;
   }
-  return null;
+  // uniq by URL & trim
+  collected = uniqBy(collected, x => x.url).slice(0, INGEST_MAX_PER_CAT);
+  return collected;
 }
 
 async function ingestOnce() {
   const cats = Object.keys(FEEDS);
-  const out  = [];
+  const created = [];
+  const all = loadArticles();
+
   for (const c of cats) {
-    const top = await ingestCategory(c);
-    if (!top) continue;
+    const many = await ingestCategory(c);
+    for (const art of many) {
+      if (all.find(x => x.url === art.url)) continue;
 
-    const all = loadArticles();
-    if (all.find(x => x.url === top.url)) continue;
+      const summary = await summarizeWithOpenAI(art.title, art.text);
+      const debate  = await personaDebate(art.title, art.text);
 
-    const summary = await summarizeWithOpenAI(top.title, top.text);
-    const debate  = await personaDebate(top.title, top.text);
-
-    const row = {
-      id: nanoid(),
-      url: top.url,
-      title: top.title,
-      source: top.source,
-      image: top.image, // may be empty; frontend will fallback or proxy
-      category: c,
-      publishedAt: top.publishedAt,
-      summary,
-      debateJson: JSON.stringify(debate),
-      createdAt: new Date().toISOString()
-    };
-    all.push(row);
-    saveArticles(all);
-    out.push(row);
+      const row = {
+        id: nanoid(),
+        url: art.url,
+        title: art.title,
+        source: art.source,
+        image: art.image,
+        category: c,
+        publishedAt: art.publishedAt,
+        summary,
+        debateJson: JSON.stringify(debate),
+        createdAt: new Date().toISOString()
+      };
+      all.push(row);
+      created.push(row);
+    }
   }
 
-  if (out.length === 0) {
+  if (created.length > 0) saveArticles(all);
+
+  if (created.length === 0) {
+    // seed fallback
     try {
       const seed = JSON.parse(fs.readFileSync(SEED, "utf-8"));
-      const cur  = loadArticles();
       let added = 0;
       for (const s of seed) {
-        if (!cur.find(x => x.url === s.url)) {
-          cur.push({ id: nanoid(), ...s, createdAt: new Date().toISOString() });
+        if (!all.find(x => x.url === s.url)) {
+          all.push({ id: nanoid(), ...s, createdAt: new Date().toISOString() });
           added++;
         }
       }
-      if (added>0) saveArticles(cur);
+      if (added>0) saveArticles(all);
     } catch {}
   }
-  return out;
+
+  return created;
 }
 
 /* --------------------------------------------------------
@@ -287,16 +315,19 @@ app.get("/api/selftest", (req, res) => {
     node: process.version,
     env: {
       OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
-      MAX_PER_CATEGORY: process.env.MAX_PER_CATEGORY || "6",
-      INGEST_MINUTES: process.env.INGEST_MINUTES || "60",
+      MAX_PER_CATEGORY,
+      INGEST_MAX_PER_CAT,
+      INGEST_PER_FEED,
+      FETCH_CONCURRENCY,
+      INGEST_MINUTES
     }
   });
 });
 
 app.get("/api/articles", (req, res) => {
+  const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY), 10);
   const all = loadArticles().sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
   const group = { us:[], world:[], entertainment:[], finance:[] };
-  const limit = parseInt(process.env.MAX_PER_CATEGORY||"6",10);
   for (const a of all) {
     if (group[a.category] && group[a.category].length < limit) {
       group[a.category].push(a);
@@ -340,7 +371,7 @@ app.get("/api/diagnose", async (req, res) => {
 });
 
 /* --------------------------------------------------------
-   IMAGE PROXY (beats hotlink blocking: Guardian, RS, TC, etc.)
+   IMAGE PROXY
 --------------------------------------------------------- */
 app.get("/img", async (req, res) => {
   try {
@@ -377,7 +408,7 @@ app.get("/img", async (req, res) => {
 });
 
 /* --------------------------------------------------------
-   START + AUTO-INGEST (on boot + interval)
+   START + AUTO-INGEST
 --------------------------------------------------------- */
 app.listen(PORT, () => {
   console.log(`▶ NotifAi News on http://localhost:${PORT}`);
@@ -392,13 +423,12 @@ app.listen(PORT, () => {
   } catch (e) {
     console.error("First ingest failed:", e?.message || e);
   }
-  const minutes = parseInt(process.env.INGEST_MINUTES || "60", 10);
-  console.log(`Auto-ingest interval set to ${minutes} minute(s).`);
+  console.log(`Auto-ingest interval set to ${INGEST_MINUTES} minute(s).`);
   setInterval(() => {
     console.time("auto-ingest");
     console.log("Auto-ingest tick…");
     ingestOnce()
       .then(() => console.timeEnd("auto-ingest"))
       .catch(err => console.error("Auto-ingest failed:", err?.message || err));
-  }, minutes * 60 * 1000);
+  }, INGEST_MINUTES * 60 * 1000);
 })();
