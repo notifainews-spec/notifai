@@ -3,7 +3,7 @@ const params = new URLSearchParams(window.location.search);
 const id = params.get("id");
 
 const yearEl = document.getElementById("year");
-yearEl.textContent = new Date().getFullYear();
+if (yearEl) yearEl.textContent = new Date().getFullYear();
 
 const titleEl = document.getElementById("title");
 const sourceEl = document.getElementById("source");
@@ -17,7 +17,7 @@ const vC = document.getElementById("v-conspiracy");
 const openSource = document.getElementById("openSource");
 
 if (!id) {
-  titleEl.textContent = "Article not found";
+  if (titleEl) titleEl.textContent = "Article not found";
 } else {
   load();
 }
@@ -28,24 +28,29 @@ async function load() {
     if (!res.ok) throw new Error(`article ${res.status}`);
     const a = await res.json();
 
-    titleEl.textContent = a.title || "(untitled)";
-    sourceEl.textContent = a.source || "";
-    whenEl.textContent = a.publishedAt ? new Date(a.publishedAt).toLocaleString() : "";
-    openSource.href = a.url;
+    if (titleEl) titleEl.textContent = a.title || "(untitled)";
+    if (sourceEl) sourceEl.textContent = a.source || "";
+    if (whenEl) whenEl.textContent = a.publishedAt ? new Date(a.publishedAt).toLocaleString() : "";
+    if (openSource) openSource.href = a.url;
 
-    const img = (a.image && (a.image.startsWith("http://") || a.image.startsWith("https://"))) ? a.image : "/cover.jpg";
-    heroEl.src = img;
+    const img = toProxy(a.image);
+    if (heroEl) heroEl.src = img;
 
-    summaryEl.textContent = a.summary || "";
+    if (summaryEl) summaryEl.textContent = a.summary || "";
 
     let debate = {};
     try { debate = JSON.parse(a.debateJson || "{}"); } catch {}
-    // Show ONLY names + argument (no labels like "Opening", "Socialist", etc.)
-    vS.textContent = debate?.socialist?.open  || "—";
-    vR.textContent = debate?.rightwing?.open  || "—";
-    vC.textContent = debate?.conspiracy?.open || "—";
+    if (vS) vS.textContent = debate?.socialist?.open  || "—";
+    if (vR) vR.textContent = debate?.rightwing?.open  || "—";
+    if (vC) vC.textContent = debate?.conspiracy?.open || "—";
   } catch (e) {
-    titleEl.textContent = "Failed to load article.";
+    if (titleEl) titleEl.textContent = "Failed to load article.";
     console.error(e);
   }
+}
+
+function toProxy(u) {
+  if (!u || typeof u !== "string") return "/cover.jpg";
+  if (!/^https?:\/\//i.test(u)) return "/cover.jpg";
+  return `${API_BASE}/img?u=${encodeURIComponent(u)}`;
 }

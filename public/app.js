@@ -2,7 +2,7 @@ const API_BASE = (window.API_BASE || window.location.origin).replace(/\/+$/, "")
 const grid   = document.getElementById("grid");
 const notice = document.getElementById("notice");
 const yearEl = document.getElementById("year");
-yearEl.textContent = new Date().getFullYear();
+if (yearEl) yearEl.textContent = new Date().getFullYear();
 
 const tabs = [...document.querySelectorAll(".nav-btn")];
 let currentCat = "us";
@@ -16,18 +16,21 @@ tabs.forEach(btn => {
   });
 });
 
-document.getElementById("refreshBtn").addEventListener("click", async () => {
-  showNotice("Fetching latest…");
-  try {
-    await fetch(`${API_BASE}/api/cron-bg`, { cache: "no-store" });
-    setTimeout(async () => {
-      await loadData(true);
-      hideNotice();
-    }, 4000);
-  } catch (e) {
-    showNotice("Refresh failed. Try again.");
-  }
-});
+const refreshBtn = document.getElementById("refreshBtn");
+if (refreshBtn) {
+  refreshBtn.addEventListener("click", async () => {
+    showNotice("Fetching latest…");
+    try {
+      await fetch(`${API_BASE}/api/cron-bg`, { cache: "no-store" });
+      setTimeout(async () => {
+        await loadData(true);
+        hideNotice();
+      }, 4000);
+    } catch (e) {
+      showNotice("Refresh failed. Try again.");
+    }
+  });
+}
 
 let ARTICLES = { us:[], world:[], entertainment:[], finance:[] };
 
@@ -50,7 +53,7 @@ function renderCategory(cat) {
   }
 
   for (const a of items) {
-    const img = sanitizeImg(a.image);
+    const img = toProxy(a.image);
     const date = a.publishedAt ? new Date(a.publishedAt) : null;
     const when = date ? date.toLocaleString() : "";
 
@@ -75,21 +78,19 @@ function renderCategory(cat) {
   }
 }
 
-function sanitizeImg(u) {
+function toProxy(u) {
   if (!u || typeof u !== "string") return "/cover.jpg";
-  try {
-    const good = u.startsWith("http://") || u.startsWith("https://");
-    return good ? u : "/cover.jpg";
-  } catch {
-    return "/cover.jpg";
-  }
+  if (!/^https?:\/\//i.test(u)) return "/cover.jpg";
+  return `${API_BASE}/img?u=${encodeURIComponent(u)}`;
 }
 
 function showNotice(msg) {
+  if (!notice) return;
   notice.textContent = msg;
   notice.hidden = false;
 }
 function hideNotice() {
+  if (!notice) return;
   notice.hidden = true;
   notice.textContent = "";
 }
