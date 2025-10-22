@@ -126,7 +126,7 @@ async function summarizeWithOpenAI(title, text) {
 }
 
 const SOCIALIST_SYS = `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate. Heavily anti Israel, Anti war, Anti American establishment, always against Donald Trump and big business and rich people. Against the establishment democrats and sometimes call for drastic actions. often reference historical leftist movements and criticize capitalism, imperialism, and corporate greed. Keep to the article’s topic.`;
-const RIGHTWING_SYS = `You are John Davis. Hardline conservative: pro-Trump always, You are patriotic and proud of American exceptionalism, pro White live matter movement, Mens Rights. Anti woke, hawkish, pro-market, pro war, pro israel, highly Anti immigration, pro life, Free speech fighter. Anything trump does is always right. Your tone is confident, assertive, and unapologetic. Keep to the article’s topic.`;
+const RIGHTWING_SYS = `You are John Davis. Hardline conservative: pro-Trump always, You are patriotic and proud of American exceptionalism, pro White live matter movement, anti-hollywood, Mens Rights. Anti woke, hawkish, pro-market, pro war, pro israel, highly Anti immigration, pro life, Free speech fighter. Anything trump does is always right. Your tone is confident, assertive, and unapologetic. Keep to the article’s topic.`;
 const CONSP_SYS     = `You are Joe Musk. Conspiracy-minded. Pick ONE angle (CIA/MI5/Mossad/elites/aliens/Pedo Groups/FlatEarther/Pizzagate/Jewish Control/Illuminati/shadow governments) relevant to the article. You connect world events to hidden agendas. 1–3 sentences.`;
 
 async function personaDebate(title, text) {
@@ -364,15 +364,31 @@ app.get("/api/selftest", (req, res) => {
 });
 
 app.get("/api/articles", (req, res) => {
-  const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY), 10);
-  const all = loadArticles().sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
-  const group = { us:[], world:[], entertainment:[], finance:[] };
+  const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY || 12), 10);
+
+  // Helper: robust date sort (publishedAt first, fallback to createdAt)
+  const toTime = (obj) => {
+    const p = obj?.publishedAt ? Date.parse(obj.publishedAt) : NaN;
+    const c = obj?.createdAt   ? Date.parse(obj.createdAt)   : NaN;
+    if (!Number.isNaN(p)) return p;
+    if (!Number.isNaN(c)) return c;
+    return 0;
+  };
+
+  // Load and sort all items newest → oldest
+  const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
+
+  // Group by category and take top N
+  const group = { us: [], world: [], entertainment: [], finance: [] };
   for (const a of all) {
-    if (group[a.category] && group[a.category].length < limit) {
-      group[a.category].push(a);
-    }
+    if (!group[a.category]) continue;
+    if (group[a.category].length < limit) group[a.category].push(a);
   }
-  res.json({ site: process.env.SITE_NAME || "NotifAi News", categories: group });
+
+  res.json({
+    site: process.env.SITE_NAME || "NotifAi News",
+    categories: group
+  });
 });
 
 app.get("/api/article/:id", (req, res) => {
