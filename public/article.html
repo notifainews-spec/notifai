@@ -2,57 +2,45 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <title>NotifAi News — Article</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Article • NotifAi News</title>
-  <link rel="icon" type="image/png" href="/favicon.png" />
-  <script>window.API_BASE = window.API_BASE || "https://www.notifai.news";</script>
-  <link rel="preconnect" href="https://www.notifai.news" crossorigin>
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
-<body class="article-view">
+<body>
   <header class="site-header">
-    <div class="brand-row">
-      <a class="brand-link" href="/">
-        <img class="brand-logo" src="/favicon.png" alt="NotifAi logo" />
-        <span class="brand-name">NotifAi News</span>
+    <div class="brand">
+      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
+        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
+        <span class="sr-only">NotifAi News</span>
       </a>
-      <nav class="top-links">
-        <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
-        <a class="nav-link" href="/about.html">About</a>
-      </nav>
     </div>
 
-    <nav class="main-nav" aria-label="Categories">
-      <a class="nav-btn" href="/">← Back</a>
+    <nav class="main-nav">
+      <a class="nav-link" href="./index.html">Home</a>
     </nav>
 
     <div class="actions">
-      <a id="openSource" class="nav-link" href="#" target="_blank" rel="noopener">Open Source</a>
+      <a class="nav-link" href="./about.html">About</a>
+      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
+      <a id="openSource" class="nav-link" target="_blank" rel="noopener">Open Source</a>
     </div>
   </header>
 
-  <main class="container">
-    <h1 id="title" class="a-title">Loading…</h1>
-    <div class="byline"><span id="source"></span> <span class="dot">•</span> <time id="when"></time></div>
-
-    <div class="hero">
-      <!-- Clicking the image opens the source -->
-      <a id="sourceLinkImage" href="#" target="_blank" rel="noopener">
-        <img id="hero" src="/cover.jpg" alt="Article image" />
-      </a>
+  <main class="container article-view">
+    <h1 id="title" class="a-title"></h1>
+    <div class="byline">
+      <span id="source"></span>
+      <span class="dot">•</span>
+      <time id="when"></time>
     </div>
 
-    <!-- Share row -->
-    <div class="share-row">
-      <span>Share:</span>
-      <a id="share-wa" class="share-btn" target="_blank" rel="noopener" href="#">WhatsApp</a>
-      <a id="share-x"  class="share-btn" target="_blank" rel="noopener" href="#">X</a>
-      <a id="share-fb" class="share-btn" target="_blank" rel="noopener" href="#">Facebook</a>
+    <div class="hero">
+      <img id="hero" src="/cover.jpg" alt="" onerror="this.onerror=null;this.src='/cover.jpg';" />
     </div>
 
     <section class="summary-block">
       <h2>Summary</h2>
-      <p id="summary">Summarizing…</p>
+      <p id="summary"></p>
     </section>
 
     <section class="debate">
@@ -60,25 +48,27 @@
       <div class="voices">
         <div class="voice">
           <h3>Jessica Rebella</h3>
-          <p id="v-socialist">—</p>
+          <p id="v-socialist"></p>
         </div>
         <div class="voice">
           <h3>John Davis</h3>
-          <p id="v-rightwing">—</p>
+          <p id="v-rightwing"></p>
         </div>
         <div class="voice">
           <h3>Joe Musk</h3>
-          <p id="v-conspiracy">—</p>
+          <p id="v-conspiracy"></p>
         </div>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <small>© <span id="year"></span> NotifAi News</small>
-    <small><a href="/about.html">About</a></small>
+    <div>© <span id="year"></span> NotifAi News</div>
+    <a href="https://x.com/notifainews" target="_blank" rel="noopener">Follow on X</a>
   </footer>
 
-  <script src="/article.js" defer></script>
+  <!-- Optional remote API base -->
+  <!-- <script>window.API_BASE="https://YOUR-RENDER.onrender.com";</script> -->
+  <script type="module" src="./article.js"></script>
 </body>
 </html>

@@ -4,8 +4,7 @@ const notice = document.getElementById("notice");
 const yearEl = document.getElementById("year");
 if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-// category buttons
-const tabs = [...document.querySelectorAll(".nav-btn[data-cat]")];
+const tabs = [...document.querySelectorAll(".nav-btn")];
 let currentCat = "us";
 
 tabs.forEach(btn => {
@@ -54,7 +53,7 @@ function renderCategory(cat) {
   }
 
   for (const a of items) {
-    const img = toProxy(a.image, 640);
+    const img = toProxy(a.image);
     const date = a.publishedAt ? new Date(a.publishedAt) : null;
     const when = date ? date.toLocaleString() : "";
 
@@ -79,10 +78,10 @@ function renderCategory(cat) {
   }
 }
 
-function toProxy(u, w) {
-  if (!u || typeof u !== "string" || !/^https?:\/\//i.test(u)) return "/cover.jpg";
-  const base = `${API_BASE}/img?u=${encodeURIComponent(u)}`;
-  return w ? `${base}&w=${w}` : base;
+function toProxy(u) {
+  if (!u || typeof u !== "string") return "/cover.jpg";
+  if (!/^https?:\/\//i.test(u)) return "/cover.jpg";
+  return `${API_BASE}/img?u=${encodeURIComponent(u)}`;
 }
 
 function showNotice(msg) {
