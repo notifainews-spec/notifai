@@ -7,7 +7,8 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="site-header">
+  <header class="site-header header-areas">
+    <!-- Row 1: brand (left) + actions (right) -->
     <div class="brand">
       <a href="./index.html" class="brand-link" aria-label="NotifAi News">
         <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
@@ -15,18 +16,19 @@
       </a>
     </div>
 
+    <div class="actions">
+      <a class="nav-link" href="./about.html">About</a>
+      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
+      <button id="refreshBtn" title="Fetch latest">↻ Refresh</button>
+    </div>
+
+    <!-- Row 2: categories centered and bigger -->
     <nav class="main-nav">
       <button data-cat="us" class="nav-btn active">US</button>
       <button data-cat="world" class="nav-btn">World</button>
       <button data-cat="entertainment" class="nav-btn">Entertainment</button>
       <button data-cat="finance" class="nav-btn">Finance</button>
     </nav>
-
-    <div class="actions">
-      <a class="nav-link" href="./about.html">About</a>
-      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
-      <button id="refreshBtn" title="Fetch latest">↻ Refresh</button>
-    </div>
   </header>
 
   <main class="container">

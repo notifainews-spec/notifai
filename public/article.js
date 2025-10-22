@@ -14,7 +14,10 @@ const summaryEl = document.getElementById("summary");
 const vS = document.getElementById("v-socialist");
 const vR = document.getElementById("v-rightwing");
 const vC = document.getElementById("v-conspiracy");
-const openSource = document.getElementById("openSource");
+
+// new: clickable hero link + full article link
+const sourceLinkImage = document.getElementById("sourceLinkImage");
+const fullLink = document.getElementById("fullLink");
 
 if (!id) {
   if (titleEl) titleEl.textContent = "Article not found";
@@ -31,10 +34,13 @@ async function load() {
     if (titleEl) titleEl.textContent = a.title || "(untitled)";
     if (sourceEl) sourceEl.textContent = a.source || "";
     if (whenEl) whenEl.textContent = a.publishedAt ? new Date(a.publishedAt).toLocaleString() : "";
-    if (openSource) openSource.href = a.url;
 
     const img = toProxy(a.image);
     if (heroEl) heroEl.src = img;
+
+    // link hero image and the full article button to original source
+    if (sourceLinkImage) sourceLinkImage.href = a.url;
+    if (fullLink) fullLink.href = a.url;
 
     if (summaryEl) summaryEl.textContent = a.summary || "";
 

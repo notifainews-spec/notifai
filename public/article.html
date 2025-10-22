@@ -7,7 +7,8 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="site-header">
+  <header class="site-header header-areas">
+    <!-- Row 1: brand (left) + actions (right) -->
     <div class="brand">
       <a href="./index.html" class="brand-link" aria-label="NotifAi News">
         <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
@@ -15,15 +16,16 @@
       </a>
     </div>
 
-    <nav class="main-nav">
-      <a class="nav-link" href="./index.html">Home</a>
-    </nav>
-
     <div class="actions">
       <a class="nav-link" href="./about.html">About</a>
       <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
-      <a id="openSource" class="nav-link" target="_blank" rel="noopener">Open Source</a>
+      <a class="nav-link" href="./index.html">Home</a>
     </div>
+
+    <!-- Row 2: single back button (keeps layout consistent with index) -->
+    <nav class="main-nav">
+      <a class="nav-btn" href="./index.html">← Back</a>
+    </nav>
   </header>
 
   <main class="container article-view">
@@ -35,7 +37,15 @@
     </div>
 
     <div class="hero">
-      <img id="hero" src="/cover.jpg" alt="" onerror="this.onerror=null;this.src='/cover.jpg';" />
+      <!-- Clicking hero image opens original source -->
+      <a id="sourceLinkImage" href="#" target="_blank" rel="noopener">
+        <img id="hero" src="/cover.jpg" alt="" onerror="this.onerror=null;this.src='/cover.jpg';" />
+      </a>
+    </div>
+
+    <!-- “Full News Article” button directly below the image -->
+    <div class="full-article-row">
+      <a id="fullLink" class="full-link" href="#" target="_blank" rel="noopener">Full News Article</a>
     </div>
 
     <section class="summary-block">
@@ -67,8 +77,6 @@
     <a href="https://x.com/notifainews" target="_blank" rel="noopener">Follow on X</a>
   </footer>
 
-  <!-- Optional remote API base -->
-  <!-- <script>window.API_BASE="https://YOUR-RENDER.onrender.com";</script> -->
   <script type="module" src="./article.js"></script>
 </body>
 </html>
