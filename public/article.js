@@ -61,7 +61,7 @@ async function load() {
     if (vR) vR.textContent = debate?.rightwing?.open  || "—";
     if (vC) vC.textContent = debate?.conspiracy?.open || "—";
 
-        // SHARE: use the share URL (has server-side OG tags)
+    // Build share URL that contains server-side Open Graph tags:
     const shareUrl = `${API_BASE.replace(/\/+$/,'')}/share/${encodeURIComponent(a.id)}`;
     const shareText = `${title} — NotifAi News`;
 

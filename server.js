@@ -462,8 +462,7 @@ app.get("/img", async (req, res) => {
   }
 });
 
-// ===== SHARE PAGE WITH OG/TWITTER META =====
-// Helpers
+// === SHARE PAGE WITH OG/TWITTER META (no UI change) ===
 function htmlesc(s='') {
   return String(s)
     .replaceAll('&','&amp;')
@@ -475,23 +474,24 @@ function firstLine(s='', n=240) {
   return String(s).replace(/\s+/g,' ').trim().slice(0, n);
 }
 function getOrigin(req) {
-  // Prefer env in production so images/links are absolute and cacheable
+  // Set SITE_ORIGIN on Render for canonical links, e.g. https://www.notifai.news
   return process.env.SITE_ORIGIN || `${req.protocol}://${req.get('host')}`;
 }
 
 app.get('/share/:id', (req, res) => {
   const id = req.params.id;
-  const a = loadArticles().find(x => x.id === id); // use your existing article store
-  if (!a) {
-    res.status(404).send('Article not found'); 
-    return;
-  }
+
+  // Use your existing storage accessor:
+  // If your function is named differently, replace this line accordingly.
+  const articles = (typeof loadArticles === 'function') ? loadArticles() : [];
+  const a = articles.find(x => x.id === id);
+  if (!a) { res.status(404).send('Article not found'); return; }
 
   const origin   = getOrigin(req);
   const pageUrl  = `${origin}/article.html?id=${encodeURIComponent(id)}`;
   const shareUrl = `${origin}/share/${encodeURIComponent(id)}`;
 
-  // Build a good large image (1200px wide) through your /img proxy
+  // Use your image proxy so hotlink-protected images still preview
   const rawImg = a.image && /^https?:\/\//i.test(a.image) ? a.image : `${origin}/cover.jpg`;
   const ogImg  = `${origin}/img?u=${encodeURIComponent(rawImg)}&w=1200`;
 
@@ -499,7 +499,6 @@ app.get('/share/:id', (req, res) => {
   const desc  = firstLine(a.summary || `${a.source || ''} • ${a.title || ''}`, 240);
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  // Tiny HTML page with OG/Twitter meta for crawlers + instant redirect for users
   res.end(`<!doctype html>
 <html lang="en">
 <head>
@@ -520,7 +519,7 @@ app.get('/share/:id', (req, res) => {
 <meta name="twitter:description" content="${htmlesc(desc)}">
 <meta name="twitter:image" content="${ogImg}">
 
-<!-- Let scrapers read meta, then send humans to the JS page -->
+<!-- Show meta to scrapers, then redirect humans -->
 <meta http-equiv="refresh" content="0; url=${pageUrl}">
 </head>
 <body>
@@ -528,7 +527,6 @@ app.get('/share/:id', (req, res) => {
 </body>
 </html>`);
 });
-
 
 /* --------------------------------------------------------
    START + AUTO-INGEST
