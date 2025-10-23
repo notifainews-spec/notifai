@@ -15,9 +15,14 @@ const vS = document.getElementById("v-socialist");
 const vR = document.getElementById("v-rightwing");
 const vC = document.getElementById("v-conspiracy");
 
-// new: clickable hero link + full article link
+// clickable hero + full source link
 const sourceLinkImage = document.getElementById("sourceLinkImage");
 const fullLink = document.getElementById("fullLink");
+
+// share buttons
+const shareWa = document.getElementById("share-wa");
+const shareX  = document.getElementById("share-x");
+const shareFb = document.getElementById("share-fb");
 
 if (!id) {
   if (titleEl) titleEl.textContent = "Article not found";
@@ -31,24 +36,36 @@ async function load() {
     if (!res.ok) throw new Error(`article ${res.status}`);
     const a = await res.json();
 
-    if (titleEl) titleEl.textContent = a.title || "(untitled)";
+    const pageUrl = window.location.href.split("#")[0];
+    const sourceUrl = a.url;
+    const title = a.title || "(untitled)";
+
+    // basic fields
+    if (titleEl) titleEl.textContent = title;
     if (sourceEl) sourceEl.textContent = a.source || "";
     if (whenEl) whenEl.textContent = a.publishedAt ? new Date(a.publishedAt).toLocaleString() : "";
 
+    // image + links to source
     const img = toProxy(a.image);
     if (heroEl) heroEl.src = img;
+    if (sourceLinkImage) sourceLinkImage.href = sourceUrl;
+    if (fullLink) fullLink.href = sourceUrl;
 
-    // link hero image and the full article button to original source
-    if (sourceLinkImage) sourceLinkImage.href = a.url;
-    if (fullLink) fullLink.href = a.url;
-
+    // summary
     if (summaryEl) summaryEl.textContent = a.summary || "";
 
+    // voices
     let debate = {};
     try { debate = JSON.parse(a.debateJson || "{}"); } catch {}
     if (vS) vS.textContent = debate?.socialist?.open  || "—";
     if (vR) vR.textContent = debate?.rightwing?.open  || "—";
     if (vC) vC.textContent = debate?.conspiracy?.open || "—";
+
+    // SHARE: share the NotifAi article page (drives traffic to your site)
+    const shareText = `${title} — NotifAi News`;
+    if (shareWa) shareWa.href = `https://wa.me/?text=${encodeURIComponent(shareText + " " + pageUrl)}`;
+    if (shareX)  shareX.href  = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(pageUrl)}`;
+    if (shareFb) shareFb.href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pageUrl)}`;
   } catch (e) {
     if (titleEl) titleEl.textContent = "Failed to load article.";
     console.error(e);
