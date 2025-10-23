@@ -4,12 +4,10 @@
   <meta charset="utf-8" />
   <title>NotifAi News</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- cache-bust the CSS so old cached styles don’t break layout -->
-  <link rel="stylesheet" href="./styles.css?v=homefix1" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="site-header header-areas">
-    <!-- Row 1: brand (left) + actions (right) -->
+  <header class="site-header">
     <div class="brand">
       <a href="./index.html" class="brand-link" aria-label="NotifAi News">
         <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
@@ -17,19 +15,26 @@
       </a>
     </div>
 
-    <div class="actions">
-      <a class="nav-link" href="./about.html">About</a>
-      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
-      <button id="refreshBtn" title="Fetch latest">↻ Refresh</button>
-    </div>
-
-    <!-- Row 2: categories centered; wrap if needed (no horizontal scroll) -->
     <nav class="main-nav">
       <button data-cat="us" class="nav-btn active">US</button>
       <button data-cat="world" class="nav-btn">World</button>
       <button data-cat="entertainment" class="nav-btn">Entertainment</button>
       <button data-cat="finance" class="nav-btn">Finance</button>
     </nav>
+
+    <div class="actions">
+      <a class="nav-link" href="./about.html">About</a>
+      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
+
+      <!-- Dexscreener button (keeps your style) -->
+      <a class="nav-link dexscreener"
+         href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444"
+         target="_blank" rel="noopener" aria-label="Dexscreener">
+        Dexscreener
+      </a>
+
+      <button id="refreshBtn" title="Fetch latest">↻ Refresh</button>
+    </div>
   </header>
 
   <main class="container">
@@ -42,7 +47,7 @@
     <a href="https://x.com/notifainews" target="_blank" rel="noopener">Follow on X</a>
   </footer>
 
-  <!-- If your API is on Render, you can set window.API_BASE here -->
+  <!-- If your API is on Render/elsewhere, uncomment and set this: -->
   <!-- <script>window.API_BASE="https://YOUR-RENDER.onrender.com";</script> -->
   <script type="module" src="./app.js"></script>
 </body>
