@@ -462,6 +462,74 @@ app.get("/img", async (req, res) => {
   }
 });
 
+// ===== SHARE PAGE WITH OG/TWITTER META =====
+// Helpers
+function htmlesc(s='') {
+  return String(s)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;');
+}
+function firstLine(s='', n=240) {
+  return String(s).replace(/\s+/g,' ').trim().slice(0, n);
+}
+function getOrigin(req) {
+  // Prefer env in production so images/links are absolute and cacheable
+  return process.env.SITE_ORIGIN || `${req.protocol}://${req.get('host')}`;
+}
+
+app.get('/share/:id', (req, res) => {
+  const id = req.params.id;
+  const a = loadArticles().find(x => x.id === id); // use your existing article store
+  if (!a) {
+    res.status(404).send('Article not found'); 
+    return;
+  }
+
+  const origin   = getOrigin(req);
+  const pageUrl  = `${origin}/article.html?id=${encodeURIComponent(id)}`;
+  const shareUrl = `${origin}/share/${encodeURIComponent(id)}`;
+
+  // Build a good large image (1200px wide) through your /img proxy
+  const rawImg = a.image && /^https?:\/\//i.test(a.image) ? a.image : `${origin}/cover.jpg`;
+  const ogImg  = `${origin}/img?u=${encodeURIComponent(rawImg)}&w=1200`;
+
+  const title = a.title || 'NotifAi News';
+  const desc  = firstLine(a.summary || `${a.source || ''} • ${a.title || ''}`, 240);
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  // Tiny HTML page with OG/Twitter meta for crawlers + instant redirect for users
+  res.end(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${htmlesc(title)} — NotifAi News</title>
+<meta name="description" content="${htmlesc(desc)}">
+<link rel="canonical" href="${pageUrl}">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="NotifAi News">
+<meta property="og:title" content="${htmlesc(title)}">
+<meta property="og:description" content="${htmlesc(desc)}">
+<meta property="og:image" content="${ogImg}">
+<meta property="og:url" content="${shareUrl}">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${htmlesc(title)}">
+<meta name="twitter:description" content="${htmlesc(desc)}">
+<meta name="twitter:image" content="${ogImg}">
+
+<!-- Let scrapers read meta, then send humans to the JS page -->
+<meta http-equiv="refresh" content="0; url=${pageUrl}">
+</head>
+<body>
+  <p>Redirecting to <a href="${pageUrl}">article</a>…</p>
+</body>
+</html>`);
+});
+
+
 /* --------------------------------------------------------
    START + AUTO-INGEST
 --------------------------------------------------------- */
