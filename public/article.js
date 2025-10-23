@@ -61,14 +61,11 @@ async function load() {
     if (vR) vR.textContent = debate?.rightwing?.open  || "—";
     if (vC) vC.textContent = debate?.conspiracy?.open || "—";
 
-    // Build share URL that contains server-side Open Graph tags:
-    const shareUrl = `${API_BASE.replace(/\/+$/,'')}/share/${encodeURIComponent(a.id)}`;
+    // SHARE: share the NotifAi article page (drives traffic to your site)
     const shareText = `${title} — NotifAi News`;
-
-    if (shareWa) shareWa.href = `https://wa.me/?text=${encodeURIComponent(shareText + " " + shareUrl)}`;
-    if (shareX)  shareX.href  = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`;
-    if (shareFb) shareFb.href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
-
+    if (shareWa) shareWa.href = `https://wa.me/?text=${encodeURIComponent(shareText + " " + pageUrl)}`;
+    if (shareX)  shareX.href  = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(pageUrl)}`;
+    if (shareFb) shareFb.href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pageUrl)}`;
   } catch (e) {
     if (titleEl) titleEl.textContent = "Failed to load article.";
     console.error(e);
