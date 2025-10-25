@@ -1,9 +1,11 @@
-// feeds.js — stable feed set
+// feeds.js — with new Crypto category
+
 export const CATEGORIES = [
   { key: "us",           label: "US" },
   { key: "world",        label: "World" },
   { key: "entertainment",label: "Entertainment" },
-  { key: "finance",      label: "Finance" }
+  { key: "finance",      label: "Finance" },
+  { key: "crypto",       label: "Crypto" }  // <-- NEW
 ];
 
 export const FEEDS = {
@@ -22,5 +24,11 @@ export const FEEDS = {
   finance: [
     "https://www.theguardian.com/us/business/rss",
     "https://techcrunch.com/feed/"
+  ],
+  // NEW — Crypto sources (feel free to trim/add)
+  crypto: [
+    "https://cointelegraph.com/rss",
+    "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml",
+    "https://decrypt.co/feed"
   ]
 };

@@ -68,6 +68,11 @@ const FEEDS = {
     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     "https://www.investopedia.com/feedbuilder/feed/getfeed?feedName=news"
   ],
+  crypto: [
+    "https://cointelegraph.com/rss",
+    "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml",
+    "https://decrypt.co/feed"
+  ],
 };
 
 /* --------------------------------------------------------

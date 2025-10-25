@@ -32,17 +32,7 @@ if (refreshBtn) {
   });
 }
 
-let ARTICLES = { us:[], world:[], entertainment:[], finance:[] };
-
-// Ensure newest-first per category on the client too (defensive)
-for (const k of ["us","world","entertainment","finance"]) {
-  if (Array.isArray(ARTICLES[k])) {
-    ARTICLES[k].sort((a,b) => {
-      const tp = (x) => Date.parse(x?.publishedAt || x?.createdAt || 0) || 0;
-      return tp(b) - tp(a);
-    });
-  }
-}
+let ARTICLES = { us:[], world:[], entertainment:[], finance:[], crypto:[] };
 
 async function loadData(noCache=false) {
   const url = `${API_BASE}/api/articles${noCache ? `?t=${Date.now()}` : ""}`;
