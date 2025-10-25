@@ -13,7 +13,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* --------------------------------------------------------
-   CONFIG
+   CONFIGF
 --------------------------------------------------------- */
 // How many new items to ingest per category (upper bound)
 const INGEST_MAX_PER_CAT = parseInt(process.env.INGEST_MAX_PER_CAT || "12", 10);
@@ -384,7 +384,7 @@ app.get("/api/articles", (req, res) => {
   const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
 
   // Group by category and take top N
-  const group = { us: [], world: [], entertainment: [], finance: [] };
+  const group = { us: [], world: [], entertainment: [], finance: [], crypto: [] };
   for (const a of all) {
     if (!group[a.category]) continue;
     if (group[a.category].length < limit) group[a.category].push(a);
