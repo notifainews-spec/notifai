@@ -180,3 +180,21 @@ a{text-decoration:none}
   .actions{ display: none; }    /* hides About / X / Dexscreener row on mobile */
   #refreshBtn{ display: none; } /* hides refresh on mobile */
 }
+
+.perspectives {
+  margin-top: 20px;
+  border: 1px solid #e6e6e6;
+  border-radius: 10px;
+  background: #fff;
+}
+.perspectives summary {
+  list-style: none;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 12px 14px;
+  user-select: none;
+}
+.perspectives summary::-webkit-details-marker { display: none; }
+.perspectives summary::after { content: "▼"; float: right; opacity: 0.6; }
+.perspectives[open] summary::after { content: "▲"; }
+.perspectives .voices { padding: 10px 14px 14px; }
