@@ -42,6 +42,15 @@ a{text-decoration:none}
   background:#0ea5e9;color:#fff;
 }
 
+/* Language picker */
+.lang-picker select{
+  border:1px solid var(--border);
+  background:var(--card);
+  color:var(--text);
+  border-radius:8px;
+  padding:6px 8px;
+}
+
 /* Mobile header stacking */
 @media (max-width: 720px){
   .site-header{
