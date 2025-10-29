@@ -51,10 +51,24 @@ a{text-decoration:none}
   }
   .brand{justify-self:start}
   .main-nav{
-    overflow-x:auto;white-space:nowrap;padding-bottom:4px;margin:0 -6px;padding:0 6px 4px;
-    -webkit-overflow-scrolling: touch;scrollbar-width: thin;
-  }
-  .nav-btn{display:inline-block}
+   display:flex;
+   flex-wrap:nowrap;                /* don’t wrap to new line */
+   overflow-x:auto;                 /* allow sideways scroll */
+   -webkit-overflow-scrolling:touch;
+   gap:6px;
+   padding:0 6px 4px;
+   margin:0 -6px;
+   scrollbar-width:none;            /* hide scrollbar (Firefox) */
+}
+  .main-nav::-webkit-scrollbar{display:none;} /* hide scrollbar (Chrome/Safari) */
+
+  .nav-btn{
+   flex:0 0 auto;                   /* keep width */
+   white-space:nowrap;              /* keep label on one line */
+   font-size:13px;
+   padding:6px 10px;
+}
+
   .actions{justify-self:stretch;justify-content:flex-end}
 }
 
@@ -180,21 +194,3 @@ a{text-decoration:none}
   .actions{ display: none; }    /* hides About / X / Dexscreener row on mobile */
   #refreshBtn{ display: none; } /* hides refresh on mobile */
 }
-
-.perspectives {
-  margin-top: 20px;
-  border: 1px solid #e6e6e6;
-  border-radius: 10px;
-  background: #fff;
-}
-.perspectives summary {
-  list-style: none;
-  cursor: pointer;
-  font-weight: 600;
-  padding: 12px 14px;
-  user-select: none;
-}
-.perspectives summary::-webkit-details-marker { display: none; }
-.perspectives summary::after { content: "▼"; float: right; opacity: 0.6; }
-.perspectives[open] summary::after { content: "▲"; }
-.perspectives .voices { padding: 10px 14px 14px; }
