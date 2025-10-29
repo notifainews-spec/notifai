@@ -533,39 +533,6 @@ app.get('/share/:id', (req, res) => {
 </html>`);
 });
 
-// --- Translation API (POST /api/translate) ---
-// body: { target: "en"|"zh"|"ar"|"fr"|"hi"|"de", items: [ "text1", "text2", ... ] }
-app.post("/api/translate", express.json({ limit: "1mb" }), async (req, res) => {
-  try {
-    const { target = "en", items = [] } = req.body || {};
-    if (!Array.isArray(items) || items.length === 0) return res.json({ items: [] });
-    if (target === "en") return res.json({ items }); // no-op fast path
-
-    const prompt = `Translate the following array of English strings into ${target}, preserving meaning and names.
-Return ONLY a valid JSON array of strings in the same order.
-Input: ${JSON.stringify(items)}`;
-
-    const OpenAI = (await import("openai")).default;
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    const out = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const text = out.choices?.[0]?.message?.content?.trim() || "[]";
-    let arr;
-    try { arr = JSON.parse(text); } catch { arr = items; }
-    if (!Array.isArray(arr) || arr.length !== items.length) arr = items;
-
-    res.json({ items: arr });
-  } catch (e) {
-    console.error("translate error", e);
-    res.status(500).json({ items: [] });
-  }
-});
-
 /* --------------------------------------------------------
    START + AUTO-INGEST
 --------------------------------------------------------- */
