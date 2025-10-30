@@ -54,13 +54,15 @@ async function load() {
     if (!res.ok) throw new Error(`article ${res.status}`);
     const a = await res.json();
 
+    const debate = a.debateJson ? JSON.parse(a.debateJson) : {};
     const lang = currentLang();
+
     const srcTexts = [
       a.title || "(untitled)",
       a.summary || "",
-      JSON.parse(a.debateJson || "{}")?.socialist?.open  || "",
-      JSON.parse(a.debateJson || "{}")?.rightwing?.open  || "",
-      JSON.parse(a.debateJson || "{}")?.conspiracy?.open || ""
+      debate?.socialist?.open  || "",
+      debate?.rightwing?.open  || "",
+      debate?.conspiracy?.open || ""
     ];
 
     let translated = srcTexts;
@@ -118,9 +120,9 @@ function toProxy(u) {
   return `${API_BASE}/img?u=${encodeURIComponent(u)}`;
 }
 
-// Language select wiring
+// Language select wiring (desktop or mobile)
 (function(){
-  const sel = document.getElementById("langSelect");
+  const sel = document.querySelector("#langSelect, #langSelectArticleMobile");
   if (!sel) return;
   const lang = currentLang();
   sel.value = lang;

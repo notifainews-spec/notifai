@@ -42,6 +42,96 @@ a{text-decoration:none}
   background:#0ea5e9;color:#fff;
 }
 
+/* Language picker look (desktop + mobile) */
+.lang-picker select,
+.lang-mobile select{
+  border:1px solid var(--border);
+  background:var(--card);
+  color:var(--text);
+  border-radius:8px;
+  padding:6px 8px;
+}
+
+/* Article header single-row layout */
+.article-header .header-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:nowrap;      /* keep one line on desktop */
+}
+
+.article-header .header-left,
+.article-header .header-right{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;           /* prevent overflow pushing to new lines */
+}
+
+.brand img{
+  height:28px;           /* keep logo modest so it doesn’t wrap */
+  width:auto;
+  display:block;
+}
+
+.article-nav .home-link{
+  text-decoration:none;
+  font-weight:600;
+}
+
+/* Keep actions in a single line */
+.actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:nowrap;
+}
+
+.actions .lang-picker select{
+  max-width:140px;
+}
+
+/* Mobile behavior: allow wrapping under the bar if needed */
+@media (max-width: 720px){
+  .article-header .header-row{
+    flex-wrap:wrap;
+    row-gap:8px;
+  }
+  .article-header .header-right{
+    margin-left:auto;
+  }
+  /* On phones, show lang-mobile and (optionally) hide desktop picker */
+  .lang-mobile{
+    display:flex;
+    justify-content:flex-end;
+    margin-top:6px;
+  }
+  .actions .lang-picker{ display:none; }
+}
+
+@media (min-width: 721px){
+  .lang-mobile{ display:none; }
+  .actions .lang-picker{ display:inline-flex; }
+}
+
+/* Mobile-only location for the picker (below categories) */
+.lang-mobile{ display:none; }
+@media (max-width: 720px){
+  .lang-mobile{
+    display:flex;
+    justify-content:center;
+    margin:6px 0 2px;
+  }
+  /* If your header actions are hidden on phones, also hide the desktop picker there */
+  .actions .lang-picker{ display:none; }
+}
+@media (min-width: 721px){
+  .lang-mobile{ display:none; }
+  .actions .lang-picker{ display:inline-flex; }
+}
+
+
 /* Mobile header stacking */
 @media (max-width: 720px){
   .site-header{
