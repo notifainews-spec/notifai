@@ -8,7 +8,7 @@ let currentCat = "us";
 
 // DOM elements
 const grid = document.querySelector("#grid");
-const catButtons = document.querySelectorAll(".category");
+const catButtons = document.querySelectorAll(".nav-btn, .category");
 
 // ---------------------------------------------------------
 // CATEGORY RENDERER
