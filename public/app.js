@@ -18,7 +18,7 @@ function renderHero(item){
   const img = item.image ? `${API_BASE}/img?u=${encodeURIComponent(item.image)}` : "/cover.jpg";
   hero.hidden = false;
   hero.innerHTML = `
-    <article class="hero-card">
+    <article class="hero-card hero-block">
       <a class="hero-media" href="article.html?id=${item.id}">
         <img src="${img}" alt="${item.title}">
         <div class="hero-overlay">
@@ -54,46 +54,47 @@ async function renderCategory(cat) {
   renderHero(items[0]);
   const rest = items.slice(1);
 
-for (const a of rest) {
-  const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
+  for (const a of rest) {
+    const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
 
-  // Make the entire card clickable, accessible via keyboard
-  const card = document.createElement("article");
-  card.className = "card";
-  card.dataset.id = a.id;
-  card.tabIndex = 0;               // focusable for keyboard users
+    // Make the entire card clickable, accessible via keyboard
+    const card = document.createElement("article");
+    card.className = "card";
+    card.dataset.id = a.id;
+    card.tabIndex = 0;               // focusable for keyboard users
 
-  card.innerHTML = `
-    <div class="thumb">
-      <img src="${img}" alt="${a.title}" loading="lazy" decoding="async">
-    </div>
-    <div class="info">
-      <h3>${a.title}</h3>
-      <p class="summary">${a.summary || ""}</p>
-      <div class="meta">
-        <span>${a.source || ""}</span>
-        <a href="article.html?id=${a.id}" class="read">Read more →</a>
+    card.innerHTML = `
+      <div class="thumb">
+        <img src="${img}" alt="${a.title}" loading="lazy" decoding="async">
       </div>
-    </div>
-  `;
+      <div class="info">
+        <h3>${a.title}</h3>
+        <p class="summary">${a.summary || ""}</p>
+        <div class="meta">
+          <span>${a.source || ""}</span>
+          <a href="article.html?id=${a.id}" class="read">Read more →</a>
+        </div>
+      </div>
+    `;
 
-  // Click anywhere on the card → open article
-  const go = () => { location.href = `article.html?id=${a.id}`; };
-  card.addEventListener("click", go);
-  card.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      go();
-    }
-  });
+    // Click anywhere on the card → open article
+    const go = () => { location.href = `article.html?id=${a.id}`; };
+    card.addEventListener("click", go);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        go();
+      }
+    });
 
-  // Prevent inner links from double-triggering the card click
-  card.querySelectorAll("a").forEach(el => {
-    el.addEventListener("click", (e) => e.stopPropagation());
-  });
+    // Prevent inner links from double-triggering the card click
+    card.querySelectorAll("a").forEach(el => {
+      el.addEventListener("click", (e) => e.stopPropagation());
+    });
 
-  grid.appendChild(card);
-}
+    grid.appendChild(card);
+  }
+} // ← IMPORTANT: this brace was missing
 
 async function loadArticles() {
   try{
@@ -138,7 +139,8 @@ if (refreshBtn){
 }
 
 // Footer year
-document.getElementById("year").textContent = new Date().getFullYear();
+const y = document.getElementById("year");
+if (y) y.textContent = new Date().getFullYear();
 
 // Init
 loadArticles();
