@@ -42,15 +42,24 @@ a{text-decoration:none;color:inherit}
 
 /* ===== Mobile header: keep in one column, categories scrollable ===== */
 @media (max-width: 720px){
-  .site-header{grid-template-columns:1fr;text-align:center}
-  .brand{justify-self:center}
-  .actions{display:none}
-  #refreshBtn{display:none}
-  .main-nav{
-    overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;padding:0 6px 4px;margin:0 -6px;scrollbar-width:none
+  .hero-media{aspect-ratio:4/3}
+  .hero-info{padding:12px 10px}
+  /* Smaller, cleaner headline for the highlight story */
+  .hero-title{
+    font-size:16px;         /* ↓ from 19px */
+    line-height:1.25;
+    margin:2px 0 0;
+    display:-webkit-box;
+    -webkit-line-clamp:3;   /* max ~3 lines */
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+    text-shadow:0 2px 6px rgba(0,0,0,.35);
   }
-  .main-nav::-webkit-scrollbar{display:none}
-  .nav-btn{flex:0 0 auto;white-space:nowrap;font-size:13px;padding:6px 10px}
+  .hero-kicker{font-size:10.5px}
+  .hero-actions{display:none}
+  .hero-overlay{
+    background:linear-gradient(to top, rgba(0,0,0,.65), rgba(0,0,0,.25) 45%, rgba(0,0,0,0))
+  }
 }
 
 /* ===== Layout ===== */
