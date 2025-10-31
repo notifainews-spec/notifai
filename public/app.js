@@ -54,25 +54,45 @@ async function renderCategory(cat) {
   renderHero(items[0]);
   const rest = items.slice(1);
 
-  for (const a of rest) {
-    const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `
-      <a class="thumb" href="article.html?id=${a.id}">
-        <img src="${img}" alt="${a.title}" loading="lazy" decoding="async">
-      </a>
-      <div class="info">
-        <h3>${a.title}</h3>
-        <p class="summary">${a.summary || ""}</p>
-        <div class="meta">
-          <span>${a.source || ""}</span>
-          <a href="article.html?id=${a.id}" class="read">Read more →</a>
-        </div>
+for (const a of rest) {
+  const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
+
+  // Make the entire card clickable, accessible via keyboard
+  const card = document.createElement("article");
+  card.className = "card";
+  card.dataset.id = a.id;
+  card.tabIndex = 0;               // focusable for keyboard users
+
+  card.innerHTML = `
+    <div class="thumb">
+      <img src="${img}" alt="${a.title}" loading="lazy" decoding="async">
+    </div>
+    <div class="info">
+      <h3>${a.title}</h3>
+      <p class="summary">${a.summary || ""}</p>
+      <div class="meta">
+        <span>${a.source || ""}</span>
+        <a href="article.html?id=${a.id}" class="read">Read more →</a>
       </div>
-    `;
-    grid.appendChild(card);
-  }
+    </div>
+  `;
+
+  // Click anywhere on the card → open article
+  const go = () => { location.href = `article.html?id=${a.id}`; };
+  card.addEventListener("click", go);
+  card.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      go();
+    }
+  });
+
+  // Prevent inner links from double-triggering the card click
+  card.querySelectorAll("a").forEach(el => {
+    el.addEventListener("click", (e) => e.stopPropagation());
+  });
+
+  grid.appendChild(card);
 }
 
 async function loadArticles() {
