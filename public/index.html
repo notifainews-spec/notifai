@@ -4,15 +4,16 @@
   <meta charset="utf-8" />
   <title>NotifAi News</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
- <!-- Google tag (gtag.js) -->
- <script async src="https://www.googletagmanager.com/gtag/js?id=G-XKHQTRV8JF"></script>
- <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
 
-  gtag('config', 'G-XKHQTRV8JF');
- </script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XKHQTRV8JF"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XKHQTRV8JF');
+  </script>
+
   <link rel="icon" type="image/png" href="./favicon.png" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -31,20 +32,16 @@
       <button data-cat="entertainment" class="nav-btn">Entertainment</button>
       <button data-cat="finance" class="nav-btn">Finance</button>
       <button data-cat="crypto" class="nav-btn">Crypto</button>
-
     </nav>
 
     <div class="actions">
       <a class="nav-link" href="./about.html">About</a>
       <a class="nav-link" href="https://x.com/notifaibnb" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
-
-      <!-- Dexscreener button (keeps your style) -->
       <a class="nav-link dexscreener"
          href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444"
          target="_blank" rel="noopener" aria-label="Dexscreener">
         Dexscreener
       </a>
-
       <button id="refreshBtn" title="Fetch latest">↻ Refresh</button>
     </div>
   </header>
@@ -55,15 +52,15 @@
   </main>
 
   <footer class="site-footer">
-   <div>© <span id="year"></span> NotifAi News</div>
-   <div class="footer-links">
-     <a href="./about.html">About</a>
-     <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
-     <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
-   </div>
+    <div>© <span id="year"></span> NotifAi News</div>
+    <div class="footer-links">
+      <a href="./about.html">About</a>
+      <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
+      <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+    </div>
   </footer>
 
-  <!-- If your API is on Render/elsewhere, uncomment and set this: -->
+  <!-- If your API is on Render/elsewhere, you can set it like this: -->
   <!-- <script>window.API_BASE="https://YOUR-RENDER.onrender.com";</script> -->
   <script type="module" src="./app.js"></script>
 </body>
