@@ -40,7 +40,7 @@ a{text-decoration:none;color:inherit}
 .actions .dexscreener{border-color:#0ea5e9}
 .actions .dexscreener:hover{background:#0ea5e9;color:#fff}
 
-/* ===== Mobile header: keep in one column, categories scrollable ===== */
+/* ===== Mobile header ===== */
 @media (max-width: 720px){
   .site-header{grid-template-columns:1fr;text-align:center}
   .brand{justify-self:center}
@@ -48,9 +48,7 @@ a{text-decoration:none;color:inherit}
   #refreshBtn{display:none}
   .main-nav{
     overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;padding:0 6px 4px;margin:0 -6px;scrollbar-width:none;
-    touch-action: pan-y;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x mandatory;
+    touch-action: pan-y; overscroll-behavior-x: contain; scroll-snap-type: x mandatory;
   }
   .main-nav::-webkit-scrollbar{display:none}
   .nav-btn{flex:0 0 auto;white-space:nowrap;font-size:13px;padding:6px 10px;scroll-snap-align:center}
@@ -127,62 +125,27 @@ a{text-decoration:none;color:inherit}
   margin: 24px auto;
   max-width: 700px;
 }
+.contact-section h1 { font-size: 28px; margin-bottom: 16px; text-align: center; }
+.contact-section p { font-size: 16px; line-height: 1.6; margin-bottom: 16px; color: var(--text); }
+.contact-card { background: #f9fafb; border: 1px solid var(--border); border-radius: 10px; padding: 20px; text-align: center; margin: 20px 0; }
+.contact-email { display:inline-block; font-size:18px; font-weight:600; color:var(--accent); margin-top:8px; }
+.contact-email:hover { text-decoration: underline; }
+.note { color: var(--muted); font-size: 15px; margin-top: 20px; text-align: center; }
 
-.contact-section h1 {
-  font-size: 28px;
-  margin-bottom: 16px;
-  text-align: center;
-}
-
-.contact-section p {
-  font-size: 16px;
-  line-height: 1.6;
-  margin-bottom: 16px;
-  color: var(--text);
-}
-
-.contact-card {
-  background: #f9fafb;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
-  text-align: center;
-  margin: 20px 0;
-}
-
-.contact-email {
-  display: inline-block;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--accent);
-  margin-top: 8px;
-}
-
-.contact-email:hover {
-  text-decoration: underline;
-}
-
-.note {
-  color: var(--muted);
-  font-size: 15px;
-  margin-top: 20px;
-  text-align: center;
-}
-
-/* ===== Mobile-only tweaks for hero/top story (grid mode) ===== */
+/* ===== Mobile hero tweaks (grid mode) ===== */
 @media (max-width: 720px){
-  .hero-title{ font-size:20px; line-height:1.28; }
+  .hero-title{ font-size:20px; line-height:1.25; }
   .hero-info{ padding:12px; }
   .hero-kicker{ font-size:11px; margin-bottom:4px; }
 }
 
 /* =========================================================
    STORY MODE (mobile-only)
-   ========================================================= */
+========================================================= */
 #storyMode{ display:none; }
 
 @media (max-width: 720px){
-  /* When Story Mode is active, hide hero + grid */
+  /* Show Story Mode, hide grid/hero when active */
   body.story-active #hero,
   body.story-active #grid { display:none !important; }
   body.story-active #storyMode { display:block; }
@@ -192,8 +155,8 @@ a{text-decoration:none;color:inherit}
 
   #storyMode{
     position:relative;
-    height: calc(100svh - 120px); /* approx header+footer total height; JS also scroll-locks */
-    margin: 8px 0;
+    /* Height will be set precisely by JS based on header+footer */
+    margin:8px 0;
   }
 
   .story-card{
@@ -208,14 +171,8 @@ a{text-decoration:none;color:inherit}
     flex-direction:column;
   }
 
-  .story-media{
-    position:relative;
-    aspect-ratio:16/9;
-    background:#f1f5f9;
-  }
-  .story-media img{
-    width:100%; height:100%; object-fit:cover;
-  }
+  .story-media{ position:relative; aspect-ratio:16/9; background:#f1f5f9; }
+  .story-media img{ width:100%; height:100%; object-fit:cover; }
 
   .story-body{
     padding:14px;
@@ -223,13 +180,47 @@ a{text-decoration:none;color:inherit}
     overflow:auto;
   }
   .story-source{ font-size:12px; color:var(--muted); }
-  .story-title{ margin:0; font-size:20px; line-height:1.28; font-weight:800; }
-  .story-summary{ font-size:14.5px; line-height:1.42; color:var(--text); }
-  .story-actions{ display:flex; gap:10px; margin-top:8px; }
+
+  /* Tighter headline & clamped to avoid overflow */
+  .story-title{
+    margin:0;
+    font-size:18px;
+    line-height:1.25;
+    font-weight:800;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+  }
+
+  /* Summary: 2–3 lines max */
+  .story-summary{
+    font-size:14px; line-height:1.4; color:var(--text);
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+  }
+
+  .story-actions{ display:flex; gap:10px; margin-top:6px; flex-wrap:wrap; }
   .story-actions .btn{
     background:#fff; color:#111; border:1px solid var(--border);
     border-radius:10px; padding:8px 12px;
   }
+
+  /* Floating next hint/CTA */
+  #storyNext{
+    position:fixed;
+    left:50%;
+    transform:translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0) + 66px); /* keep above footer */
+    z-index:60;
+    background:rgba(17,24,39,.96);
+    color:#fff;
+    border-radius:999px;
+    padding:10px 14px;
+    font-size:13px;
+    box-shadow: var(--shadow);
+    display:none;
+    align-items:center;
+    gap:8px;
+  }
+  #storyNext .arrow{ display:inline-block; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:7px solid #fff; }
+  body.story-active #storyNext{ display:flex; }
 
   /* Slide animations */
   .slide-in-up   { animation: slideInUp .22s ease-out both; }

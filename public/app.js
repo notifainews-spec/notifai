@@ -1,7 +1,11 @@
 /* =========================================================
    NotifAi News - Main App (Homepage)
    Mobile Story Mode + global category swipe
-   ========================================================= */
+   - Headlines clamped/smaller on mobile
+   - Summary limited to 2–3 lines
+   - Footer always visible (dynamic height)
+   - Floating "Swipe up / Next" pill
+========================================================= */
 
 const API_BASE = window.API_BASE || location.origin;
 let ARTICLES = {};
@@ -13,9 +17,39 @@ const storyMode = document.querySelector("#storyMode");
 const catButtons = document.querySelectorAll(".main-nav .nav-btn");
 const refreshBtn = document.getElementById("refreshBtn");
 
+// Floating next pill (injected once)
+let storyNextBtn = null;
+
 // ===== Story Mode state (mobile only) =====
 let storyIndex = 0;
 const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
+
+// ---------------- Utilities ----------------
+function vhMinusHeaderFooter(){
+  const header = document.querySelector(".site-header");
+  const footer = document.querySelector(".site-footer");
+  const h = header ? header.getBoundingClientRect().height : 0;
+  const f = footer ? footer.getBoundingClientRect().height : 0;
+  // Use visual viewport height where available (prevents iOS URL bar shifts)
+  const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+  return Math.max(200, vh - h - f - 16); // minus small margin
+}
+
+function setStoryHeight(){
+  if (!isMobile()) return;
+  // Precisely pin story mode height so footer is always visible
+  storyMode.style.height = `${vhMinusHeaderFooter()}px`;
+}
+
+function currentList() {
+  return (ARTICLES?.[currentCat]) || (ARTICLES?.categories?.[currentCat]) || [];
+}
+
+function preload(src){
+  if (!src) return;
+  const i = new Image();
+  i.src = `${API_BASE}/img?u=${encodeURIComponent(src)}`;
+}
 
 // ---------------- Renderers ----------------
 function renderHero(item){
@@ -41,10 +75,6 @@ function renderHero(item){
   `;
 }
 
-function currentList() {
-  return (ARTICLES?.[currentCat]) || (ARTICLES?.categories?.[currentCat]) || [];
-}
-
 async function renderCategory(cat) {
   const items = (ARTICLES?.[cat]) || (ARTICLES?.categories?.[cat]) || [];
 
@@ -53,10 +83,11 @@ async function renderCategory(cat) {
     // Ensure index in range
     if (storyIndex >= items.length) storyIndex = Math.max(0, items.length - 1);
     renderStory(items, storyIndex, "reset");
+    setStoryHeight();
     return;
   }
 
-  // Grid/Hero mode (desktop or mobile fallback)
+  // Grid/Hero mode (desktop or mobile grid fallback)
   grid.innerHTML = "";
   renderHero(null);
 
@@ -88,7 +119,6 @@ async function renderCategory(cat) {
     `;
     // Make whole card clickable (not just image/text)
     card.addEventListener("click", (e) => {
-      // avoid conflict if clicking a nested link explicitly
       const aEl = e.target.closest("a");
       if (aEl) return;
       location.href = `article.html?id=${a.id}`;
@@ -114,11 +144,13 @@ async function loadArticles() {
     // Auto-enable Story Mode on mobile
     if (isMobile()) {
       enableStoryMode();
+      setStoryHeight();
     } else {
       disableStoryMode();
     }
 
     await renderCategory(currentCat);
+    setStoryHeight();
   }catch(e){
     console.error("Error loading articles:", e);
     grid.innerHTML = `<div class="empty">Failed to fetch articles.</div>`;
@@ -126,7 +158,7 @@ async function loadArticles() {
 }
 
 // ---------------- Category Tab Clicks ----------------
-catButtons.forEach(btn => {
+document.querySelectorAll(".main-nav .nav-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const cat = btn.dataset.cat;
     if (!cat || cat === currentCat) return;
@@ -135,10 +167,12 @@ catButtons.forEach(btn => {
     document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     renderCategory(currentCat);
+    setStoryHeight();
   });
 });
 
 // ---------------- Manual Refresh ----------------
+const refreshBtn = document.getElementById("refreshBtn");
 if (refreshBtn){
   refreshBtn.addEventListener("click", async () => {
     try{
@@ -155,22 +189,22 @@ if (yr) yr.textContent = new Date().getFullYear();
 
 // ---------------- Story Mode (mobile) ----------------
 function enableStoryMode(){
-  document.body.classList.add("story-active");
+  if (!document.body.classList.contains("story-active")){
+    document.body.classList.add("story-active");
+  }
   storyMode.hidden = false;
+  ensureStoryNextPill();
+  setStoryHeight();
 }
 function disableStoryMode(){
   document.body.classList.remove("story-active");
   storyMode.hidden = true;
-}
-
-function preload(src){
-  if (!src) return;
-  const i = new Image();
-  i.src = `${API_BASE}/img?u=${encodeURIComponent(src)}`;
+  if (storyNextBtn) storyNextBtn.style.display = "none";
 }
 
 function storyHtml(a){
   const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
+  // Summary trimmed in CSS to 2–3 lines; keep full string here
   return `
     <article class="story-card" data-id="${a.id}">
       <div class="story-media">
@@ -202,7 +236,6 @@ function renderStory(list, idx, direction="reset"){
   if (list[storyIndex+1]?.image) preload(list[storyIndex+1].image);
   if (list[storyIndex-1]?.image) preload(list[storyIndex-1].image);
 
-  // Animate
   const next = document.createElement("div");
   next.innerHTML = storyHtml(a);
   const nextNode = next.firstElementChild;
@@ -213,6 +246,7 @@ function renderStory(list, idx, direction="reset"){
     nextNode.classList.add("slide-in-up");
     storyMode.appendChild(nextNode);
     attachStoryTap(nextNode, a.id);
+    setStoryHeight();
     return;
   }
 
@@ -224,22 +258,37 @@ function renderStory(list, idx, direction="reset"){
   nextNode.classList.add(inClass);
   storyMode.appendChild(nextNode);
 
-  // after animation, remove old & bind click
   setTimeout(() => {
     try { old.remove(); } catch {}
     attachStoryTap(nextNode, a.id);
+    setStoryHeight();
   }, 230);
 }
 
 function attachStoryTap(node, id){
   node.addEventListener("click", (e) => {
-    // ignore clicks on explicit links/buttons (let them work)
-    if (e.target.closest("a")) return;
+    if (e.target.closest("a")) return; // allow normal link clicks
     location.href = `article.html?id=${id}`;
   });
 }
 
-/* Vertical swipe only inside storyMode; Horizontal swipe remains global */
+function ensureStoryNextPill(){
+  if (storyNextBtn) { storyNextBtn.style.display = "flex"; return; }
+  storyNextBtn = document.createElement("button");
+  storyNextBtn.id = "storyNext";
+  storyNextBtn.innerHTML = `<span class="arrow"></span> <span>Swipe up / Next</span>`;
+  storyNextBtn.type = "button";
+  storyNextBtn.addEventListener("click", () => {
+    const list = currentList();
+    if (!list.length) return;
+    if (storyIndex < list.length - 1) {
+      renderStory(list, storyIndex + 1, "up");
+    }
+  });
+  document.body.appendChild(storyNextBtn);
+}
+
+// Vertical swipe inside storyMode
 (function enableStorySwipe(){
   const mq = window.matchMedia("(max-width: 720px)");
   if (!mq.matches) return;
@@ -259,9 +308,8 @@ function attachStoryTap(node, id){
     if (!t) return;
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
-    // Vertical swipe takes precedence here (we're inside the story zone)
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10 && e.cancelable){
-      e.preventDefault(); // avoid body scroll jank
+      e.preventDefault(); // avoid page scroll
     }
   }
   function onUp(e){
@@ -271,10 +319,8 @@ function attachStoryTap(node, id){
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
 
-    // If horizontal dominates, let the global handler do categories
-    if (Math.abs(dx) > Math.abs(dy)) return;
+    if (Math.abs(dx) > Math.abs(dy)) return; // horizontal handled globally
 
-    // Vertical swipe threshold
     const elapsed = Date.now() - startTime;
     const THRESH = elapsed < 300 ? 50 : 80;
 
@@ -282,15 +328,12 @@ function attachStoryTap(node, id){
     if (!list.length) return;
 
     if (dy <= -THRESH && storyIndex < list.length - 1){
-      // swipe up → next story
       renderStory(list, storyIndex + 1, "up");
     } else if (dy >= THRESH && storyIndex > 0){
-      // swipe down → previous story
       renderStory(list, storyIndex - 1, "down");
     }
   }
 
-  // Bind only to the story container, so header/footer remain tappable
   storyMode.addEventListener("touchstart", onDown, { passive:true });
   storyMode.addEventListener("touchmove",  onMove,  { passive:false });
   storyMode.addEventListener("touchend",   onUp,    { passive:true });
@@ -302,8 +345,7 @@ function attachStoryTap(node, id){
 
 /* =========================================================
    Global Mobile Swipe: left/right to change category
-   (unchanged from your last working version)
-   ========================================================= */
+========================================================= */
 (function enableGlobalSwipe(){
   const mq = window.matchMedia("(max-width: 720px)");
   if (!mq.matches) return;
@@ -321,11 +363,12 @@ function attachStoryTap(node, id){
     if (!nextCat || nextCat === currentCat) return;
 
     currentCat = nextCat;
-    storyIndex = 0; // reset to first article in the new category
+    storyIndex = 0;
     btns.forEach(b => b.classList.remove("active"));
     nextBtn.classList.add("active");
     try { nextBtn.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); } catch {}
     renderCategory(currentCat);
+    setStoryHeight();
   }
 
   function onDown(e){
@@ -340,11 +383,7 @@ function attachStoryTap(node, id){
     if (!t) return;
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
-
-    // If vertical dominates, let story handler or page scroll manage it
-    if (Math.abs(dy) > Math.abs(dx)) return;
-
-    // If clearly horizontal, prevent accidental taps
+    if (Math.abs(dy) > Math.abs(dx)) return; // let vertical handler work
     if (Math.abs(dx) > 10 && e.cancelable) e.preventDefault();
   }
   function onUp(e){
@@ -376,11 +415,23 @@ function attachStoryTap(node, id){
 })();
 
 // ---------------- Init ----------------
-loadArticles();
+async function init(){
+  await loadArticles();
+  if (isMobile()) {
+    ensureStoryNextPill();
+    setStoryHeight();
+  }
+}
+init();
 
-// Keep mode correct on rotation / resize
+// Recompute height on resize/rotation and after content changes
 window.addEventListener("resize", () => {
-  if (isMobile()) enableStoryMode(); else disableStoryMode();
-  // Re-render current view in case sizes changed
+  if (isMobile()) {
+    enableStoryMode();
+    setStoryHeight();
+  } else {
+    disableStoryMode();
+  }
   renderCategory(currentCat);
+  if (isMobile()) setStoryHeight();
 });
