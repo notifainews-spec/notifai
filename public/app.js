@@ -18,7 +18,7 @@ function renderHero(item){
   const img = item.image ? `${API_BASE}/img?u=${encodeURIComponent(item.image)}` : "/cover.jpg";
   hero.hidden = false;
   hero.innerHTML = `
-    <article class="hero-card hero-block">
+    <article class="hero-card">
       <a class="hero-media" href="article.html?id=${item.id}">
         <img src="${img}" alt="${item.title}">
         <div class="hero-overlay">
@@ -56,17 +56,12 @@ async function renderCategory(cat) {
 
   for (const a of rest) {
     const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
-
-    // Make the entire card clickable, accessible via keyboard
-    const card = document.createElement("article");
+    const card = document.createElement("div");
     card.className = "card";
-    card.dataset.id = a.id;
-    card.tabIndex = 0;               // focusable for keyboard users
-
     card.innerHTML = `
-      <div class="thumb">
+      <a class="thumb" href="article.html?id=${a.id}">
         <img src="${img}" alt="${a.title}" loading="lazy" decoding="async">
-      </div>
+      </a>
       <div class="info">
         <h3>${a.title}</h3>
         <p class="summary">${a.summary || ""}</p>
@@ -76,25 +71,9 @@ async function renderCategory(cat) {
         </div>
       </div>
     `;
-
-    // Click anywhere on the card → open article
-    const go = () => { location.href = `article.html?id=${a.id}`; };
-    card.addEventListener("click", go);
-    card.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        go();
-      }
-    });
-
-    // Prevent inner links from double-triggering the card click
-    card.querySelectorAll("a").forEach(el => {
-      el.addEventListener("click", (e) => e.stopPropagation());
-    });
-
     grid.appendChild(card);
   }
-} // ← IMPORTANT: this brace was missing
+}
 
 async function loadArticles() {
   try{
@@ -139,8 +118,7 @@ if (refreshBtn){
 }
 
 // Footer year
-const y = document.getElementById("year");
-if (y) y.textContent = new Date().getFullYear();
+document.getElementById("year").textContent = new Date().getFullYear();
 
 // Init
 loadArticles();
