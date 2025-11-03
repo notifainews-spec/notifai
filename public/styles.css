@@ -47,17 +47,20 @@ a{text-decoration:none;color:inherit}
   .actions{display:none}
   #refreshBtn{display:none}
   .main-nav{
-    overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;padding:0 6px 4px;margin:0 -6px;scrollbar-width:none
+    overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;padding:0 6px 4px;margin:0 -6px;scrollbar-width:none;
+    touch-action: pan-y;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
   }
   .main-nav::-webkit-scrollbar{display:none}
-  .nav-btn{flex:0 0 auto;white-space:nowrap;font-size:13px;padding:6px 10px}
+  .nav-btn{flex:0 0 auto;white-space:nowrap;font-size:13px;padding:6px 10px;scroll-snap-align:center}
 }
 
 /* ===== Layout ===== */
 .container{max-width:1150px;margin:20px auto;padding:0 16px}
 .notice{background:#fff7ed;border:1px solid var(--border);color:#9a3412;padding:8px 10px;border-radius:8px;margin-bottom:14px}
 
-/* ===== Hero / Top story ===== */
+/* ===== Hero / Top story (grid mode) ===== */
 .hero-block{position:relative;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px;box-shadow:var(--shadow)}
 .hero-media{position:relative;aspect-ratio:16/9;background:#f1f5f9}
 .hero-media img{width:100%;height:100%;object-fit:cover}
@@ -166,26 +169,76 @@ a{text-decoration:none;color:inherit}
   text-align: center;
 }
 
-/* Mobile-only tweaks for the hero/top story */
+/* ===== Mobile-only tweaks for hero/top story (grid mode) ===== */
 @media (max-width: 720px){
-  .hero-title{
-    font-size: 20px;      /* was 28px on desktop */
-    line-height: 1.28;
+  .hero-title{ font-size:20px; line-height:1.28; }
+  .hero-info{ padding:12px; }
+  .hero-kicker{ font-size:11px; margin-bottom:4px; }
+}
+
+/* =========================================================
+   STORY MODE (mobile-only)
+   ========================================================= */
+#storyMode{ display:none; }
+
+@media (max-width: 720px){
+  /* When Story Mode is active, hide hero + grid */
+  body.story-active #hero,
+  body.story-active #grid { display:none !important; }
+  body.story-active #storyMode { display:block; }
+
+  /* Lock page scroll while story mode is shown */
+  body.story-active { overflow:hidden; }
+
+  #storyMode{
+    position:relative;
+    height: calc(100svh - 120px); /* approx header+footer total height; JS also scroll-locks */
+    margin: 8px 0;
   }
-  .hero-info{
-    padding: 12px;        /* a bit tighter around text */
+
+  .story-card{
+    width:100%;
+    height:100%;
+    border:1px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+    background:#fff;
+    box-shadow: var(--shadow);
+    display:flex;
+    flex-direction:column;
   }
-  .hero-kicker{
-    font-size: 11px;      /* small label above the title */
-    margin-bottom: 4px;
+
+  .story-media{
+    position:relative;
+    aspect-ratio:16/9;
+    background:#f1f5f9;
   }
-  /* Improve horizontal touch behavior on the category bar */
-  .main-nav{
-    touch-action: pan-y;             /* allow vertical scroll, ignore horizontal gestures */
-    overscroll-behavior-x: contain;  /* keep the page from rubber-banding horizontally */
-    scroll-snap-type: x mandatory;   /* optional: tab-by-tab snapping */
+  .story-media img{
+    width:100%; height:100%; object-fit:cover;
   }
-  .nav-btn{ 
-    scroll-snap-align: center;       /* optional: snap each tab to center on flick */
+
+  .story-body{
+    padding:14px;
+    display:flex; flex-direction:column; gap:8px;
+    overflow:auto;
   }
+  .story-source{ font-size:12px; color:var(--muted); }
+  .story-title{ margin:0; font-size:20px; line-height:1.28; font-weight:800; }
+  .story-summary{ font-size:14.5px; line-height:1.42; color:var(--text); }
+  .story-actions{ display:flex; gap:10px; margin-top:8px; }
+  .story-actions .btn{
+    background:#fff; color:#111; border:1px solid var(--border);
+    border-radius:10px; padding:8px 12px;
+  }
+
+  /* Slide animations */
+  .slide-in-up   { animation: slideInUp .22s ease-out both; }
+  .slide-out-up  { animation: slideOutUp .22s ease-in both; }
+  .slide-in-down { animation: slideInDown .22s ease-out both; }
+  .slide-out-down{ animation: slideOutDown .22s ease-in both; }
+
+  @keyframes slideInUp   { from{ transform:translateY(20px); opacity:.0 } to{ transform:translateY(0); opacity:1 } }
+  @keyframes slideOutUp  { from{ transform:translateY(0); opacity:1 }    to{ transform:translateY(-20px); opacity:.0 } }
+  @keyframes slideInDown { from{ transform:translateY(-20px); opacity:.0 } to{ transform:translateY(0); opacity:1 } }
+  @keyframes slideOutDown{ from{ transform:translateY(0); opacity:1 }     to{ transform:translateY(20px); opacity:.0 } }
 }

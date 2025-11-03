@@ -1,6 +1,6 @@
 /* =========================================================
    NotifAi News - Main App (Homepage)
-   Mobile global swipe to change categories
+   Mobile Story Mode + global category swipe
    ========================================================= */
 
 const API_BASE = window.API_BASE || location.origin;
@@ -9,9 +9,13 @@ let currentCat = "us";
 
 const grid = document.querySelector("#grid");
 const hero = document.querySelector("#hero");
+const storyMode = document.querySelector("#storyMode");
 const catButtons = document.querySelectorAll(".main-nav .nav-btn");
 const refreshBtn = document.getElementById("refreshBtn");
-const catBar = document.getElementById("catBar"); // optional, still used for visual active state
+
+// ===== Story Mode state (mobile only) =====
+let storyIndex = 0;
+const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
 
 // ---------------- Renderers ----------------
 function renderHero(item){
@@ -37,12 +41,22 @@ function renderHero(item){
   `;
 }
 
-async function renderCategory(cat) {
-  const items =
-    (ARTICLES?.[cat]) ||
-    (ARTICLES?.categories?.[cat]) ||
-    [];
+function currentList() {
+  return (ARTICLES?.[currentCat]) || (ARTICLES?.categories?.[currentCat]) || [];
+}
 
+async function renderCategory(cat) {
+  const items = (ARTICLES?.[cat]) || (ARTICLES?.categories?.[cat]) || [];
+
+  // If on mobile and story mode is active, render using story view instead
+  if (isMobile() && document.body.classList.contains("story-active")) {
+    // Ensure index in range
+    if (storyIndex >= items.length) storyIndex = Math.max(0, items.length - 1);
+    renderStory(items, storyIndex, "reset");
+    return;
+  }
+
+  // Grid/Hero mode (desktop or mobile fallback)
   grid.innerHTML = "";
   renderHero(null);
 
@@ -72,6 +86,13 @@ async function renderCategory(cat) {
         </div>
       </div>
     `;
+    // Make whole card clickable (not just image/text)
+    card.addEventListener("click", (e) => {
+      // avoid conflict if clicking a nested link explicitly
+      const aEl = e.target.closest("a");
+      if (aEl) return;
+      location.href = `article.html?id=${a.id}`;
+    });
     grid.appendChild(card);
   }
 }
@@ -82,14 +103,21 @@ async function loadArticles() {
     const data = await res.json();
     ARTICLES = data?.categories || data || {};
 
-    // Update active tab
+    // Set active tab class
     const active = document.querySelector(`.nav-btn[data-cat="${currentCat}"]`);
     if (active){
       document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
       active.classList.add("active");
-      // Center the active in view (nice on mobile)
       try { active.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); } catch {}
     }
+
+    // Auto-enable Story Mode on mobile
+    if (isMobile()) {
+      enableStoryMode();
+    } else {
+      disableStoryMode();
+    }
+
     await renderCategory(currentCat);
   }catch(e){
     console.error("Error loading articles:", e);
@@ -103,6 +131,7 @@ catButtons.forEach(btn => {
     const cat = btn.dataset.cat;
     if (!cat || cat === currentCat) return;
     currentCat = cat;
+    storyIndex = 0;
     document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     renderCategory(currentCat);
@@ -124,25 +153,165 @@ if (refreshBtn){
 const yr = document.getElementById("year");
 if (yr) yr.textContent = new Date().getFullYear();
 
-// ---------------- Init ----------------
-loadArticles();
+// ---------------- Story Mode (mobile) ----------------
+function enableStoryMode(){
+  document.body.classList.add("story-active");
+  storyMode.hidden = false;
+}
+function disableStoryMode(){
+  document.body.classList.remove("story-active");
+  storyMode.hidden = true;
+}
+
+function preload(src){
+  if (!src) return;
+  const i = new Image();
+  i.src = `${API_BASE}/img?u=${encodeURIComponent(src)}`;
+}
+
+function storyHtml(a){
+  const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
+  return `
+    <article class="story-card" data-id="${a.id}">
+      <div class="story-media">
+        <img src="${img}" alt="${a.title}">
+      </div>
+      <div class="story-body">
+        <div class="story-source">${a.source || ""}</div>
+        <h2 class="story-title">${a.title}</h2>
+        <div class="story-summary">${a.summary || ""}</div>
+        <div class="story-actions">
+          <a class="btn" href="article.html?id=${a.id}">Read summary</a>
+          <a class="btn" href="${a.url}" target="_blank" rel="noopener">Full article</a>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderStory(list, idx, direction="reset"){
+  if (!isMobile()) return;
+  if (!list || !list.length) {
+    storyMode.innerHTML = `<div class="empty">No articles found.</div>`;
+    return;
+  }
+  storyIndex = Math.max(0, Math.min(idx, list.length - 1));
+  const a = list[storyIndex];
+
+  // Preload neighbors
+  if (list[storyIndex+1]?.image) preload(list[storyIndex+1].image);
+  if (list[storyIndex-1]?.image) preload(list[storyIndex-1].image);
+
+  // Animate
+  const next = document.createElement("div");
+  next.innerHTML = storyHtml(a);
+  const nextNode = next.firstElementChild;
+
+  const old = storyMode.firstElementChild;
+  if (!old){
+    storyMode.innerHTML = "";
+    nextNode.classList.add("slide-in-up");
+    storyMode.appendChild(nextNode);
+    attachStoryTap(nextNode, a.id);
+    return;
+  }
+
+  // choose classes
+  let outClass = "slide-out-up", inClass = "slide-in-up";
+  if (direction === "down") { outClass = "slide-out-down"; inClass = "slide-in-down"; }
+
+  old.classList.add(outClass);
+  nextNode.classList.add(inClass);
+  storyMode.appendChild(nextNode);
+
+  // after animation, remove old & bind click
+  setTimeout(() => {
+    try { old.remove(); } catch {}
+    attachStoryTap(nextNode, a.id);
+  }, 230);
+}
+
+function attachStoryTap(node, id){
+  node.addEventListener("click", (e) => {
+    // ignore clicks on explicit links/buttons (let them work)
+    if (e.target.closest("a")) return;
+    location.href = `article.html?id=${id}`;
+  });
+}
+
+/* Vertical swipe only inside storyMode; Horizontal swipe remains global */
+(function enableStorySwipe(){
+  const mq = window.matchMedia("(max-width: 720px)");
+  if (!mq.matches) return;
+
+  let startX=0, startY=0, tracking=false, startTime=0;
+
+  function onDown(e){
+    if (!document.body.classList.contains("story-active")) return;
+    const t = e.touches ? e.touches[0] : e;
+    if (!t) return;
+    startX = t.clientX; startY = t.clientY;
+    startTime = Date.now(); tracking = true;
+  }
+  function onMove(e){
+    if (!tracking) return;
+    const t = e.touches ? e.touches[0] : e;
+    if (!t) return;
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    // Vertical swipe takes precedence here (we're inside the story zone)
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10 && e.cancelable){
+      e.preventDefault(); // avoid body scroll jank
+    }
+  }
+  function onUp(e){
+    if (!tracking) return; tracking=false;
+    const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : e;
+    if (!t) return;
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+
+    // If horizontal dominates, let the global handler do categories
+    if (Math.abs(dx) > Math.abs(dy)) return;
+
+    // Vertical swipe threshold
+    const elapsed = Date.now() - startTime;
+    const THRESH = elapsed < 300 ? 50 : 80;
+
+    const list = currentList();
+    if (!list.length) return;
+
+    if (dy <= -THRESH && storyIndex < list.length - 1){
+      // swipe up → next story
+      renderStory(list, storyIndex + 1, "up");
+    } else if (dy >= THRESH && storyIndex > 0){
+      // swipe down → previous story
+      renderStory(list, storyIndex - 1, "down");
+    }
+  }
+
+  // Bind only to the story container, so header/footer remain tappable
+  storyMode.addEventListener("touchstart", onDown, { passive:true });
+  storyMode.addEventListener("touchmove",  onMove,  { passive:false });
+  storyMode.addEventListener("touchend",   onUp,    { passive:true });
+
+  storyMode.addEventListener("pointerdown", onDown, { passive:true });
+  storyMode.addEventListener("pointermove", onMove, { passive:false });
+  storyMode.addEventListener("pointerup",   onUp,   { passive:true });
+})();
 
 /* =========================================================
-   Global Mobile Swipe: change category anywhere on screen
-   - Only active on homepage (this file)
-   - Only on mobile (<= 720px)
-   - Respects vertical scroll (angle & threshold)
+   Global Mobile Swipe: left/right to change category
+   (unchanged from your last working version)
    ========================================================= */
 (function enableGlobalSwipe(){
   const mq = window.matchMedia("(max-width: 720px)");
-  if (!mq.matches) return; // mobile only
+  if (!mq.matches) return;
 
-  let startX = 0, startY = 0, moved = false, tracking = false;
-  let startTime = 0;
+  let startX = 0, startY = 0, tracking = false, startTime = 0;
 
-  // Helpers
   const getButtons = () => Array.from(document.querySelectorAll(".main-nav .nav-btn"));
-  const getIndex = () => getButtons().findIndex(b => b.dataset.cat === currentCat);
+  const getIndex  = () => getButtons().findIndex(b => b.dataset.cat === currentCat);
 
   function setActiveByIndex(nextIndex){
     const btns = getButtons();
@@ -152,6 +321,7 @@ loadArticles();
     if (!nextCat || nextCat === currentCat) return;
 
     currentCat = nextCat;
+    storyIndex = 0; // reset to first article in the new category
     btns.forEach(b => b.classList.remove("active"));
     nextBtn.classList.add("active");
     try { nextBtn.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); } catch {}
@@ -159,14 +329,11 @@ loadArticles();
   }
 
   function onDown(e){
-    // Only start tracking for primary touch/pointer
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
     startX = t.clientX; startY = t.clientY;
-    moved = false; tracking = true;
-    startTime = Date.now();
+    startTime = Date.now(); tracking = true;
   }
-
   function onMove(e){
     if (!tracking) return;
     const t = e.touches ? e.touches[0] : e;
@@ -174,59 +341,46 @@ loadArticles();
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
 
-    // If vertical dominates, let scroll happen; do not block
+    // If vertical dominates, let story handler or page scroll manage it
     if (Math.abs(dy) > Math.abs(dx)) return;
 
-    // If clearly horizontal, prevent browser gestures/clicks during swipe
-    if (Math.abs(dx) > 10) {
-      moved = true;
-      // prevent accidental taps while swiping
-      if (e.cancelable) e.preventDefault();
-    }
+    // If clearly horizontal, prevent accidental taps
+    if (Math.abs(dx) > 10 && e.cancelable) e.preventDefault();
   }
-
   function onUp(e){
-    if (!tracking) return;
-    tracking = false;
-
+    if (!tracking) return; tracking=false;
     const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : e;
     if (!t) return;
 
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
-
-    // Respect vertical scroll
     if (Math.abs(dy) > Math.abs(dx)) return;
 
     const elapsed = Date.now() - startTime;
-    const THRESH = 70; // px threshold
-    const FAST = 300;  // if quick, allow a bit less movement (fling)
-    const effThresh = elapsed < FAST ? 50 : THRESH;
+    const THRESH = elapsed < 300 ? 50 : 70;
 
-    if (dx <= -effThresh){
-      // swipe left → next category
-      setActiveByIndex(getIndex() + 1);
-    } else if (dx >= effThresh){
-      // swipe right → previous category
-      setActiveByIndex(getIndex() - 1);
+    if (dx <= -THRESH){
+      setActiveByIndex(getIndex() + 1); // next category
+    } else if (dx >= THRESH){
+      setActiveByIndex(getIndex() - 1); // prev category
     }
   }
 
-  // Attach to the whole page so swipe works anywhere
-  // Use passive listeners where we don't call preventDefault
-  document.addEventListener("touchstart", onDown, { passive: true });
-  document.addEventListener("touchmove",  onMove, { passive: false });
-  document.addEventListener("touchend",   onUp,   { passive: true });
+  document.addEventListener("touchstart", onDown, { passive:true });
+  document.addEventListener("touchmove",  onMove,  { passive:false });
+  document.addEventListener("touchend",   onUp,    { passive:true });
 
-  document.addEventListener("pointerdown", onDown, { passive: true });
-  document.addEventListener("pointermove", onMove, { passive: false });
-  document.addEventListener("pointerup",   onUp,   { passive: true });
-
-  // Re-evaluate if viewport changes (rotation)
-  window.addEventListener("resize", () => {
-    if (!window.matchMedia("(max-width: 720px)").matches) {
-      // If switching to desktop width, you could remove listeners if desired.
-      // Kept simple here—desktop won't reach thresholds often due to mouse.
-    }
-  });
+  document.addEventListener("pointerdown", onDown, { passive:true });
+  document.addEventListener("pointermove", onMove, { passive:false });
+  document.addEventListener("pointerup",   onUp,   { passive:true });
 })();
+
+// ---------------- Init ----------------
+loadArticles();
+
+// Keep mode correct on rotation / resize
+window.addEventListener("resize", () => {
+  if (isMobile()) enableStoryMode(); else disableStoryMode();
+  // Re-render current view in case sizes changed
+  renderCategory(currentCat);
+});
