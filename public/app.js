@@ -15,9 +15,9 @@ const grid = document.querySelector("#grid");
 const hero = document.querySelector("#hero");
 const storyMode = document.querySelector("#storyMode");
 const catButtons = document.querySelectorAll(".main-nav .nav-btn");
-const refreshBtn = document.getElementById("refreshBtn");
 
-// Floating next pill (injected once)
+// Floating next 
+ (injected once)
 let storyNextBtn = null;
 
 // ===== Story Mode state (mobile only) =====
@@ -262,6 +262,13 @@ function renderStory(list, idx, direction="reset"){
     try { old.remove(); } catch {}
     attachStoryTap(nextNode, a.id);
     setStoryHeight();
+// If not at last story, show hint briefly; otherwise keep hidden
+const listNow = currentList();
+if (listNow.length && storyIndex < listNow.length - 1) {
+  showStoryNextPillTemporarily(3500);
+} else if (storyNextBtn) {
+  storyNextBtn.style.display = "none";
+}
   }, 230);
 }
 
@@ -272,8 +279,19 @@ function attachStoryTap(node, id){
   });
 }
 
+// ---- Helpers to control the floating "Next" pill ----
+function showStoryNextPillTemporarily(ms = 3500) {
+  if (!storyNextBtn) return;
+  storyNextBtn.style.display = "flex";
+  // auto-hide after a few seconds
+  clearTimeout(showStoryNextPillTemporarily._t);
+  showStoryNextPillTemporarily._t = setTimeout(() => {
+    if (storyNextBtn) storyNextBtn.style.display = "none";
+  }, ms);
+}
+
 function ensureStoryNextPill(){
-  if (storyNextBtn) { storyNextBtn.style.display = "flex"; return; }
+  if (storyNextBtn) return;
   storyNextBtn = document.createElement("button");
   storyNextBtn.id = "storyNext";
   storyNextBtn.innerHTML = `<span class="arrow"></span> <span>Swipe up / Next</span>`;
@@ -283,13 +301,19 @@ function ensureStoryNextPill(){
     if (!list.length) return;
     if (storyIndex < list.length - 1) {
       renderStory(list, storyIndex + 1, "up");
+      // Hide immediately after going to next story (your request)
+      storyNextBtn.style.display = "none";
+    } else {
+      // At last story, keep it hidden
+      storyNextBtn.style.display = "none";
     }
   });
   document.body.appendChild(storyNextBtn);
 }
 
+
 // Vertical swipe inside storyMode
-(function enableStorySwipe(){
+(function Swipe(){
   const mq = window.matchMedia("(max-width: 720px)");
   if (!mq.matches) return;
 
@@ -427,7 +451,7 @@ init();
 // Recompute height on resize/rotation and after content changes
 window.addEventListener("resize", () => {
   if (isMobile()) {
-    enableStoryMode();
+    Mode();
     setStoryHeight();
   } else {
     disableStoryMode();
