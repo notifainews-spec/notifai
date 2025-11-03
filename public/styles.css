@@ -44,7 +44,7 @@ a{text-decoration:none;color:inherit}
 @media (max-width: 720px){
   .site-header{grid-template-columns:1fr;text-align:center}
   .brand{justify-self:center}
-  .actions{display:none}       /* hide About/X/Refresh row on phones */
+  .actions{display:none}
   #refreshBtn{display:none}
   .main-nav{
     overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;padding:0 6px 4px;margin:0 -6px;scrollbar-width:none
@@ -59,44 +59,21 @@ a{text-decoration:none;color:inherit}
 
 /* ===== Hero / Top story ===== */
 .hero-block{position:relative;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px;box-shadow:var(--shadow)}
-.hero-media{position:relative;aspect-ratio:16/9;background:#f1f5f9;display:block}
+.hero-media{position:relative;aspect-ratio:16/9;background:#f1f5f9}
 .hero-media img{width:100%;height:100%;object-fit:cover}
 .hero-overlay{
-  position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,.15) 45%, rgba(0,0,0,0));
-  display:flex;align-items:flex-end;pointer-events:none /* make whole hero clickable via parent <a> */
+  position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,.48), rgba(0,0,0,.08) 40%, rgba(0,0,0,0));
+  display:flex;align-items:flex-end
 }
-.hero-info{color:#fff;padding:18px 16px 16px}
-.hero-kicker{opacity:.9;font-size:12px;margin-bottom:6px;text-shadow:0 1px 2px rgba(0,0,0,.35)}
-.hero-title{margin:0;font-size:28px;line-height:1.15;font-weight:800;text-shadow:0 2px 6px rgba(0,0,0,.35)}
-.hero-actions{display:flex;gap:10px;margin-top:10px;pointer-events:auto}
+.hero-info{color:#fff;padding:18px}
+.hero-kicker{opacity:.9;font-size:12px;margin-bottom:6px}
+.hero-title{margin:0;font-size:28px;line-height:1.15;font-weight:800}
+.hero-actions{display:flex;gap:10px;margin-top:10px}
 .hero-actions .btn{background:#fff;color:#111;border-radius:10px;padding:8px 12px;border:0}
-
-/* Mobile hero readability tweaks */
-@media (max-width: 720px){
-  .hero-media{aspect-ratio:4/3}
-  .hero-info{padding:12px 10px}
-  /* Smaller, cleaner headline for the highlight story */
-  .hero-title{
-    font-size:16px;         /* ↓ from 19/28px */
-    line-height:1.25;
-    margin:2px 0 0;
-    display:-webkit-box;
-    -webkit-line-clamp:3;   /* max ~3 lines */
-    -webkit-box-orient:vertical;
-    overflow:hidden;
-    text-shadow:0 2px 6px rgba(0,0,0,.35);
-  }
-  .hero-kicker{font-size:10.5px}
-  .hero-actions{display:none} /* avoid wrapping buttons over the text on small screens */
-  .hero-overlay{background:linear-gradient(to top, rgba(0,0,0,.65), rgba(0,0,0,.25) 45%, rgba(0,0,0,0))}
-}
 
 /* ===== Cards grid ===== */
 .grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
-.card{
-  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
-  overflow:hidden;box-shadow:var(--shadow);transition:transform .12s;cursor:pointer
-}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);transition:transform .12s}
 .card:hover{transform:translateY(-2px)}
 .thumb{display:block;width:100%;aspect-ratio:3/2;background:#f1f5f9}
 .thumb img{width:100%;height:100%;object-fit:cover}
@@ -134,3 +111,72 @@ a{text-decoration:none;color:inherit}
 /* ===== Footer ===== */
 .site-footer{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:#fff;border-top:1px solid var(--border)}
 .footer-links{display:flex;gap:12px;align-items:center}
+
+/* =========================
+   Contact Page Styling
+========================= */
+.contact-section {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 24px;
+  margin: 24px auto;
+  max-width: 700px;
+}
+
+.contact-section h1 {
+  font-size: 28px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.contact-section p {
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.contact-card {
+  background: #f9fafb;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  margin: 20px 0;
+}
+
+.contact-email {
+  display: inline-block;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 8px;
+}
+
+.contact-email:hover {
+  text-decoration: underline;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 15px;
+  margin-top: 20px;
+  text-align: center;
+}
+
+/* Mobile-only tweaks for the hero/top story */
+@media (max-width: 720px){
+  .hero-title{
+    font-size: 20px;      /* was 28px on desktop */
+    line-height: 1.28;
+  }
+  .hero-info{
+    padding: 12px;        /* a bit tighter around text */
+  }
+  .hero-kicker{
+    font-size: 11px;      /* small label above the title */
+    margin-bottom: 4px;
+  }
+}
