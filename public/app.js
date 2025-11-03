@@ -1,6 +1,6 @@
 /* =========================================================
    NotifAi News - Main App (Homepage)
-   Polished UI (vanilla). No server changes needed.
+   Mobile global swipe to change categories
    ========================================================= */
 
 const API_BASE = window.API_BASE || location.origin;
@@ -11,9 +11,9 @@ const grid = document.querySelector("#grid");
 const hero = document.querySelector("#hero");
 const catButtons = document.querySelectorAll(".main-nav .nav-btn");
 const refreshBtn = document.getElementById("refreshBtn");
-const catBar = document.getElementById("catBar");
+const catBar = document.getElementById("catBar"); // optional, still used for visual active state
 
-// Render hero (first item) and grid (rest)
+// ---------------- Renderers ----------------
 function renderHero(item){
   if (!item){ hero.hidden = true; hero.innerHTML = ""; return; }
   const img = item.image ? `${API_BASE}/img?u=${encodeURIComponent(item.image)}` : "/cover.jpg";
@@ -87,6 +87,8 @@ async function loadArticles() {
     if (active){
       document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
       active.classList.add("active");
+      // Center the active in view (nice on mobile)
+      try { active.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); } catch {}
     }
     await renderCategory(currentCat);
   }catch(e){
@@ -95,7 +97,7 @@ async function loadArticles() {
   }
 }
 
-// Category switching (tap/click)
+// ---------------- Category Tab Clicks ----------------
 catButtons.forEach(btn => {
   btn.addEventListener("click", () => {
     const cat = btn.dataset.cat;
@@ -107,7 +109,7 @@ catButtons.forEach(btn => {
   });
 });
 
-// Manual refresh (calls backend ingest, then reloads)
+// ---------------- Manual Refresh ----------------
 if (refreshBtn){
   refreshBtn.addEventListener("click", async () => {
     try{
@@ -118,20 +120,27 @@ if (refreshBtn){
   });
 }
 
-// Footer year
-document.getElementById("year").textContent = new Date().getFullYear();
+// ---------------- Footer year ----------------
+const yr = document.getElementById("year");
+if (yr) yr.textContent = new Date().getFullYear();
 
-// Init
+// ---------------- Init ----------------
 loadArticles();
 
 /* =========================================================
-   Mobile-only: swipe left/right on category bar
+   Global Mobile Swipe: change category anywhere on screen
+   - Only active on homepage (this file)
+   - Only on mobile (<= 720px)
+   - Respects vertical scroll (angle & threshold)
    ========================================================= */
-(function enableMobileSwipe(){
-  if (!catBar) return;
+(function enableGlobalSwipe(){
   const mq = window.matchMedia("(max-width: 720px)");
-  let startX = 0, startY = 0, tracking = false, moved = false;
+  if (!mq.matches) return; // mobile only
 
+  let startX = 0, startY = 0, moved = false, tracking = false;
+  let startTime = 0;
+
+  // Helpers
   const getButtons = () => Array.from(document.querySelectorAll(".main-nav .nav-btn"));
   const getIndex = () => getButtons().findIndex(b => b.dataset.cat === currentCat);
 
@@ -145,59 +154,79 @@ loadArticles();
     currentCat = nextCat;
     btns.forEach(b => b.classList.remove("active"));
     nextBtn.classList.add("active");
-    // center the active tab (nice touch)
     try { nextBtn.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); } catch {}
     renderCategory(currentCat);
   }
 
   function onDown(e){
-    if (!mq.matches) return; // only mobile
+    // Only start tracking for primary touch/pointer
     const t = e.touches ? e.touches[0] : e;
+    if (!t) return;
     startX = t.clientX; startY = t.clientY;
-    tracking = true; moved = false;
+    moved = false; tracking = true;
+    startTime = Date.now();
   }
 
   function onMove(e){
-    if (!tracking || !mq.matches) return;
+    if (!tracking) return;
     const t = e.touches ? e.touches[0] : e;
+    if (!t) return;
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
-    // if vertical dominates, let page scroll
+
+    // If vertical dominates, let scroll happen; do not block
     if (Math.abs(dy) > Math.abs(dx)) return;
-    // prevent horizontal scroll while swiping
-    e.preventDefault();
-    moved = true;
+
+    // If clearly horizontal, prevent browser gestures/clicks during swipe
+    if (Math.abs(dx) > 10) {
+      moved = true;
+      // prevent accidental taps while swiping
+      if (e.cancelable) e.preventDefault();
+    }
   }
 
   function onUp(e){
-    if (!tracking || !mq.matches) return;
+    if (!tracking) return;
     tracking = false;
-    if (!moved) return;
 
     const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : e;
+    if (!t) return;
+
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
 
-    // angle guard again
+    // Respect vertical scroll
     if (Math.abs(dy) > Math.abs(dx)) return;
 
-    const THRESH = 70; // px
-    if (dx <= -THRESH){
-      // swipe left -> next category
+    const elapsed = Date.now() - startTime;
+    const THRESH = 70; // px threshold
+    const FAST = 300;  // if quick, allow a bit less movement (fling)
+    const effThresh = elapsed < FAST ? 50 : THRESH;
+
+    if (dx <= -effThresh){
+      // swipe left → next category
       setActiveByIndex(getIndex() + 1);
-    } else if (dx >= THRESH){
-      // swipe right -> previous category
+    } else if (dx >= effThresh){
+      // swipe right → previous category
       setActiveByIndex(getIndex() - 1);
     }
   }
 
-  // Use passive:false so we can call preventDefault in onMove
-  catBar.addEventListener("touchstart", onDown, { passive: true });
-  catBar.addEventListener("touchmove",  onMove, { passive: false });
-  catBar.addEventListener("touchend",   onUp,   { passive: true });
+  // Attach to the whole page so swipe works anywhere
+  // Use passive listeners where we don't call preventDefault
+  document.addEventListener("touchstart", onDown, { passive: true });
+  document.addEventListener("touchmove",  onMove, { passive: false });
+  document.addEventListener("touchend",   onUp,   { passive: true });
 
-  // Also support pointer events (in case)
-  catBar.addEventListener("pointerdown", onDown, { passive: true });
-  catBar.addEventListener("pointermove", onMove, { passive: false });
-  catBar.addEventListener("pointerup",   onUp,   { passive: true });
+  document.addEventListener("pointerdown", onDown, { passive: true });
+  document.addEventListener("pointermove", onMove, { passive: false });
+  document.addEventListener("pointerup",   onUp,   { passive: true });
+
+  // Re-evaluate if viewport changes (rotation)
+  window.addEventListener("resize", () => {
+    if (!window.matchMedia("(max-width: 720px)").matches) {
+      // If switching to desktop width, you could remove listeners if desired.
+      // Kept simple here—desktop won't reach thresholds often due to mouse.
+    }
+  });
 })();
