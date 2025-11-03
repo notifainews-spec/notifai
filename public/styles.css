@@ -179,4 +179,13 @@ a{text-decoration:none;color:inherit}
     font-size: 11px;      /* small label above the title */
     margin-bottom: 4px;
   }
+  /* Improve horizontal touch behavior on the category bar */
+  .main-nav{
+    touch-action: pan-y;             /* allow vertical scroll, ignore horizontal gestures */
+    overscroll-behavior-x: contain;  /* keep the page from rubber-banding horizontally */
+    scroll-snap-type: x mandatory;   /* optional: tab-by-tab snapping */
+  }
+  .nav-btn{ 
+    scroll-snap-align: center;       /* optional: snap each tab to center on flick */
+  }
 }

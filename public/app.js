@@ -11,6 +11,7 @@ const grid = document.querySelector("#grid");
 const hero = document.querySelector("#hero");
 const catButtons = document.querySelectorAll(".main-nav .nav-btn");
 const refreshBtn = document.getElementById("refreshBtn");
+const catBar = document.getElementById("catBar");
 
 // Render hero (first item) and grid (rest)
 function renderHero(item){
@@ -94,7 +95,7 @@ async function loadArticles() {
   }
 }
 
-// Category switching
+// Category switching (tap/click)
 catButtons.forEach(btn => {
   btn.addEventListener("click", () => {
     const cat = btn.dataset.cat;
@@ -122,3 +123,81 @@ document.getElementById("year").textContent = new Date().getFullYear();
 
 // Init
 loadArticles();
+
+/* =========================================================
+   Mobile-only: swipe left/right on category bar
+   ========================================================= */
+(function enableMobileSwipe(){
+  if (!catBar) return;
+  const mq = window.matchMedia("(max-width: 720px)");
+  let startX = 0, startY = 0, tracking = false, moved = false;
+
+  const getButtons = () => Array.from(document.querySelectorAll(".main-nav .nav-btn"));
+  const getIndex = () => getButtons().findIndex(b => b.dataset.cat === currentCat);
+
+  function setActiveByIndex(nextIndex){
+    const btns = getButtons();
+    if (nextIndex < 0 || nextIndex >= btns.length) return;
+    const nextBtn = btns[nextIndex];
+    const nextCat = nextBtn?.dataset?.cat;
+    if (!nextCat || nextCat === currentCat) return;
+
+    currentCat = nextCat;
+    btns.forEach(b => b.classList.remove("active"));
+    nextBtn.classList.add("active");
+    // center the active tab (nice touch)
+    try { nextBtn.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); } catch {}
+    renderCategory(currentCat);
+  }
+
+  function onDown(e){
+    if (!mq.matches) return; // only mobile
+    const t = e.touches ? e.touches[0] : e;
+    startX = t.clientX; startY = t.clientY;
+    tracking = true; moved = false;
+  }
+
+  function onMove(e){
+    if (!tracking || !mq.matches) return;
+    const t = e.touches ? e.touches[0] : e;
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    // if vertical dominates, let page scroll
+    if (Math.abs(dy) > Math.abs(dx)) return;
+    // prevent horizontal scroll while swiping
+    e.preventDefault();
+    moved = true;
+  }
+
+  function onUp(e){
+    if (!tracking || !mq.matches) return;
+    tracking = false;
+    if (!moved) return;
+
+    const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : e;
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+
+    // angle guard again
+    if (Math.abs(dy) > Math.abs(dx)) return;
+
+    const THRESH = 70; // px
+    if (dx <= -THRESH){
+      // swipe left -> next category
+      setActiveByIndex(getIndex() + 1);
+    } else if (dx >= THRESH){
+      // swipe right -> previous category
+      setActiveByIndex(getIndex() - 1);
+    }
+  }
+
+  // Use passive:false so we can call preventDefault in onMove
+  catBar.addEventListener("touchstart", onDown, { passive: true });
+  catBar.addEventListener("touchmove",  onMove, { passive: false });
+  catBar.addEventListener("touchend",   onUp,   { passive: true });
+
+  // Also support pointer events (in case)
+  catBar.addEventListener("pointerdown", onDown, { passive: true });
+  catBar.addEventListener("pointermove", onMove, { passive: false });
+  catBar.addEventListener("pointerup",   onUp,   { passive: true });
+})();
