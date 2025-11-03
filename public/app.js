@@ -16,8 +16,7 @@ const hero = document.querySelector("#hero");
 const storyMode = document.querySelector("#storyMode");
 const catButtons = document.querySelectorAll(".main-nav .nav-btn");
 
-// Floating next 
- (injected once)
+// Floating next (injected once)
 let storyNextBtn = null;
 
 // ===== Story Mode state (mobile only) =====
@@ -30,14 +29,13 @@ function vhMinusHeaderFooter(){
   const footer = document.querySelector(".site-footer");
   const h = header ? header.getBoundingClientRect().height : 0;
   const f = footer ? footer.getBoundingClientRect().height : 0;
-  // Use visual viewport height where available (prevents iOS URL bar shifts)
   const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-  return Math.max(200, vh - h - f - 16); // minus small margin
+  return Math.max(200, vh - h - f - 16);
 }
 
 function setStoryHeight(){
   if (!isMobile()) return;
-  // Precisely pin story mode height so footer is always visible
+  if (!storyMode) return;
   storyMode.style.height = `${vhMinusHeaderFooter()}px`;
 }
 
@@ -53,6 +51,7 @@ function preload(src){
 
 // ---------------- Renderers ----------------
 function renderHero(item){
+  if (!hero) return;
   if (!item){ hero.hidden = true; hero.innerHTML = ""; return; }
   const img = item.image ? `${API_BASE}/img?u=${encodeURIComponent(item.image)}` : "/cover.jpg";
   hero.hidden = false;
@@ -80,7 +79,6 @@ async function renderCategory(cat) {
 
   // If on mobile and story mode is active, render using story view instead
   if (isMobile() && document.body.classList.contains("story-active")) {
-    // Ensure index in range
     if (storyIndex >= items.length) storyIndex = Math.max(0, items.length - 1);
     renderStory(items, storyIndex, "reset");
     setStoryHeight();
@@ -88,11 +86,11 @@ async function renderCategory(cat) {
   }
 
   // Grid/Hero mode (desktop or mobile grid fallback)
-  grid.innerHTML = "";
+  if (grid) grid.innerHTML = "";
   renderHero(null);
 
   if (!items || items.length === 0) {
-    grid.innerHTML = `<div class="empty">No articles found.</div>`;
+    if (grid) grid.innerHTML = `<div class="empty">No articles found.</div>`;
     return;
   }
 
@@ -117,13 +115,13 @@ async function renderCategory(cat) {
         </div>
       </div>
     `;
-    // Make whole card clickable (not just image/text)
+    // Make whole card clickable
     card.addEventListener("click", (e) => {
       const aEl = e.target.closest("a");
       if (aEl) return;
       location.href = `article.html?id=${a.id}`;
     });
-    grid.appendChild(card);
+    if (grid) grid.appendChild(card);
   }
 }
 
@@ -141,10 +139,16 @@ async function loadArticles() {
       try { active.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); } catch {}
     }
 
-    // Auto-enable Story Mode on mobile
+    // Always enable Story Mode on mobile; keep desktop grid
     if (isMobile()) {
       enableStoryMode();
       setStoryHeight();
+      const list = currentList();
+      if (list.length && storyIndex < list.length - 1) {
+        showStoryNextPillTemporarily(3000);
+      } else if (storyNextBtn) {
+        storyNextBtn.style.display = "none";
+      }
     } else {
       disableStoryMode();
     }
@@ -153,7 +157,7 @@ async function loadArticles() {
     setStoryHeight();
   }catch(e){
     console.error("Error loading articles:", e);
-    grid.innerHTML = `<div class="empty">Failed to fetch articles.</div>`;
+    if (grid) grid.innerHTML = `<div class="empty">Failed to fetch articles.</div>`;
   }
 }
 
@@ -192,19 +196,18 @@ function enableStoryMode(){
   if (!document.body.classList.contains("story-active")){
     document.body.classList.add("story-active");
   }
-  storyMode.hidden = false;
+  if (storyMode) storyMode.hidden = false;
   ensureStoryNextPill();
   setStoryHeight();
 }
 function disableStoryMode(){
   document.body.classList.remove("story-active");
-  storyMode.hidden = true;
+  if (storyMode) storyMode.hidden = true;
   if (storyNextBtn) storyNextBtn.style.display = "none";
 }
 
 function storyHtml(a){
   const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
-  // Summary trimmed in CSS to 2–3 lines; keep full string here
   return `
     <article class="story-card" data-id="${a.id}">
       <div class="story-media">
@@ -226,7 +229,7 @@ function storyHtml(a){
 function renderStory(list, idx, direction="reset"){
   if (!isMobile()) return;
   if (!list || !list.length) {
-    storyMode.innerHTML = `<div class="empty">No articles found.</div>`;
+    if (storyMode) storyMode.innerHTML = `<div class="empty">No articles found.</div>`;
     return;
   }
   storyIndex = Math.max(0, Math.min(idx, list.length - 1));
@@ -250,7 +253,6 @@ function renderStory(list, idx, direction="reset"){
     return;
   }
 
-  // choose classes
   let outClass = "slide-out-up", inClass = "slide-in-up";
   if (direction === "down") { outClass = "slide-out-down"; inClass = "slide-in-down"; }
 
@@ -262,28 +264,27 @@ function renderStory(list, idx, direction="reset"){
     try { old.remove(); } catch {}
     attachStoryTap(nextNode, a.id);
     setStoryHeight();
-// If not at last story, show hint briefly; otherwise keep hidden
-const listNow = currentList();
-if (listNow.length && storyIndex < listNow.length - 1) {
-  showStoryNextPillTemporarily(3500);
-} else if (storyNextBtn) {
-  storyNextBtn.style.display = "none";
-}
+
+    const listNow = currentList();
+    if (listNow.length && storyIndex < listNow.length - 1) {
+      showStoryNextPillTemporarily(3500);
+    } else if (storyNextBtn) {
+      storyNextBtn.style.display = "none";
+    }
   }, 230);
 }
 
 function attachStoryTap(node, id){
   node.addEventListener("click", (e) => {
-    if (e.target.closest("a")) return; // allow normal link clicks
+    if (e.target.closest("a")) return;
     location.href = `article.html?id=${id}`;
   });
 }
 
-// ---- Helpers to control the floating "Next" pill ----
+// ---- Floating "Next" pill ----
 function showStoryNextPillTemporarily(ms = 3500) {
   if (!storyNextBtn) return;
   storyNextBtn.style.display = "flex";
-  // auto-hide after a few seconds
   clearTimeout(showStoryNextPillTemporarily._t);
   showStoryNextPillTemporarily._t = setTimeout(() => {
     if (storyNextBtn) storyNextBtn.style.display = "none";
@@ -301,18 +302,15 @@ function ensureStoryNextPill(){
     if (!list.length) return;
     if (storyIndex < list.length - 1) {
       renderStory(list, storyIndex + 1, "up");
-      // Hide immediately after going to next story (your request)
       storyNextBtn.style.display = "none";
     } else {
-      // At last story, keep it hidden
       storyNextBtn.style.display = "none";
     }
   });
   document.body.appendChild(storyNextBtn);
 }
 
-
-// Vertical swipe inside storyMode
+// ---- Vertical swipe inside storyMode ----
 (function Swipe(){
   const mq = window.matchMedia("(max-width: 720px)");
   if (!mq.matches) return;
@@ -333,7 +331,7 @@ function ensureStoryNextPill(){
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10 && e.cancelable){
-      e.preventDefault(); // avoid page scroll
+      e.preventDefault();
     }
   }
   function onUp(e){
@@ -343,7 +341,7 @@ function ensureStoryNextPill(){
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
 
-    if (Math.abs(dx) > Math.abs(dy)) return; // horizontal handled globally
+    if (Math.abs(dx) > Math.abs(dy)) return;
 
     const elapsed = Date.now() - startTime;
     const THRESH = elapsed < 300 ? 50 : 80;
@@ -358,13 +356,15 @@ function ensureStoryNextPill(){
     }
   }
 
-  storyMode.addEventListener("touchstart", onDown, { passive:true });
-  storyMode.addEventListener("touchmove",  onMove,  { passive:false });
-  storyMode.addEventListener("touchend",   onUp,    { passive:true });
+  if (storyMode){
+    storyMode.addEventListener("touchstart", onDown, { passive:true });
+    storyMode.addEventListener("touchmove",  onMove,  { passive:false });
+    storyMode.addEventListener("touchend",   onUp,    { passive:true });
 
-  storyMode.addEventListener("pointerdown", onDown, { passive:true });
-  storyMode.addEventListener("pointermove", onMove, { passive:false });
-  storyMode.addEventListener("pointerup",   onUp,   { passive:true });
+    storyMode.addEventListener("pointerdown", onDown, { passive:true });
+    storyMode.addEventListener("pointermove", onMove, { passive:false });
+    storyMode.addEventListener("pointerup",   onUp,   { passive:true });
+  }
 })();
 
 /* =========================================================
@@ -407,7 +407,7 @@ function ensureStoryNextPill(){
     if (!t) return;
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
-    if (Math.abs(dy) > Math.abs(dx)) return; // let vertical handler work
+    if (Math.abs(dy) > Math.abs(dx)) return;
     if (Math.abs(dx) > 10 && e.cancelable) e.preventDefault();
   }
   function onUp(e){
@@ -423,9 +423,9 @@ function ensureStoryNextPill(){
     const THRESH = elapsed < 300 ? 50 : 70;
 
     if (dx <= -THRESH){
-      setActiveByIndex(getIndex() + 1); // next category
+      setActiveByIndex(getIndex() + 1);
     } else if (dx >= THRESH){
-      setActiveByIndex(getIndex() - 1); // prev category
+      setActiveByIndex(getIndex() - 1);
     }
   }
 
@@ -451,11 +451,11 @@ init();
 // Recompute height on resize/rotation and after content changes
 window.addEventListener("resize", () => {
   if (isMobile()) {
-    Mode();
+    // keep story mode on mobile
+    enableStoryMode();
     setStoryHeight();
   } else {
     disableStoryMode();
   }
   renderCategory(currentCat);
-  if (isMobile()) setStoryHeight();
 });
