@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact Us — NotifAi News</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+
+<body>
+  <!-- Header -->
+  <header class="site-header">
+    <div class="brand">
+      <a href="index.html" class="brand-link">
+        <img src="/favicon.png" alt="NotifAi Logo" class="brand-logo" />
+        <span class="brand-name">NotifAi News</span>
+      </a>
+    </div>
+
+    <nav class="main-nav">
+      <a class="nav-btn" href="index.html">Home</a>
+      <a class="nav-btn" href="about.html">About</a>
+      <a class="nav-btn active" href="contact.html">Contact</a>
+    </nav>
+
+    <div class="actions">
+      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener">X (Twitter)</a>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="container">
+    <section class="contact-section">
+      <h1>Contact Us</h1>
+      <p>
+        We love hearing from our readers and the community.  
+        Whether you have suggestions, feedback, partnership ideas, or news tips — feel free to reach out!
+      </p>
+
+      <div class="contact-card">
+        <h2>Get in touch</h2>
+        <p>Email us anytime at:</p>
+        <a href="mailto:notifainews@gmail.com" class="contact-email">notifainews@gmail.com</a>
+      </div>
+
+      <p class="note">
+        Our small team reads every message, and while we might not reply immediately, we value your input greatly.  
+        Together, we can make NotifAi the most dynamic and balanced AI-driven news platform.
+      </p>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <p>© <span id="year"></span> NotifAi News</p>
+    <div class="footer-links">
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
