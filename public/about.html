@@ -1,47 +1,89 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>About — NotifAi News</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XKHQTRV8JF"></script>
-  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-XKHQTRV8JF');</script>
-  <link rel="icon" type="image/png" href="./favicon.png" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
+
 <body>
+  <!-- Header -->
   <header class="site-header">
     <div class="brand">
-      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
-        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
+      <a href="index.html" class="brand-link" aria-label="NotifAi News">
+        <img src="/logo.jpeg" alt="NotifAi Logo" class="brand-logo" />
       </a>
     </div>
-    <nav class="main-nav"><a class="nav-link" href="./index.html">Home</a></nav>
-    <a class="nav-btn" href="contact.html">Contact</a>
-    <div class="actions"><a class="nav-link" href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a></div>
+
+    <nav class="main-nav">
+      <a class="nav-btn" href="index.html">Home</a>
+      <a class="nav-btn active" href="about.html">About</a>
+    </nav>
+
+    <button id="hamburger" class="hamburger" aria-label="Menu" aria-expanded="false" aria-controls="siteMenu">
+      <span></span><span></span><span></span>
+    </button>
   </header>
 
-  <main class="container">
-    <article class="page">
-      <h1>About NotifAi News</h1>
-      <p><strong>NotifAi News</strong> summarizes and debates the world’s biggest stories using AI. Our aim is quick clarity, visible viewpoints, and respectful disagreement.</p>
-      <p>Stories refresh hourly (moving toward every 30 seconds), with more vetted sources rolling out soon. We’re also building native apps for Android & iOS and evolving single-takes into full conversational debates.</p>
-      <p>We plan a community-driven <strong>NotifAi Token</strong> to fund scaling, apps, and custom LLMs optimized for summarization and viewpoint diversity.</p>
-    </article>
+  <!-- Slide-over menu -->
+  <div id="menuOverlay" class="menu-overlay" hidden></div>
+  <aside id="siteMenu" class="menu-sheet" aria-hidden="true">
+    <button id="menuClose" class="menu-close" aria-label="Close menu">✕</button>
+    <nav class="menu-links">
+      <a href="./about.html">About</a>
+      <a href="./contact.html">Contact</a>
+      <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
+      <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+    </nav>
+  </aside>
 
-    <section class="about-team">
-      <h2>The AI Personalities</h2>
-      <div class="personality"><h3>Jessica Rebella</h3><p>Left-wing, pro-labor, anti-capture; New Deal energy, skeptical of austerity and privatization.</p></div>
-      <div class="personality"><h3>John Davis</h3><p>Hardline conservative; pro-GOP, hawkish, border-first; prosperity through enterprise and order.</p></div>
-      <div class="personality"><h3>Joe Musk</h3><p>Conspiracy stress-tester; suspects deep-state/elite networks; kept within respectful boundaries.</p></div>
+  <!-- Main Content -->
+  <main class="container">
+    <section class="contact-section">
+      <h1>About NotifAi News</h1>
+      <p>
+        NotifAi News is building a modern, AI-assisted news experience. We automatically collect headlines from trusted publishers, generate neutral summaries, and surface three contrasting AI perspectives for context. Our goal is to make news faster to digest and richer to understand.
+      </p>
+
+      <h2>Why we exist</h2>
+      <ul>
+        <li><strong>Clarity first:</strong> quick, neutral summaries so you can grasp the core story at a glance.</li>
+        <li><strong>Healthy debate:</strong> three distinct AI voices help you explore different angles without personal attacks.</li>
+        <li><strong>Roadmap:</strong> expand sources, refine debate flows into true multi-turn exchanges, and ship native apps for iOS/Android.</li>
+      </ul>
+
+      <h2>Our three voices</h2>
+      <ul>
+        <li><strong>Jessica Rebella</strong> — A passionate, left-wing voice focused on labor, equity, anti-war and anti-establishment narratives.</li>
+        <li><strong>John Davis</strong> — A hardline conservative voice emphasizing national strength, free markets, and traditional values.</li>
+        <li><strong>Joe Musk</strong> — A conspiracy-minded voice that picks one relevant angle (e.g., CIA/MI5/Mossad/aliens/elites) per story.</li>
+      </ul>
+
+      <h2>What’s next</h2>
+      <ul>
+        <li>Deeper sources & categories (including more finance and crypto feeds).</li>
+        <li>Real conversation between the AIs (turn-taking, citations, fact checks).</li>
+        <li>Mobile apps and optional on-chain integrations to support development.</li>
+      </ul>
+
+      <h2>Contact</h2>
+      <p>We’d love feedback and ideas. Reach us at <a href="mailto:notifainews@gmail.com">notifainews@gmail.com</a>.</p>
     </section>
   </main>
 
+  <!-- Footer -->
   <footer class="site-footer">
-    <div>© <span id="year"></span> NotifAi News</div>
-    <a href="contact.html">Contact</a>
-    <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">Follow on X</a>
+    <p>© <span id="year"></span> NotifAi News</p>
+    <div class="footer-links">
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
+    </div>
   </footer>
-  <script>document.getElementById("year").textContent=new Date().getFullYear();</script>
+
+  <script>document.getElementById("year").textContent = new Date().getFullYear();</script>
+  <script type="module" src="/menu.js"></script>
 </body>
 </html>

@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <!-- Single header: logo (left) + Home -->
+  <!-- Single header: logo (left) + Home + Hamburger -->
   <header class="site-header">
     <div class="brand">
       <a href="./index.html" class="brand-link" aria-label="NotifAi News">
@@ -30,8 +30,23 @@
       <a class="nav-btn" href="./index.html">Home</a>
     </nav>
 
-    <div class="actions"><!-- intentionally empty --></div>
+    <!-- Hamburger -->
+    <button id="hamburger" class="hamburger" aria-label="Menu" aria-expanded="false" aria-controls="siteMenu">
+      <span></span><span></span><span></span>
+    </button>
   </header>
+
+  <!-- Slide-over menu -->
+  <div id="menuOverlay" class="menu-overlay" hidden></div>
+  <aside id="siteMenu" class="menu-sheet" aria-hidden="true">
+    <button id="menuClose" class="menu-close" aria-label="Close menu">✕</button>
+    <nav class="menu-links">
+      <a href="./about.html">About</a>
+      <a href="./contact.html">Contact</a>
+      <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
+      <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+    </nav>
+  </aside>
 
   <main class="container article-view">
     <h1 id="title" class="a-title"></h1>
@@ -42,18 +57,15 @@
     </div>
 
     <div class="hero">
-      <!-- Clicking the image opens the original source -->
       <a id="sourceLinkImage" href="#" target="_blank" rel="noopener">
         <img id="hero" src="/cover.jpg" alt="" onerror="this.onerror=null;this.src='/cover.jpg';" />
       </a>
     </div>
 
-    <!-- Full source link under the image -->
     <div class="full-article-row">
       <a id="fullLink" class="full-link" href="#" target="_blank" rel="noopener">Full News Article</a>
     </div>
 
-    <!-- Share row -->
     <div class="share-row">
       <span class="share-label">Share:</span>
       <a id="share-wa" class="share-btn" target="_blank" rel="noopener" href="#">WhatsApp</a>
@@ -66,7 +78,6 @@
       <p id="summary"></p>
     </section>
 
-    <!-- Collapsible Perspectives -->
     <details id="perspectives" class="perspectives">
       <summary>Show perspectives</summary>
       <div class="voices">
@@ -93,5 +104,6 @@
   </footer>
 
   <script type="module" src="./article.js"></script>
+  <script type="module" src="./menu.js"></script>
 </body>
 </html>

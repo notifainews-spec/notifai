@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <!-- Sticky header: Logo | Categories | Actions -->
+  <!-- Sticky header: Logo | Categories | Hamburger -->
   <header class="site-header">
     <div class="brand">
       <a href="./index.html" class="brand-link" aria-label="NotifAi News">
@@ -33,29 +33,34 @@
       <button data-cat="crypto" class="nav-btn">Crypto</button>
     </nav>
 
-    <div class="actions">
-      <a class="nav-link" href="./about.html">About</a>
-      <a class="nav-btn" href="contact.html">Contact</a>
-      <a class="nav-link" href="https://x.com/notifaibnb" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
-      <a class="nav-link dexscreener"
-         href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444"
-         target="_blank" rel="noopener">Dexscreener</a>
-      <button id="refreshBtn" title="Fetch latest">↻ Refresh</button>
-    </div>
+    <!-- Hamburger (replaces refresh + text links in header) -->
+    <button id="hamburger" class="hamburger" aria-label="Menu" aria-expanded="false" aria-controls="siteMenu">
+      <span></span><span></span><span></span>
+    </button>
   </header>
+
+  <!-- Slide-over menu -->
+  <div id="menuOverlay" class="menu-overlay" hidden></div>
+  <aside id="siteMenu" class="menu-sheet" aria-hidden="true">
+    <button id="menuClose" class="menu-close" aria-label="Close menu">✕</button>
+    <nav class="menu-links">
+      <a href="./about.html">About</a>
+      <a href="./contact.html">Contact</a>
+      <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
+      <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+    </nav>
+  </aside>
 
   <main class="container">
     <div id="notice" class="notice" hidden></div>
 
-    <!-- ===== MOBILE STORY MODE (auto-enabled on mobile) ===== -->
-    <section id="storyMode" aria-live="polite" hidden>
-      <!-- populated by app.js -->
-    </section>
+    <!-- MOBILE STORY MODE (auto-enabled on mobile) -->
+    <section id="storyMode" aria-live="polite" hidden></section>
 
-    <!-- Top Story / Hero (desktop + mobile grid mode) -->
+    <!-- Top Story / Hero -->
     <section id="hero" class="hero-block" hidden></section>
 
-    <!-- Grid (desktop + mobile grid mode) -->
+    <!-- Grid -->
     <div id="grid" class="grid"></div>
   </main>
 
@@ -63,14 +68,18 @@
     <div>© <span id="year"></span> NotifAi News</div>
     <div class="footer-links">
       <a href="./about.html">About</a>
-      <a href="contact.html">Contact</a>
+      <a href="./contact.html">Contact</a>
       <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
       <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
     </div>
   </footer>
 
-  <!-- If your API is on Render/elsewhere, set it here: -->
+  <!-- If your API is remote, you can set it here: -->
   <!-- <script>window.API_BASE="https://YOUR-SERVICE.onrender.com";</script> -->
+
+  <!-- Your existing app logic -->
   <script type="module" src="./app.js"></script>
+  <!-- New tiny file that ONLY handles the hamburger -->
+  <script type="module" src="./menu.js"></script>
 </body>
 </html>
