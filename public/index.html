@@ -17,52 +17,45 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <!-- Sticky header -->
-<header class="site-header">
-  <!-- Brand (left / centered on mobile row 1) -->
-  <div class="brand">
-    <a href="./index.html" class="brand-link" aria-label="NotifAi News">
-      <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
-    </a>
-  </div>
+  <!-- Sticky header: Logo | Categories | Actions -->
+  <header class="site-header">
+    <div class="brand">
+      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
+        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
+      </a>
+    </div>
 
-  <!-- Categories (center on desktop; row 2 on mobile) -->
-  <nav id="catBar" class="main-nav" aria-label="Categories">
-    <button data-cat="us" class="nav-btn active">US</button>
-    <button data-cat="world" class="nav-btn">World</button>
-    <button data-cat="entertainment" class="nav-btn">Entertainment</button>
-    <button data-cat="finance" class="nav-btn">Finance</button>
-    <button data-cat="crypto" class="nav-btn">Crypto</button>
-  </nav>
-
-  <!-- Hamburger (right on desktop; row 1 right on mobile) -->
-  <button id="hamburger" class="hamburger" aria-label="Menu" aria-expanded="false" aria-controls="siteMenu">
-    <span></span><span></span><span></span>
-  </button>
-</header>
-
-  <!-- Slide-over menu -->
-  <div id="menuOverlay" class="menu-overlay" hidden></div>
-  <aside id="siteMenu" class="menu-sheet" aria-hidden="true">
-    <button id="menuClose" class="menu-close" aria-label="Close menu">✕</button>
-    <nav class="menu-links">
-      <a href="./about.html">About</a>
-      <a href="./contact.html">Contact</a>
-      <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
-      <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+    <nav id="catBar" class="main-nav" aria-label="Categories">
+      <button data-cat="us" class="nav-btn active">US</button>
+      <button data-cat="world" class="nav-btn">World</button>
+      <button data-cat="entertainment" class="nav-btn">Entertainment</button>
+      <button data-cat="finance" class="nav-btn">Finance</button>
+      <button data-cat="crypto" class="nav-btn">Crypto</button>
     </nav>
-  </aside>
+
+    <div class="actions">
+      <a class="nav-link" href="./about.html">About</a>
+      <a href="#" class="top-link donate-link" data-donate>Donate</a>
+      <a class="nav-btn" href="contact.html">Contact</a>
+      <a class="nav-link" href="https://x.com/notifaibnb" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
+      <a class="nav-link dexscreener"
+         href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444"
+         target="_blank" rel="noopener">Dexscreener</a>
+    </div>
+  </header>
 
   <main class="container">
     <div id="notice" class="notice" hidden></div>
 
-    <!-- Story mode (mobile) -->
-    <section id="storyMode" aria-live="polite" hidden></section>
+    <!-- ===== MOBILE STORY MODE (auto-enabled on mobile) ===== -->
+    <section id="storyMode" aria-live="polite" hidden>
+      <!-- populated by app.js -->
+    </section>
 
-    <!-- Top story / hero -->
+    <!-- Top Story / Hero (desktop + mobile grid mode) -->
     <section id="hero" class="hero-block" hidden></section>
 
-    <!-- Cards grid -->
+    <!-- Grid (desktop + mobile grid mode) -->
     <div id="grid" class="grid"></div>
   </main>
 
@@ -70,47 +63,65 @@
     <div>© <span id="year"></span> NotifAi News</div>
     <div class="footer-links">
       <a href="./about.html">About</a>
-      <a href="./contact.html">Contact</a>
+      <a href="#" class="top-link donate-link" data-donate>Donate</a>
+      <a href="contact.html">Contact</a>
       <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
       <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
     </div>
   </footer>
 
-  <!-- If your API is remote, set it here: -->
+  <!-- If your API is on Render/elsewhere, set it here: -->
   <!-- <script>window.API_BASE="https://YOUR-SERVICE.onrender.com";</script> -->
-
-  <!-- Your app logic (unchanged) -->
   <script type="module" src="./app.js"></script>
-  <!-- Menu toggler (if you already have one, keep it) -->
-  <script type="module">
-    const overlay = document.getElementById('menuOverlay');
-    const sheet   = document.getElementById('siteMenu');
-    const openBtn = document.getElementById('hamburger');
-    const closeBtn= document.getElementById('menuClose');
 
-    function openMenu(){
-      openBtn.classList.add('active');
-      sheet.classList.add('open');
-      overlay.hidden = false;
-      sheet.setAttribute('aria-hidden','false');
-      openBtn.setAttribute('aria-expanded','true');
-    }
-    function closeMenu(){
-      openBtn.classList.remove('active');
-      sheet.classList.remove('open');
-      overlay.hidden = true;
-      sheet.setAttribute('aria-hidden','true');
-      openBtn.setAttribute('aria-expanded','false');
-    }
-    openBtn?.addEventListener('click', ()=> {
-      const isOpen = sheet.classList.contains('open');
-      isOpen ? closeMenu() : openMenu();
+<!-- Ethers.js (browser) -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.6.0/dist/ethers.min.js"></script>
+
+<script>
+(function(){
+  // Your deployed BSC donation contract
+  const CONTRACT = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
+
+  // Simple event delegation helper
+  function on(elem, evt, sel, fn){
+    elem.addEventListener(evt, e => {
+      const t = e.target.closest(sel);
+      if (t) fn(e, t);
     });
-    overlay?.addEventListener('click', closeMenu);
-    closeBtn?.addEventListener('click', closeMenu);
+  }
 
-    // footer year
-    document.getElementById('year').textContent = new Date().getFullYear();
-  </script>
+  async function donateFlow(defaultAmt="0.01"){
+    try{
+      if (!window.ethereum){
+        alert("Please install MetaMask (or a compatible wallet) to donate via BNB.");
+        return;
+      }
+      // Ask user how much BNB
+      const amount = prompt("Enter BNB amount to donate:", defaultAmt);
+      if (!amount) return;
+
+      // Request accounts & send
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      const signer = await provider.getSigner();
+
+      const tx = await signer.sendTransaction({
+        to: CONTRACT,
+        value: ethers.parseEther(String(amount))
+      });
+
+      alert("Thank you! Donation sent. Tx: " + tx.hash);
+    } catch(err){
+      console.error(err);
+      alert("Donation failed: " + (err?.message || err));
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    on(document, "click", "[data-donate]", (e)=>{ e.preventDefault(); donateFlow(); });
+  });
+})();
+</script>
+
 </body>
 </html>
