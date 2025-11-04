@@ -17,14 +17,19 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <!-- Sticky header: Logo | Categories | Hamburger -->
+  <!-- Sticky header -->
   <header class="site-header">
+    <!-- Row 1: Logo (center) + Hamburger (right) -->
     <div class="brand">
       <a href="./index.html" class="brand-link" aria-label="NotifAi News">
         <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
       </a>
     </div>
+    <button id="hamburger" class="hamburger" aria-label="Menu" aria-expanded="false" aria-controls="siteMenu">
+      <span></span><span></span><span></span>
+    </button>
 
+    <!-- Row 2: Categories (single-line, scrollable on small screens) -->
     <nav id="catBar" class="main-nav" aria-label="Categories">
       <button data-cat="us" class="nav-btn active">US</button>
       <button data-cat="world" class="nav-btn">World</button>
@@ -32,11 +37,6 @@
       <button data-cat="finance" class="nav-btn">Finance</button>
       <button data-cat="crypto" class="nav-btn">Crypto</button>
     </nav>
-
-    <!-- Hamburger (replaces refresh + text links in header) -->
-    <button id="hamburger" class="hamburger" aria-label="Menu" aria-expanded="false" aria-controls="siteMenu">
-      <span></span><span></span><span></span>
-    </button>
   </header>
 
   <!-- Slide-over menu -->
@@ -54,13 +54,13 @@
   <main class="container">
     <div id="notice" class="notice" hidden></div>
 
-    <!-- MOBILE STORY MODE (auto-enabled on mobile) -->
+    <!-- Story mode (mobile) -->
     <section id="storyMode" aria-live="polite" hidden></section>
 
-    <!-- Top Story / Hero -->
+    <!-- Top story / hero -->
     <section id="hero" class="hero-block" hidden></section>
 
-    <!-- Grid -->
+    <!-- Cards grid -->
     <div id="grid" class="grid"></div>
   </main>
 
@@ -74,12 +74,41 @@
     </div>
   </footer>
 
-  <!-- If your API is remote, you can set it here: -->
+  <!-- If your API is remote, set it here: -->
   <!-- <script>window.API_BASE="https://YOUR-SERVICE.onrender.com";</script> -->
 
-  <!-- Your existing app logic -->
+  <!-- Your app logic (unchanged) -->
   <script type="module" src="./app.js"></script>
-  <!-- New tiny file that ONLY handles the hamburger -->
-  <script type="module" src="./menu.js"></script>
+  <!-- Menu toggler (if you already have one, keep it) -->
+  <script type="module">
+    const overlay = document.getElementById('menuOverlay');
+    const sheet   = document.getElementById('siteMenu');
+    const openBtn = document.getElementById('hamburger');
+    const closeBtn= document.getElementById('menuClose');
+
+    function openMenu(){
+      openBtn.classList.add('active');
+      sheet.classList.add('open');
+      overlay.hidden = false;
+      sheet.setAttribute('aria-hidden','false');
+      openBtn.setAttribute('aria-expanded','true');
+    }
+    function closeMenu(){
+      openBtn.classList.remove('active');
+      sheet.classList.remove('open');
+      overlay.hidden = true;
+      sheet.setAttribute('aria-hidden','true');
+      openBtn.setAttribute('aria-expanded','false');
+    }
+    openBtn?.addEventListener('click', ()=> {
+      const isOpen = sheet.classList.contains('open');
+      isOpen ? closeMenu() : openMenu();
+    });
+    overlay?.addEventListener('click', closeMenu);
+    closeBtn?.addEventListener('click', closeMenu);
+
+    // footer year
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
 </body>
 </html>

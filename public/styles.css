@@ -16,7 +16,7 @@ img{max-width:100%;display:block}
 a{text-decoration:none;color:inherit}
 button{font:inherit}
 
-/* ===== Header (single row on desktop) ===== */
+/* ===== Header (desktop) ===== */
 .site-header{
   display:grid;grid-template-columns:220px 1fr 48px;align-items:center;
   padding:12px 18px;border-bottom:1px solid var(--border);background:#fff;
@@ -34,7 +34,7 @@ button{font:inherit}
 .nav-btn:hover{background:#eef2f7}
 .nav-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-/* ===== Hamburger (desktop & mobile, right side) ===== */
+/* ===== Hamburger ===== */
 .hamburger{
   justify-self:end;
   width:42px;height:36px;border:1px solid var(--border);border-radius:10px;background:#fff;
@@ -70,16 +70,35 @@ button{font:inherit}
 }
 .menu-links a:hover{ background:#f8fafc; }
 
-/* ===== Mobile header ===== */
+/* ===== Mobile header (two rows) ===== */
 @media (max-width: 720px){
-  .site-header{grid-template-columns:1fr 1fr 42px;text-align:center}
-  .brand{justify-self:start}
-  .main-nav{
-    justify-self:center; overflow-x:auto; -webkit-overflow-scrolling:touch; gap:6px; padding:0 6px 4px; margin:0 -6px;
-    scrollbar-width:none; touch-action: pan-y; overscroll-behavior-x: contain; scroll-snap-type: x mandatory;
+  .site-header{
+    /* Two rows: row1 brand+hamburger, row2 categories */
+    grid-template-columns: 1fr 42px;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "brand hamburger"
+      "nav   nav";
+    gap: 8px 10px;
+    padding: 10px 12px;
   }
-  .main-nav::-webkit-scrollbar{display:none}
-  .nav-btn{flex:0 0 auto;white-space:nowrap;font-size:13px;padding:6px 10px;scroll-snap-align:center}
+  .brand{ grid-area: brand; justify-self:center; }
+  .hamburger{ grid-area: hamburger; justify-self:end; }
+
+  .main-nav{
+    grid-area: nav;
+    justify-self:center;
+    display:flex;
+    flex-wrap:nowrap;                 /* single row */
+    gap:6px;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    padding:0 6px 4px;
+    margin:0 -6px;
+  }
+  .main-nav::-webkit-scrollbar{ display:none; }
+  .nav-btn{ flex:0 0 auto; white-space:nowrap; font-size:13px; padding:6px 10px; }
 }
 
 /* ===== Layout ===== */
@@ -156,7 +175,7 @@ body{ padding-bottom: calc(60px + env(safe-area-inset-bottom, 0)); }
   .hero-kicker{ font-size:11px; margin-bottom:4px; }
 }
 
-/* ===== Story mode (mobile) — keep your existing animations (if any) ===== */
+/* ===== Story mode visibility ===== */
 #storyMode{ display:none; }
 @media (max-width: 720px){
   body.story-active #hero, body.story-active #grid { display:none !important; }
