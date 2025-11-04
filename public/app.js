@@ -1,10 +1,6 @@
 /* =========================================================
    NotifAi News - Main App (Homepage)
-   Mobile Story Mode + global category swipe
-   - Headlines clamped/smaller on mobile
-   - Summary limited to 2–3 lines
-   - Footer always visible (dynamic height)
-   - Floating "Swipe up / Next" pill
+   Mobile Story Mode + smoother transitions + sticky footer spacing
 ========================================================= */
 
 const API_BASE = window.API_BASE || location.origin;
@@ -19,37 +15,39 @@ const catButtons = document.querySelectorAll(".main-nav .nav-btn");
 // Floating next (injected once)
 let storyNextBtn = null;
 
-// ===== Story Mode state (mobile only) =====
+// Story Mode state
 let storyIndex = 0;
 const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
 
-// ---------------- Utilities ----------------
+/* ---------------- Utilities ---------------- */
+function footerHeightPx(){
+  const footer = document.querySelector(".site-footer");
+  return footer ? footer.getBoundingClientRect().height : 0;
+}
 function vhMinusHeaderFooter(){
   const header = document.querySelector(".site-header");
-  const footer = document.querySelector(".site-footer");
   const h = header ? header.getBoundingClientRect().height : 0;
-  const f = footer ? footer.getBoundingClientRect().height : 0;
+  const f = footerHeightPx();
   const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-  return Math.max(200, vh - h - f - 16);
+  // +8 for breathing room
+  return Math.max(220, vh - h - f - 8);
 }
-
 function setStoryHeight(){
-  if (!isMobile()) return;
-  if (!storyMode) return;
+  if (!isMobile() || !storyMode) return;
   storyMode.style.height = `${vhMinusHeaderFooter()}px`;
 }
-
 function currentList() {
   return (ARTICLES?.[currentCat]) || (ARTICLES?.categories?.[currentCat]) || [];
 }
-
 function preload(src){
   if (!src) return;
   const i = new Image();
+  i.decoding = "async";
+  i.loading = "lazy";
   i.src = `${API_BASE}/img?u=${encodeURIComponent(src)}`;
 }
 
-// ---------------- Renderers ----------------
+/* ---------------- Renderers ---------------- */
 function renderHero(item){
   if (!hero) return;
   if (!item){ hero.hidden = true; hero.innerHTML = ""; return; }
@@ -57,8 +55,8 @@ function renderHero(item){
   hero.hidden = false;
   hero.innerHTML = `
     <article class="hero-card">
-      <a class="hero-media" href="article.html?id=${item.id}">
-        <img src="${img}" alt="${item.title}">
+      <a class="hero-media" href="article.html?id=${item.id}" aria-label="${item.title}">
+        <img src="${img}" alt="${item.title}" loading="eager" decoding="async">
         <div class="hero-overlay">
           <div class="hero-info">
             <div class="hero-kicker">${item.source || ""}</div>
@@ -75,9 +73,9 @@ function renderHero(item){
 }
 
 async function renderCategory(cat) {
-  const items = (ARTICLES?.[cat]) || (ARTICLES?.categories?.[cat]) || [];
+  const items = currentList();
 
-  // If on mobile and story mode is active, render using story view instead
+  // Story Mode for mobile
   if (isMobile() && document.body.classList.contains("story-active")) {
     if (storyIndex >= items.length) storyIndex = Math.max(0, items.length - 1);
     renderStory(items, storyIndex, "reset");
@@ -85,7 +83,7 @@ async function renderCategory(cat) {
     return;
   }
 
-  // Grid/Hero mode (desktop or mobile grid fallback)
+  // Grid/Hero mode
   if (grid) grid.innerHTML = "";
   renderHero(null);
 
@@ -94,16 +92,15 @@ async function renderCategory(cat) {
     return;
   }
 
-  // Show first as hero, rest as cards
+  // Hero + rest
   renderHero(items[0]);
   const rest = items.slice(1);
-
   for (const a of rest) {
     const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
-      <a class="thumb" href="article.html?id=${a.id}">
+      <a class="thumb" href="article.html?id=${a.id}" aria-label="${a.title}">
         <img src="${img}" alt="${a.title}" loading="lazy" decoding="async">
       </a>
       <div class="info">
@@ -121,7 +118,7 @@ async function renderCategory(cat) {
       if (aEl) return;
       location.href = `article.html?id=${a.id}`;
     });
-    if (grid) grid.appendChild(card);
+    grid.appendChild(card);
   }
 }
 
@@ -131,7 +128,7 @@ async function loadArticles() {
     const data = await res.json();
     ARTICLES = data?.categories || data || {};
 
-    // Set active tab class
+    // set active tab
     const active = document.querySelector(`.nav-btn[data-cat="${currentCat}"]`);
     if (active){
       document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
@@ -139,13 +136,14 @@ async function loadArticles() {
       try { active.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); } catch {}
     }
 
-    // Always enable Story Mode on mobile; keep desktop grid
+    // Always Story Mode on mobile; desktop grid
     if (isMobile()) {
       enableStoryMode();
       setStoryHeight();
+
       const list = currentList();
       if (list.length && storyIndex < list.length - 1) {
-        showStoryNextPillTemporarily(3000);
+        showStoryNextPillTemporarily(2800);
       } else if (storyNextBtn) {
         storyNextBtn.style.display = "none";
       }
@@ -161,7 +159,7 @@ async function loadArticles() {
   }
 }
 
-// ---------------- Category Tab Clicks ----------------
+/* ---------------- Category buttons ---------------- */
 document.querySelectorAll(".main-nav .nav-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const cat = btn.dataset.cat;
@@ -175,7 +173,7 @@ document.querySelectorAll(".main-nav .nav-btn").forEach(btn => {
   });
 });
 
-// ---------------- Manual Refresh ----------------
+/* ---------------- Manual Refresh ---------------- */
 const refreshBtn = document.getElementById("refreshBtn");
 if (refreshBtn){
   refreshBtn.addEventListener("click", async () => {
@@ -187,11 +185,11 @@ if (refreshBtn){
   });
 }
 
-// ---------------- Footer year ----------------
+/* ---------------- Footer year ---------------- */
 const yr = document.getElementById("year");
 if (yr) yr.textContent = new Date().getFullYear();
 
-// ---------------- Story Mode (mobile) ----------------
+/* ---------------- Story Mode (mobile) ---------------- */
 function enableStoryMode(){
   if (!document.body.classList.contains("story-active")){
     document.body.classList.add("story-active");
@@ -211,7 +209,7 @@ function storyHtml(a){
   return `
     <article class="story-card" data-id="${a.id}">
       <div class="story-media">
-        <img src="${img}" alt="${a.title}">
+        <img src="${img}" alt="${a.title}" loading="eager" decoding="async">
       </div>
       <div class="story-body">
         <div class="story-source">${a.source || ""}</div>
@@ -239,9 +237,9 @@ function renderStory(list, idx, direction="reset"){
   if (list[storyIndex+1]?.image) preload(list[storyIndex+1].image);
   if (list[storyIndex-1]?.image) preload(list[storyIndex-1].image);
 
-  const next = document.createElement("div");
-  next.innerHTML = storyHtml(a);
-  const nextNode = next.firstElementChild;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = storyHtml(a);
+  const nextNode = wrap.firstElementChild;
 
   const old = storyMode.firstElementChild;
   if (!old){
@@ -267,7 +265,7 @@ function renderStory(list, idx, direction="reset"){
 
     const listNow = currentList();
     if (listNow.length && storyIndex < listNow.length - 1) {
-      showStoryNextPillTemporarily(3500);
+      showStoryNextPillTemporarily(2800);
     } else if (storyNextBtn) {
       storyNextBtn.style.display = "none";
     }
@@ -281,16 +279,7 @@ function attachStoryTap(node, id){
   });
 }
 
-// ---- Floating "Next" pill ----
-function showStoryNextPillTemporarily(ms = 3500) {
-  if (!storyNextBtn) return;
-  storyNextBtn.style.display = "flex";
-  clearTimeout(showStoryNextPillTemporarily._t);
-  showStoryNextPillTemporarily._t = setTimeout(() => {
-    if (storyNextBtn) storyNextBtn.style.display = "none";
-  }, ms);
-}
-
+/* ---- Floating "Next" pill ---- */
 function ensureStoryNextPill(){
   if (storyNextBtn) return;
   storyNextBtn = document.createElement("button");
@@ -309,8 +298,16 @@ function ensureStoryNextPill(){
   });
   document.body.appendChild(storyNextBtn);
 }
+function showStoryNextPillTemporarily(ms = 2800) {
+  if (!storyNextBtn) return;
+  storyNextBtn.style.display = "flex";
+  clearTimeout(showStoryNextPillTemporarily._t);
+  showStoryNextPillTemporarily._t = setTimeout(() => {
+    if (storyNextBtn) storyNextBtn.style.display = "none";
+  }, ms);
+}
 
-// ---- Vertical swipe inside storyMode ----
+/* ---- Vertical swipe inside storyMode ---- */
 (function Swipe(){
   const mq = window.matchMedia("(max-width: 720px)");
   if (!mq.matches) return;
@@ -438,7 +435,7 @@ function ensureStoryNextPill(){
   document.addEventListener("pointerup",   onUp,   { passive:true });
 })();
 
-// ---------------- Init ----------------
+/* ---------------- Init + Resize ---------------- */
 async function init(){
   await loadArticles();
   if (isMobile()) {
@@ -448,10 +445,16 @@ async function init(){
 }
 init();
 
-// Recompute height on resize/rotation and after content changes
+function onViewportResize(){
+  setStoryHeight();
+}
+if (window.visualViewport){
+  window.visualViewport.addEventListener("resize", onViewportResize);
+  window.visualViewport.addEventListener("scroll", onViewportResize);
+}
+
 window.addEventListener("resize", () => {
   if (isMobile()) {
-    // keep story mode on mobile
     enableStoryMode();
     setStoryHeight();
   } else {
