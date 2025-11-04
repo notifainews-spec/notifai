@@ -18,26 +18,28 @@
 </head>
 <body>
   <!-- Sticky header -->
-  <header class="site-header">
-    <!-- Row 1: Logo (center) + Hamburger (right) -->
-    <div class="brand">
-      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
-        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
-      </a>
-    </div>
-    <button id="hamburger" class="hamburger" aria-label="Menu" aria-expanded="false" aria-controls="siteMenu">
-      <span></span><span></span><span></span>
-    </button>
+<header class="site-header">
+  <!-- Brand (left / centered on mobile row 1) -->
+  <div class="brand">
+    <a href="./index.html" class="brand-link" aria-label="NotifAi News">
+      <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
+    </a>
+  </div>
 
-    <!-- Row 2: Categories (single-line, scrollable on small screens) -->
-    <nav id="catBar" class="main-nav" aria-label="Categories">
-      <button data-cat="us" class="nav-btn active">US</button>
-      <button data-cat="world" class="nav-btn">World</button>
-      <button data-cat="entertainment" class="nav-btn">Entertainment</button>
-      <button data-cat="finance" class="nav-btn">Finance</button>
-      <button data-cat="crypto" class="nav-btn">Crypto</button>
-    </nav>
-  </header>
+  <!-- Categories (center on desktop; row 2 on mobile) -->
+  <nav id="catBar" class="main-nav" aria-label="Categories">
+    <button data-cat="us" class="nav-btn active">US</button>
+    <button data-cat="world" class="nav-btn">World</button>
+    <button data-cat="entertainment" class="nav-btn">Entertainment</button>
+    <button data-cat="finance" class="nav-btn">Finance</button>
+    <button data-cat="crypto" class="nav-btn">Crypto</button>
+  </nav>
+
+  <!-- Hamburger (right on desktop; row 1 right on mobile) -->
+  <button id="hamburger" class="hamburger" aria-label="Menu" aria-expanded="false" aria-controls="siteMenu">
+    <span></span><span></span><span></span>
+  </button>
+</header>
 
   <!-- Slide-over menu -->
   <div id="menuOverlay" class="menu-overlay" hidden></div>

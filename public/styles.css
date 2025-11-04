@@ -184,3 +184,58 @@ body{ padding-bottom: calc(60px + env(safe-area-inset-bottom, 0)); }
 
 /* Simple overlay fade */
 @keyframes fadeIn{ from{ opacity:0 } to{ opacity:1 } }
+
+/* --- Desktop (default) header: brand | nav | hamburger in a single row --- */
+.site-header{
+  display: grid;
+  grid-template-columns: 220px 1fr 48px; /* brand | categories | menu */
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+  position: sticky; top: 0; z-index: 50; gap: 12px;
+}
+
+.brand{ justify-self: start; }
+.main-nav{ justify-self: center; display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; }
+.hamburger{ justify-self: end; }
+
+/* Ensure no grid-areas affect desktop */
+.brand, .main-nav, .hamburger{ grid-area: auto; }
+
+/* --- Mobile: two rows (Row1: brand+hamburger, Row2: categories) --- */
+@media (max-width: 720px){
+  .site-header{
+    grid-template-columns: 1fr 42px;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "brand hamburger"
+      "nav   nav";
+    gap: 8px 10px;
+    padding: 10px 12px;
+  }
+  .brand{ grid-area: brand; justify-self: center; }
+  .hamburger{ grid-area: hamburger; justify-self: end; }
+
+  /* Categories in a single horizontal row (scroll if overflow) */
+  .main-nav{
+    grid-area: nav;
+    justify-self: center;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0 6px 4px;
+    margin: 0 -6px;
+  }
+  .main-nav::-webkit-scrollbar{ display: none; }
+  .nav-btn{ flex: 0 0 auto; white-space: nowrap; font-size: 13px; padding: 6px 10px; }
+}
+
+/* Optional tiny phones squeeze */
+@media (max-width: 390px){
+  .nav-btn{ font-size: 12.5px; padding: 5px 8px; }
+}
+
