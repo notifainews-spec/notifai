@@ -10,6 +10,9 @@
   --radius:12px;
 }
 
+:root { --accent: #0ea5e9; }          /* default (blue) */
+:root.cn-accent { --accent: #ef4444; }/* CN selected (red-ish) */
+
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial}
 img{max-width:100%;display:block}
@@ -276,7 +279,15 @@ body{ padding-bottom: calc(60px + env(safe-area-inset-bottom, 0)); }
 @media (max-width: 768px) {
   .main-nav { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 8px; }
   .nav-dropdown { flex: 0 0 auto; }
-  .nav-sub { position: fixed; left: 12px; right: 12px; top: auto; bottom: 12px; }
+    .nav-sub {
+    position: absolute;
+    left: 0;
+    right: auto;
+    top: calc(100% + 6px);
+    bottom: auto;
+    min-width: 160px;
+    z-index: 30;
+  }
   .nav-sub-btn { padding: 12px 14px; font-size: 16px; }
   body.menu-open { overflow: hidden; } /* prevents body scroll when sub open */
 }

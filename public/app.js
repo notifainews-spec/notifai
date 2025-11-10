@@ -162,6 +162,11 @@ async function loadArticles() {
 /* ---------------- Category buttons (event delegation) ---------------- */
 const catBarEl = document.getElementById("catBar");
 
+function setAccentByCategory() {
+  // Toggle a class on <html> so CSS can switch the accent color
+  document.documentElement.classList.toggle("cn-accent", currentCat === "cn");
+}
+
 catBarEl?.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-cat]");
   if (!btn) return;
@@ -172,19 +177,11 @@ catBarEl?.addEventListener("click", (e) => {
   currentCat = cat;
   storyIndex = 0;
 
-  // Remove active from both top-level and submenu buttons
+  // Active state: ONLY the clicked button (so CN shows “active” when chosen)
   document.querySelectorAll(".nav-btn, .nav-sub-btn").forEach(b => b.classList.remove("active"));
-
-  // Add active to whichever was clicked
   btn.classList.add("active");
 
-  // Also keep the main US button “active” if CN is chosen (so the bar reflects US group)
-  if (cat === "cn") {
-    const mainUS = catBarEl.querySelector('.nav-dropdown > .nav-btn[data-cat="us"]');
-    mainUS?.classList.add("active");
-  }
-
-  // Close the dropdown if it’s open (mobile)
+  // Close dropdown (mobile) if open
   const sub = catBarEl.querySelector(".nav-dropdown .nav-sub");
   const mainBtn = catBarEl.querySelector('.nav-dropdown > .nav-btn');
   if (sub && sub.style.display === "block") {
@@ -193,6 +190,7 @@ catBarEl?.addEventListener("click", (e) => {
     mainBtn?.setAttribute("aria-expanded", "false");
   }
 
+  setAccentByCategory();
   renderCategory(currentCat);
   setStoryHeight?.();
 });
@@ -231,14 +229,7 @@ catBarEl?.addEventListener("click", (e) => {
     }
   });
 
-  // When a submenu item (US or CN) is clicked, your existing category
-  // click handler runs because they are <button data-cat="...">.
-  sub.addEventListener("click", () => {
-    open = false;
-    sub.style.display = "none";
-    document.body.classList.remove("menu-open");
-    mainBtn.setAttribute("aria-expanded", "false");
-  });
+  // When a submenu item (US or CN) is clicked, the handler above will run.
 })();
 
 /* ---------------- Manual Refresh ---------------- */
@@ -512,6 +503,7 @@ async function init(){
   }
 }
 init();
+setAccentByCategory();
 
 function onViewportResize(){
   setStoryHeight();
