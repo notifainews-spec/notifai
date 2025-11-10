@@ -51,12 +51,18 @@ const FEEDS = {
   us: [
     "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
     "https://www.theguardian.com/us-news/rss",
-    "https://feeds.npr.org/1001/rss.xml" // new NPR endpoint (replaces rss.php?id=1001)
+    "https://feeds.npr.org/1001/rss.xml"
+  ],
+  // NEW: China (English) — politics/finance/general
+  cn: [
+    "https://www.reuters.com/world/china/rss",                 // Reuters China
+    "https://feeds.bbci.co.uk/news/world/asia/china/rss.xml",  // BBC China
+    "https://www.scmp.com/rss/91/feed"                         // SCMP China
   ],
   world: [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
     "https://www.theguardian.com/world/rss",
-    "https://rss.cnn.com/rss/edition_world.rss" // keep world (tends to be steadier than US)
+    "https://rss.cnn.com/rss/edition_world.rss"
   ],
   entertainment: [
     "https://www.rollingstone.com/music/music-news/feed/",
@@ -384,7 +390,7 @@ app.get("/api/articles", (req, res) => {
   const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
 
   // Group by category and take top N
-  const group = { us: [], world: [], entertainment: [], finance: [], crypto: [] };
+  const group = { us: [], cn: [], world: [], entertainment: [], finance: [], crypto: [] };
   for (const a of all) {
     if (!group[a.category]) continue;
     if (group[a.category].length < limit) group[a.category].push(a);

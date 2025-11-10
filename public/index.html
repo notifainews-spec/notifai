@@ -26,7 +26,13 @@
     </div>
 
     <nav id="catBar" class="main-nav" aria-label="Categories">
-      <button data-cat="us" class="nav-btn active">US</button>
+      <div class="nav-dropdown has-sub">
+  <button class="nav-btn active" data-cat="us" aria-haspopup="true" aria-expanded="false">US ▾</button>
+  <div class="nav-sub" role="menu">
+    <button class="nav-sub-btn" data-cat="us"   role="menuitem">US</button>
+    <button class="nav-sub-btn" data-cat="cn"   role="menuitem">CN</button>
+  </div>
+</div>
       <button data-cat="world" class="nav-btn">World</button>
       <button data-cat="entertainment" class="nav-btn">Entertainment</button>
       <button data-cat="finance" class="nav-btn">Finance</button>

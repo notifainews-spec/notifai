@@ -159,19 +159,87 @@ async function loadArticles() {
   }
 }
 
-/* ---------------- Category buttons ---------------- */
-document.querySelectorAll(".main-nav .nav-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const cat = btn.dataset.cat;
-    if (!cat || cat === currentCat) return;
-    currentCat = cat;
-    storyIndex = 0;
-    document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    renderCategory(currentCat);
-    setStoryHeight();
-  });
+/* ---------------- Category buttons (event delegation) ---------------- */
+const catBarEl = document.getElementById("catBar");
+
+catBarEl?.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-cat]");
+  if (!btn) return;
+
+  const cat = btn.dataset.cat;
+  if (!cat || cat === currentCat) return;
+
+  currentCat = cat;
+  storyIndex = 0;
+
+  // Remove active from both top-level and submenu buttons
+  document.querySelectorAll(".nav-btn, .nav-sub-btn").forEach(b => b.classList.remove("active"));
+
+  // Add active to whichever was clicked
+  btn.classList.add("active");
+
+  // Also keep the main US button “active” if CN is chosen (so the bar reflects US group)
+  if (cat === "cn") {
+    const mainUS = catBarEl.querySelector('.nav-dropdown > .nav-btn[data-cat="us"]');
+    mainUS?.classList.add("active");
+  }
+
+  // Close the dropdown if it’s open (mobile)
+  const sub = catBarEl.querySelector(".nav-dropdown .nav-sub");
+  const mainBtn = catBarEl.querySelector('.nav-dropdown > .nav-btn');
+  if (sub && sub.style.display === "block") {
+    sub.style.display = "none";
+    document.body.classList.remove("menu-open");
+    mainBtn?.setAttribute("aria-expanded", "false");
+  }
+
+  renderCategory(currentCat);
+  setStoryHeight?.();
 });
+
+// --- US/CN dropdown: open on tap (mobile); desktop hover is CSS ---
+(function(){
+  const catBar  = document.getElementById("catBar");
+  if (!catBar) return;
+
+  const subWrap = catBar.querySelector(".nav-dropdown");
+  const sub     = catBar.querySelector(".nav-dropdown .nav-sub");
+  const mainBtn = catBar.querySelector('.nav-dropdown > .nav-btn');
+
+  if (!subWrap || !sub || !mainBtn) return;
+
+  let open = false;
+
+  // Toggle on click of main US button (mobile). Desktop hover handled by CSS.
+  mainBtn.addEventListener("click", (e) => {
+    if (window.matchMedia("(hover:hover)").matches) return; // desktop: ignore
+    e.preventDefault();
+    open = !open;
+    sub.style.display = open ? "block" : "none";
+    document.body.classList.toggle("menu-open", open);
+    mainBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+
+  // Close when clicking outside (mobile)
+  document.addEventListener("click", (e) => {
+    if (!open) return;
+    if (!subWrap.contains(e.target)) {
+      open = false;
+      sub.style.display = "none";
+      document.body.classList.remove("menu-open");
+      mainBtn.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  // When a submenu item (US or CN) is clicked, your existing category
+  // click handler runs because they are <button data-cat="...">.
+  sub.addEventListener("click", () => {
+    open = false;
+    sub.style.display = "none";
+    document.body.classList.remove("menu-open");
+    mainBtn.setAttribute("aria-expanded", "false");
+  });
+})();
 
 /* ---------------- Manual Refresh ---------------- */
 const refreshBtn = document.getElementById("refreshBtn");
