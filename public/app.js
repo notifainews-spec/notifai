@@ -1,9 +1,9 @@
 /* =========================================================
-   NotifAi News — App (Homepage) with reliable region modal close
+   NotifAi News — App (Homepage) with reliable region modal
 ========================================================= */
 const API_BASE = window.API_BASE || location.origin;
 
-// Regions (in cat bar dropdown)
+// Regions (for modal + US dropdown)
 const REGIONS = [
   { code: "us", label: "US" },
   { code: "cn", label: "CN" },
@@ -12,23 +12,27 @@ const REGIONS = [
   { code: "uk", label: "UK" },
 ];
 
+// Persisted selected region
 let REGION = (localStorage.getItem("region") || "us").toLowerCase();
 if (!REGIONS.find(r => r.code === REGION)) REGION = "us";
 
+// Data + state
 let ARTICLES = {};
 let currentCat = "us";
+let storyIndex = 0;
 
+// DOM refs
 const grid = document.querySelector("#grid");
 const hero = document.querySelector("#hero");
 const storyMode = document.querySelector("#storyMode");
-const usBtn = document.getElementById("usBtn");            // required in HTML
-const regionCode = document.getElementById("regionCode");  // required in HTML
-const regionMenu = document.getElementById("regionMenu");  // required in HTML
-const regionDrop = document.getElementById("regionDrop");  // required in HTML
-const regionModal = document.getElementById("regionModal");// optional first-visit modal
+const usBtn = document.getElementById("usBtn");
+const regionCode = document.getElementById("regionCode");
+const regionMenu = document.getElementById("regionMenu");
+const regionDrop = document.getElementById("regionDrop");
+const regionModal = document.getElementById("regionModal");
+const donateBtn = document.getElementById("donateBtn");
 
-let storyIndex = 0;
-
+// Mobile helpers
 const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
 
 /* ---------- Utilities ---------- */
@@ -56,7 +60,7 @@ function currentList(){
 function applyRegionLabel(){
   const found = REGIONS.find(r => r.code === REGION);
   if (regionCode) regionCode.textContent = (found?.label || "US");
-  // Accent color for CN
+  // Accent color for CN if you want (kept from your prior design)
   document.documentElement.classList.toggle("cn-accent", REGION === "cn");
 }
 function populateRegionMenu(){
@@ -66,6 +70,7 @@ function populateRegionMenu(){
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.type = "button";
+    btn.className = "nav-sub-btn";
     btn.textContent = r.label;
     btn.dataset.region = r.code;
     if (r.code === REGION) btn.setAttribute("aria-selected","true");
@@ -87,10 +92,8 @@ function hideCatDropdown(){
   regionMenu.classList.remove("show");
   usBtn.setAttribute("aria-expanded","false");
 }
-
 usBtn?.addEventListener("click", (e) => {
   e.stopPropagation();
-  if (!regionMenu) return;
   const open = regionMenu.classList.contains("show");
   open ? hideCatDropdown() : showCatDropdown();
 });
@@ -109,10 +112,11 @@ function hardCloseRegionModal(){
 }
 function showRegionModalIfNeeded(){
   if (!regionModal) return;
+  // Show once if no stored region
   if (!localStorage.getItem("region")) {
     regionModal.hidden = false;
 
-    // click on any country -> set & close
+    // Any region button closes modal and loads
     regionModal.querySelectorAll("button[data-region]").forEach(b => {
       b.addEventListener("click", () => {
         chooseRegion(b.dataset.region);
@@ -120,7 +124,7 @@ function showRegionModalIfNeeded(){
       });
     });
 
-    // click outside the card -> default to US, close
+    // Click outside card defaults to US and closes
     regionModal.addEventListener("click", (e) => {
       if (e.target === regionModal) {
         if (!localStorage.getItem("region")) chooseRegion("us");
@@ -129,7 +133,6 @@ function showRegionModalIfNeeded(){
     }, { once:true });
   }
 }
-
 function chooseRegion(code){
   const ok = REGIONS.find(r => r.code === code);
   REGION = ok ? ok.code : "us";
@@ -180,7 +183,7 @@ function makeCard(a){
       </div>
     </div>
   `;
-  // Click anywhere on the card to open
+  // Open on card click (not only links)
   el.addEventListener("click", (e) => {
     if (e.target.closest("a")) return;
     location.href = `article.html?id=${a.id}`;
@@ -221,7 +224,7 @@ async function loadArticles(){
 document.getElementById("catBar")?.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-cat]");
   if (!btn) return;
-  if (btn.id === "usBtn") return; // handled by dropdown logic
+  if (btn.id === "usBtn") return; // handled by dropdown
   const cat = btn.dataset.cat;
   if (!cat || cat === currentCat) return;
   currentCat = cat;
@@ -231,6 +234,48 @@ document.getElementById("catBar")?.addEventListener("click", (e) => {
   renderCategory();
 });
 
+/* ---------- Donate (optional client-side Web3) ---------- */
+donateBtn?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  if (!window.ethers || !window.ethereum) {
+    alert("Please install MetaMask or a compatible wallet.");
+    return;
+  }
+  try {
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    const signer = provider.getSigner();
+
+    // Your donation contract address (BSC):
+    const CONTRACT = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
+    // Minimal ABI with receive() not needed for sending native value; we can just send to address:
+    const tx = await signer.sendTransaction({
+      to: CONTRACT,
+      value: ethers.utils.parseEther("0.01") // fixed 0.01 BNB example
+    });
+    await tx.wait();
+    alert("Thank you for your donation!");
+  } catch (err) {
+    console.error(err);
+    alert("Donation failed: " + (err?.message || err));
+  }
+});
+
+/* ---------- Single-logo logic (image OR text) ---------- */
+(function ensureSingleLogo(){
+  const brand = document.getElementById('brand');
+  const img   = brand?.querySelector('.logo-img');
+  if (!brand || !img) return;
+  const ok = () => brand.classList.add('logo-has-img');
+  const fail = () => brand.classList.remove('logo-has-img');
+  if (img.complete) {
+    (img.naturalWidth > 0 ? ok : fail)();
+  } else {
+    img.addEventListener('load', ok, { once:true });
+    img.addEventListener('error', fail, { once:true });
+  }
+})();
+
 /* ---------- Init ---------- */
 function populateRegionMenuAndLabel(){
   applyRegionLabel();
@@ -238,6 +283,9 @@ function populateRegionMenuAndLabel(){
 }
 (async function init(){
   populateRegionMenuAndLabel();
-  showRegionModalIfNeeded();
+  showRegionModalIfNeeded();     // shows once if region not chosen
   await loadArticles();
+  // Story block size for mobile
+  setStoryHeight();
+  window.addEventListener('resize', setStoryHeight);
 })();

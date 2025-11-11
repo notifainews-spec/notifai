@@ -1,159 +1,106 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>NotifAi News</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="icon" href="/favicon.png" />
-  <link rel="stylesheet" href="/styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="/favicon.png" type="image/png">
 </head>
 <body>
-  <!-- Header -->
+
+  <!-- ===== Header ===== -->
   <header class="site-header">
-    <div class="wrap header-wrap">
-      <div class="brand">
-        <!-- Header brand (keep in your existing header) -->
-<a class="brand" href="/" aria-label="NotifAi News">
-  <img id="brandImg" class="logo-img" src="/logo.jpeg" alt="NotifAi News" loading="eager" decoding="async">
-  <span class="logo-text">NotifAi News</span>
-</a>
+    <!-- Brand (image with text fallback — JS will show only one) -->
+    <div class="brand" id="brand">
+      <a class="brand-link" href="/">
+        <img src="/logo.jpeg" alt="NotifAi News" class="brand-logo logo-img" width="112" height="28">
+        <span class="logo-text">NotifAi News</span>
+      </a>
+    </div>
 
-<script>
-  // Ensure only one shows: image OR text fallback
-  (function () {
-    const brand = document.querySelector('.brand');
-    const img = document.getElementById('brandImg');
-    if (!brand || !img) return;
-
-    const showImg = () => brand.classList.add('logo-has-img');
-    const showText = () => brand.classList.remove('logo-has-img');
-
-    // If the image is cached and already complete
-    if (img.complete && img.naturalWidth > 0) {
-      showImg();
-    } else if (img.complete && img.naturalWidth === 0) {
-      showText();
-    }
-
-    img.addEventListener('load', showImg);
-    img.addEventListener('error', showText);
-  })();
-</script>
-
-    <!-- Category bar (US pill -> region dropdown) -->
-    <nav id="catBar" class="main-nav">
+    <!-- Categories (center). US has a dropdown for regions -->
+    <nav class="main-nav" id="catBar" aria-label="Primary">
       <div class="nav-dropdown" id="regionDrop">
-        <button class="nav-btn active" id="usBtn" data-cat="us" aria-haspopup="listbox" aria-expanded="false">
-          <span class="label" id="regionCode">US</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg>
+        <button id="usBtn" type="button" class="nav-btn" aria-expanded="false">
+          <span id="regionCode">US</span>
+          <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6z"></path></svg>
         </button>
-        <ul id="regionMenu" class="nav-dropmenu" role="listbox" aria-label="Choose region"></ul>
+        <ul id="regionMenu" class="nav-dropmenu" role="menu" aria-label="Choose region"><!-- filled by JS --></ul>
       </div>
 
-      <button class="nav-btn" data-cat="entertainment">Entertainment</button>
-      <button class="nav-btn" data-cat="finance">Finance</button>
-      <button class="nav-btn" data-cat="world">World</button>
-      <button class="nav-btn" data-cat="crypto">Crypto</button>
+      <button type="button" class="nav-btn" data-cat="world">World</button>
+      <button type="button" class="nav-btn" data-cat="entertainment">Entertainment</button>
+      <button type="button" class="nav-btn" data-cat="finance">Finance</button>
+      <button type="button" class="nav-btn" data-cat="crypto">Crypto</button>
     </nav>
+
+    <!-- Right side actions (kept minimal; footer has the full list) -->
+    <div class="actions">
+      <a class="nav-link" href="/about.html">About</a>
+      <a class="nav-link" href="/contact.html">Contact</a>
+      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
+      <a class="nav-link dexscreener" href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+    </div>
   </header>
 
-  <!-- Main -->
-  <main class="page">
-    <section id="hero"></section>
-    <section id="grid" class="grid"></section>
-    <section id="storyMode" class="story-mode" hidden></section>
+  <main class="container">
+    <!-- Notice (optional) -->
+    <div id="notice" class="notice" hidden></div>
+
+    <!-- Top Story -->
+    <section id="hero" class="hero-block" hidden></section>
+
+    <!-- Cards Grid -->
+    <section id="grid" class="grid" aria-live="polite"></section>
+
+    <!-- Story Mode (mobile) -->
+    <section id="storyMode" aria-hidden="true"></section>
+    <div id="storyNext" role="button" aria-label="Next story">
+      <span>Next story</span><span class="arrow" aria-hidden="true"></span>
+    </div>
   </main>
 
-  <!-- Footer -->
+  <!-- ===== Footer ===== -->
   <footer class="site-footer">
-  <div class="container footer-wrap">
-    <div class="footer-left">© NotifAi News</div>
-    <div class="footer-links">
-      <a href="/about.html">About</a>
-      <a href="/contact.html">Contact</a>
-      <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
-      <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
-      <a href="#" onclick="donateBNB();return false;">Donate</a>
+    <div class="footer-inner">
+      <div class="footer-left">© <span id="year"></span> NotifAi News</div>
+      <nav class="footer-right" aria-label="Footer">
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+        <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
+        <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+        <a href="#" id="donateBtn">Donate</a>
+      </nav>
     </div>
-  </div>
-</footer>
+  </footer>
 
-  <!-- First-visit region modal -->
+  <!-- ===== First-visit Region Modal (appears once, then remembers) ===== -->
   <div id="regionModal" class="region-modal" hidden>
     <div class="region-card" role="dialog" aria-modal="true" aria-labelledby="regionTitle">
-      <h3 id="regionTitle">Select your local news</h3>
-      <p>Pick a country to personalize Politics / Finance / Entertainment.</p>
+      <h3 id="regionTitle">Pick your local news</h3>
+      <p>Choose a country for local political, finance and entertainment. You can change it later.</p>
       <div class="region-grid">
-        <button data-region="us">USA</button>
-        <button data-region="cn">China</button>
-        <button data-region="pk">Pakistan</button>
-        <button data-region="id">Indonesia</button>
-        <button data-region="uk">United Kingdom</button>
+        <button type="button" data-region="us">United States (US)</button>
+        <button type="button" data-region="cn">China (CN)</button>
+        <button type="button" data-region="pk">Pakistan (PK)</button>
+        <button type="button" data-region="id">Indonesia (ID)</button>
+        <button type="button" data-region="uk">United Kingdom (UK)</button>
       </div>
+      <p class="muted" style="margin-top:12px">Tap outside to keep US.</p>
     </div>
   </div>
 
-  <script>window.API_BASE = location.origin;</script>
-  <script type="module" src="/app.js"></script>
+  <!-- (Optional) Ethers for Donate if you kept the button wired client-side -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js" defer></script>
 
-  <!-- Optional: if you have a donate() function somewhere else, leave this out.
-       This fallback opens your contract on BscScan so users can send BNB manually. -->
   <script>
-    const DONATE_CONTRACT = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
-    document.addEventListener('DOMContentLoaded', () => {
-      const link = document.getElementById('donateLink');
-      if (!link) return;
-      link.addEventListener('click', () => {
-        // fallback: open contract page; if you want Metamask flow, plug it here.
-        window.open(`https://bscscan.com/address/${DONATE_CONTRACT}`, "_blank", "noopener");
-      });
-    });
-<!-- Ethers (for MetaMask) -->
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
-<script>
-  // Simple MetaMask flow – no page reloads
-  async function donateBNB() {
-    try {
-      if (!window.ethereum) {
-        alert("Please install MetaMask or a compatible wallet to donate.");
-        return;
-      }
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      const signer = await provider.getSigner();
-
-      // Your deployed contract (we’re just sending native BNB, not calling a function here)
-      const toAddress = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
-
-      // Ask user how much to donate (BNB)
-      const amountBNB = prompt("Enter amount to donate (BNB):", "0.01");
-      if (!amountBNB) return;
-
-      const tx = await signer.sendTransaction({
-        to: toAddress,
-        value: ethers.parseEther(amountBNB)
-      });
-      alert("Donation sent! TX: " + tx.hash);
-    } catch (err) {
-      console.error(err);
-      alert("Donation failed: " + (err?.message || err));
-    }
-  }
-</script>
+    // Simple year in footer
+    document.getElementById('year').textContent = new Date().getFullYear();
+    // Provide API_BASE to app.js if you’re on a static CDN pointing to a different API
+    window.API_BASE = window.API_BASE || location.origin;
   </script>
-<!-- Region chooser modal -->
-<div id="regionModal" class="region-modal" hidden>
-  <div class="region-card">
-    <h3>Select your local news</h3>
-    <p>Choose a country to see Politics, Finance and Entertainment from that region. You can switch later.</p>
-    <div class="region-grid">
-      <button data-region="us">United States (US)</button>
-      <button data-region="cn">China (CN)</button>
-      <button data-region="pk">Pakistan (PK)</button>
-      <button data-region="id">Indonesia (ID)</button>
-      <button data-region="uk">United Kingdom (UK)</button>
-    </div>
-  </div>
-</div>
+  <script src="/app.js" defer></script>
 </body>
 </html>
