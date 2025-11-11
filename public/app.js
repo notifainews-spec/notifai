@@ -43,27 +43,31 @@ function initRegionModal() {
   const m = $("#regionModal");
   if (!m) return;
 
-  // First visit: show if no stored region
+  // show on first visit only
   if (!localStorage.getItem("region")) m.classList.remove("hidden");
 
-  // Click handler for country buttons
+  // choose region
   m.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-region]");
-    if (b) {
-      const r = b.getAttribute("data-region");
-      if (!REGIONS.includes(r)) return;
-      state.region = r;
-      saveRegion(r);
-      if (!CATS.includes(state.category)) state.category = "us";
-      closeRegionModal();
-      loadArticles();
-    }
+    if (!b) return;
+    const r = b.getAttribute("data-region");
+    if (!REGIONS.includes(r)) return;
+    state.region = r;
+    saveRegion(r);
+    if (!CATS.includes(state.category)) state.category = "us";
+    closeRegionModal();
+    loadArticles();
   });
 
-  // Footer link opens modal
+  // footer link
   $("#changeRegion")?.addEventListener("click", (e) => {
     e.preventDefault();
     openRegionModal();
+  });
+
+  // click outside content to close (optional, safe)
+  m.addEventListener("mousedown", (e) => {
+    if (e.target === m) closeRegionModal();
   });
 }
 
@@ -160,7 +164,6 @@ function render() {
   const heroEl = $("#hero");
   if (heroEl) {
     if (hero) {
-      // Clean overlay layout for mobile & desktop
       heroEl.innerHTML = `
         <a class="hero-card" href="article.html?id=${encodeURIComponent(hero.id)}" aria-label="${hero.title}">
           <img class="hero-img" src="${proxyImg(hero.image)}" alt="">
