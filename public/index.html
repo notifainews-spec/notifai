@@ -1,106 +1,109 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>NotifAi News</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="icon" href="/favicon.png" type="image/png">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="/favicon.png" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-
-  <!-- ===== Header ===== -->
+  <!-- Header -->
   <header class="site-header">
-    <!-- Brand (image with text fallback — JS will show only one) -->
     <div class="brand" id="brand">
       <a class="brand-link" href="/">
-        <img src="/logo.jpeg" alt="NotifAi News" class="brand-logo logo-img" width="112" height="28">
-        <span class="logo-text">NotifAi News</span>
+        <img class="brand-logo logo-img" src="/logo.jpeg" alt="NotifAi" onerror="this.style.display='none';document.querySelector('.logo-text').style.display='inline-block';">
+        <span class="logo-text" style="display:none">NotifAi News</span>
       </a>
     </div>
 
-    <!-- Categories (center). US has a dropdown for regions -->
-    <nav class="main-nav" id="catBar" aria-label="Primary">
-      <div class="nav-dropdown" id="regionDrop">
-        <button id="usBtn" type="button" class="nav-btn" aria-expanded="false">
-          <span id="regionCode">US</span>
-          <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6z"></path></svg>
-        </button>
-        <ul id="regionMenu" class="nav-dropmenu" role="menu" aria-label="Choose region"><!-- filled by JS --></ul>
-      </div>
-
-      <button type="button" class="nav-btn" data-cat="world">World</button>
-      <button type="button" class="nav-btn" data-cat="entertainment">Entertainment</button>
-      <button type="button" class="nav-btn" data-cat="finance">Finance</button>
-      <button type="button" class="nav-btn" data-cat="crypto">Crypto</button>
+    <!-- Categories (no region dropdown here anymore) -->
+    <nav class="main-nav" id="categoryBar">
+      <button class="nav-btn" data-cat="us">Politics</button>
+      <button class="nav-btn" data-cat="finance">Finance</button>
+      <button class="nav-btn" data-cat="entertainment">Entertainment</button>
+      <button class="nav-btn" data-cat="world">World</button>
+      <button class="nav-btn" data-cat="crypto">Crypto</button>
     </nav>
 
-    <!-- Right side actions (kept minimal; footer has the full list) -->
+    <!-- Right-side actions -->
     <div class="actions">
       <a class="nav-link" href="/about.html">About</a>
       <a class="nav-link" href="/contact.html">Contact</a>
       <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
-      <a class="nav-link dexscreener" href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+      <a class="nav-link dexscreener" target="_blank" rel="noopener" href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444">Dexscreener</a>
+      <a class="nav-link" id="donateBtn" href="#">Donate</a>
     </div>
   </header>
 
   <main class="container">
-    <!-- Notice (optional) -->
-    <div id="notice" class="notice" hidden></div>
+    <div class="notice" id="notice" hidden></div>
 
-    <!-- Top Story -->
-    <section id="hero" class="hero-block" hidden></section>
+    <!-- Hero -->
+    <section id="hero" class="hero-block" hidden>
+      <a id="heroLink" class="hero-media" href="#">
+        <img id="heroImg" alt="">
+        <div class="hero-overlay">
+          <div class="hero-info">
+            <div class="hero-kicker" id="heroKicker">Top story</div>
+            <h1 class="hero-title" id="heroTitle"></h1>
+            <div class="hero-actions">
+              <a class="btn" id="heroRead" href="#">Read article</a>
+            </div>
+          </div>
+        </div>
+      </a>
+    </section>
 
-    <!-- Cards Grid -->
-    <section id="grid" class="grid" aria-live="polite"></section>
+    <!-- Cards -->
+    <section id="grid" class="grid"></section>
 
-    <!-- Story Mode (mobile) -->
-    <section id="storyMode" aria-hidden="true"></section>
-    <div id="storyNext" role="button" aria-label="Next story">
-      <span>Next story</span><span class="arrow" aria-hidden="true"></span>
-    </div>
+    <!-- Story Mode (mobile only; unchanged behavior) -->
+    <section id="storyMode"></section>
+    <div id="storyNext"><span>Next story</span><span class="arrow"></span></div>
   </main>
 
-  <!-- ===== Footer ===== -->
+  <!-- Footer (Change Region lives here now) -->
   <footer class="site-footer">
     <div class="footer-inner">
-      <div class="footer-left">© <span id="year"></span> NotifAi News</div>
-      <nav class="footer-right" aria-label="Footer">
+      <div class="footer-left">© <span id="yr"></span> NotifAi News</div>
+      <div class="footer-right">
+        <a href="#" id="changeRegion">Change Region</a>
         <a href="/about.html">About</a>
         <a href="/contact.html">Contact</a>
         <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
-        <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
-        <a href="#" id="donateBtn">Donate</a>
-      </nav>
+        <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dex</a>
+        <a href="#" id="donateBtnFooter">Donate</a>
+      </div>
     </div>
   </footer>
 
-  <!-- ===== First-visit Region Modal (appears once, then remembers) ===== -->
+  <!-- Region modal (first visit + from footer) -->
   <div id="regionModal" class="region-modal" hidden>
-    <div class="region-card" role="dialog" aria-modal="true" aria-labelledby="regionTitle">
-      <h3 id="regionTitle">Pick your local news</h3>
-      <p>Choose a country for local political, finance and entertainment. You can change it later.</p>
+    <div class="region-card">
+      <h3>Select your local news region</h3>
+      <p>Choose a region to prioritize its Politics/Finance/Entertainment. World & Crypto are global.</p>
       <div class="region-grid">
-        <button type="button" data-region="us">United States (US)</button>
-        <button type="button" data-region="cn">China (CN)</button>
-        <button type="button" data-region="pk">Pakistan (PK)</button>
-        <button type="button" data-region="id">Indonesia (ID)</button>
-        <button type="button" data-region="uk">United Kingdom (UK)</button>
+        <button data-region="us">United States (US)</button>
+        <button data-region="cn">China (CN)</button>
+        <button data-region="pk">Pakistan (PK)</button>
+        <button data-region="id">Indonesia (ID)</button>
+        <button data-region="uk">United Kingdom (UK)</button>
       </div>
-      <p class="muted" style="margin-top:12px">Tap outside to keep US.</p>
     </div>
   </div>
 
-  <!-- (Optional) Ethers for Donate if you kept the button wired client-side -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js" defer></script>
-
+  <!-- Ethers loader for Donate -->
   <script>
-    // Simple year in footer
-    document.getElementById('year').textContent = new Date().getFullYear();
-    // Provide API_BASE to app.js if you’re on a static CDN pointing to a different API
-    window.API_BASE = window.API_BASE || location.origin;
+    function ensureEthersLoaded(cb){
+      if (window.ethers) return cb();
+      const s=document.createElement('script');
+      s.src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js";
+      s.onload=cb; document.head.appendChild(s);
+    }
   </script>
-  <script src="/app.js" defer></script>
+
+  <script src="/app.js"></script>
+  <script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
 </body>
 </html>

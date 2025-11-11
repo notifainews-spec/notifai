@@ -1,267 +1,282 @@
-/* =========================================================
-   NotifAi News — App (Homepage) with reliable region modal
-========================================================= */
+/* NotifAi News — Frontend app (region via footer only) */
+
 const API_BASE = window.API_BASE || location.origin;
+const COVER = "/cover.jpg";
+const CATS = ["us","finance","entertainment","world","crypto"];
+const REGIONS = ["us","cn","pk","id","uk"];
 
-// Regions (for modal + US dropdown)
-const REGIONS = [
-  { code: "us", label: "US" },
-  { code: "cn", label: "CN" },
-  { code: "pk", label: "PK" },
-  { code: "id", label: "ID" },
-  { code: "uk", label: "UK" },
-];
+let state = {
+  region: (localStorage.getItem("region") || "us").toLowerCase(),
+  category: localStorage.getItem("cat") || "us",
+  data: null,
+  itemsByCat: { us:[], finance:[], entertainment:[], world:[], crypto:[] },
+  storyIndex: 0
+};
 
-// Persisted selected region
-let REGION = (localStorage.getItem("region") || "us").toLowerCase();
-if (!REGIONS.find(r => r.code === REGION)) REGION = "us";
+const $  = (s,root=document)=>root.querySelector(s);
+const $$ = (s,root=document)=>Array.from(root.querySelectorAll(s));
 
-// Data + state
-let ARTICLES = {};
-let currentCat = "us";
-let storyIndex = 0;
+/* ---------- Helpers ---------- */
+function proxyImg(u){ return u ? `/img?u=${encodeURIComponent(u)}` : COVER; }
+function setNotice(text){ const n=$("#notice"); if(!n) return; if(!text){n.hidden=true;return;} n.hidden=false; n.textContent=text; }
+function saveRegion(r){ try{ localStorage.setItem("region", r); }catch{} }
+function saveCategory(c){ try{ localStorage.setItem("cat", c); }catch{} }
 
-// DOM refs
-const grid = document.querySelector("#grid");
-const hero = document.querySelector("#hero");
-const storyMode = document.querySelector("#storyMode");
-const usBtn = document.getElementById("usBtn");
-const regionCode = document.getElementById("regionCode");
-const regionMenu = document.getElementById("regionMenu");
-const regionDrop = document.getElementById("regionDrop");
-const regionModal = document.getElementById("regionModal");
-const donateBtn = document.getElementById("donateBtn");
-
-// Mobile helpers
-const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
-
-/* ---------- Utilities ---------- */
-function footerHeightPx(){
-  const footer = document.querySelector(".site-footer");
-  return footer ? footer.getBoundingClientRect().height : 0;
+/* ---------- Region modal + footer trigger ---------- */
+function openRegionModal(){
+  const m = $("#regionModal"); if(!m) return;
+  m.hidden = false;
 }
+function closeRegionModal(){
+  const m = $("#regionModal"); if(!m) return;
+  m.hidden = true;
+}
+function initRegionModal(){
+  const m = $("#regionModal"); if(!m) return;
+
+  // First visit: show if no stored region
+  if (!localStorage.getItem("region")) m.hidden = false;
+
+  m.addEventListener("click",(e)=>{
+    const b = e.target.closest("button[data-region]");
+    if(b){
+      const r = b.getAttribute("data-region");
+      if (!REGIONS.includes(r)) return;
+      state.region = r; saveRegion(r);
+      // if currently on "us" category and region != us, keep category as "us" (politics) but fetch region-specific politics from server
+      if (!CATS.includes(state.category)) state.category = "us";
+      closeRegionModal();
+      loadArticles();
+      return;
+    }
+    // click dim area to keep modal (explicit choice required)
+  });
+
+  // Footer link opens modal anytime
+  $("#changeRegion")?.addEventListener("click",(e)=>{ e.preventDefault(); openRegionModal(); });
+}
+
+/* ---------- Category bar + swipe ---------- */
+function initCategoryBar(){
+  const catButtons = $$(".main-nav .nav-btn");
+  catButtons.forEach(b=>{
+    b.addEventListener("click",()=>{
+      const c = b.getAttribute("data-cat");
+      if(!c) return;
+      state.category = c; saveCategory(c);
+      highlightActiveCat(); render();
+    });
+  });
+
+  // Swipe left/right anywhere to change category (mobile)
+  let tsX=0, tsY=0, active=false;
+  document.addEventListener("touchstart",(e)=>{
+    if(!e.touches?.length) return;
+    active=true; tsX=e.touches[0].clientX; tsY=e.touches[0].clientY;
+  },{passive:true});
+  document.addEventListener("touchend",(e)=>{
+    if(!active) return; active=false;
+    const t=e.changedTouches?.[0]; if(!t) return;
+    const dx=t.clientX-tsX, dy=t.clientY-tsY;
+    if(Math.abs(dx)>50 && Math.abs(dy)<40){
+      const dir = dx>0 ? -1 : 1;
+      const i   = CATS.indexOf(state.category);
+      const ni  = Math.min(CATS.length-1, Math.max(0, i+dir));
+      state.category = CATS[ni]; saveCategory(state.category);
+      highlightActiveCat(); render();
+    }
+  },{passive:true});
+}
+function highlightActiveCat(){
+  $$(".main-nav .nav-btn").forEach(b=>b.classList.remove("active"));
+  const btn = $(`.main-nav .nav-btn[data-cat="${state.category}"]`);
+  if(btn) btn.classList.add("active");
+}
+
+/* ---------- Fetch & render ---------- */
+async function loadArticles(){
+  setNotice("");
+  try{
+    const url = new URL(`${API_BASE}/api/articles`);
+    url.searchParams.set("region", state.region);
+    const res = await fetch(url.toString(), { cache:"no-store" });
+    const json = await res.json();
+
+    state.data = json;
+    state.itemsByCat = json.categories || { us:[], finance:[], entertainment:[], world:[], crypto:[] };
+
+    if(!CATS.includes(state.category)) state.category = "us";
+    highlightActiveCat();
+
+    // Auto story mode ON for mobile only
+    if (matchMedia("(max-width: 720px)").matches){
+      document.body.classList.add("story-active");
+      buildStoryMode();
+    } else {
+      document.body.classList.remove("story-active");
+      render();
+    }
+  }catch(e){
+    console.error(e);
+    setNotice("Failed to load stories. Please try again.");
+  }
+}
+
+function pickHero(list){ return list?.length ? list[0] : null; }
+
+function render(){
+  const list = state.itemsByCat[state.category] || [];
+  const hero = pickHero(list);
+
+  // Hero
+  const heroEl = $("#hero");
+  if (hero){
+    const heroImg = $("#heroImg");
+    heroImg.src = proxyImg(hero.image);
+    heroImg.alt = hero.title || "";
+
+    $("#heroLink").href   = `/article.html?id=${encodeURIComponent(hero.id)}`;
+    $("#heroKicker").textContent = (state.category==='us'?'Politics':state.category).toUpperCase();
+    $("#heroTitle").textContent  = hero.title || "";
+    $("#heroRead").href   = `/article.html?id=${encodeURIComponent(hero.id)}`;
+    heroEl.hidden = false;
+  } else {
+    heroEl.hidden = true;
+  }
+
+  // Grid
+  const grid = $("#grid");
+  grid.innerHTML = "";
+  const rest = (list || []).slice(hero ? 1 : 0);
+
+  if (!rest.length){
+    const div = document.createElement("div");
+    div.className = "empty";
+    div.textContent = "No more stories yet.";
+    grid.appendChild(div);
+    return;
+  }
+
+  for (const a of rest){
+    const card = document.createElement("a");
+    card.className = "card";
+    card.href = `/article.html?id=${encodeURIComponent(a.id)}`;
+    card.innerHTML = `
+      <div class="thumb"><img loading="lazy" src="${proxyImg(a.image)}" alt=""></div>
+      <div class="info">
+        <h3>${a.title || ""}</h3>
+        <p class="summary">${(a.summary || "").replace(/\s+/g," ").slice(0,280)}</p>
+        <div class="meta">
+          <span>${a.source || ""}</span>
+          <span class="read">Read more →</span>
+        </div>
+      </div>
+    `;
+    // Make the whole card clickable
+    card.addEventListener("click", (e)=>{ /* anchor handles it */ });
+    grid.appendChild(card);
+  }
+}
+
+/* ---------- Story Mode (mobile) ---------- */
 function vhMinusHeaderFooter(){
   const header = document.querySelector(".site-header");
+  const footer = document.querySelector(".site-footer");
   const h = header ? header.getBoundingClientRect().height : 0;
-  const f = footerHeightPx();
+  const f = footer ? footer.getBoundingClientRect().height : 0;
   const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
   return Math.max(220, vh - h - f - 8);
 }
-function setStoryHeight(){
-  if (!isMobile() || !storyMode) return;
-  storyMode.style.height = `${vhMinusHeaderFooter()}px`;
-}
-function currentList(){
-  const cats = ARTICLES?.categories || {};
-  return cats[currentCat] || [];
-}
+function buildStoryMode(){
+  const sm = $("#storyMode"); if(!sm) return;
+  const list = state.itemsByCat[state.category] || [];
+  state.storyIndex = 0;
 
-/* ---------- Region UI ---------- */
-function applyRegionLabel(){
-  const found = REGIONS.find(r => r.code === REGION);
-  if (regionCode) regionCode.textContent = (found?.label || "US");
-  // Accent color for CN if you want (kept from your prior design)
-  document.documentElement.classList.toggle("cn-accent", REGION === "cn");
-}
-function populateRegionMenu(){
-  if (!regionMenu) return;
-  regionMenu.innerHTML = "";
-  REGIONS.forEach(r => {
-    const li = document.createElement("li");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "nav-sub-btn";
-    btn.textContent = r.label;
-    btn.dataset.region = r.code;
-    if (r.code === REGION) btn.setAttribute("aria-selected","true");
-    btn.addEventListener("click", () => {
-      chooseRegion(r.code);
-      hideCatDropdown();
-    });
-    li.appendChild(btn);
-    regionMenu.appendChild(li);
-  });
-}
-function showCatDropdown(){
-  if (!regionMenu || !usBtn) return;
-  regionMenu.classList.add("show");
-  usBtn.setAttribute("aria-expanded","true");
-}
-function hideCatDropdown(){
-  if (!regionMenu || !usBtn) return;
-  regionMenu.classList.remove("show");
-  usBtn.setAttribute("aria-expanded","false");
-}
-usBtn?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const open = regionMenu.classList.contains("show");
-  open ? hideCatDropdown() : showCatDropdown();
-});
-document.addEventListener("click", (e) => {
-  if (!regionDrop) return;
-  if (regionDrop.contains(e.target)) return;
-  hideCatDropdown();
-});
+  sm.style.height = `${vhMinusHeaderFooter()}px`;
+  window.addEventListener("resize", ()=>{ sm.style.height = `${vhMinusHeaderFooter()}px`; });
 
-function hardCloseRegionModal(){
-  if (!regionModal) return;
-  regionModal.setAttribute("hidden","");
-  regionModal.style.display = "none";
-  regionModal.style.pointerEvents = "none";
-  try { regionModal.remove(); } catch {}
-}
-function showRegionModalIfNeeded(){
-  if (!regionModal) return;
-  // Show once if no stored region
-  if (!localStorage.getItem("region")) {
-    regionModal.hidden = false;
+  sm.innerHTML = "";
+  if (!list.length) return;
 
-    // Any region button closes modal and loads
-    regionModal.querySelectorAll("button[data-region]").forEach(b => {
-      b.addEventListener("click", () => {
-        chooseRegion(b.dataset.region);
-        hardCloseRegionModal();
-      });
-    });
-
-    // Click outside card defaults to US and closes
-    regionModal.addEventListener("click", (e) => {
-      if (e.target === regionModal) {
-        if (!localStorage.getItem("region")) chooseRegion("us");
-        hardCloseRegionModal();
-      }
-    }, { once:true });
-  }
-}
-function chooseRegion(code){
-  const ok = REGIONS.find(r => r.code === code);
-  REGION = ok ? ok.code : "us";
-  localStorage.setItem("region", REGION);
-  applyRegionLabel();
-  storyIndex = 0;
-  loadArticles();
-}
-
-/* ---------- Renderers ---------- */
-function renderHero(item){
-  if (!hero) return;
-  if (!item){ hero.hidden = true; hero.innerHTML = ""; return; }
-  const img = item.image ? `${API_BASE}/img?u=${encodeURIComponent(item.image)}` : "/cover.jpg";
-  hero.hidden = false;
-  hero.innerHTML = `
-    <article class="hero-card">
-      <a class="hero-media" href="article.html?id=${item.id}" aria-label="${item.title}">
-        <img src="${img}" alt="${item.title}" loading="eager" decoding="async">
-        <div class="hero-overlay">
-          <div class="hero-info">
-            <div class="hero-kicker">${item.source || ""}</div>
-            <h2 class="hero-title">${item.title}</h2>
-            <div class="hero-actions">
-              <a class="btn" href="article.html?id=${item.id}">Read summary</a>
-              <a class="btn" href="${item.url}" target="_blank" rel="noopener">Full article</a>
-            </div>
+  const renderCard = (i)=>{
+    const a = list[i]; if (!a) return "";
+    const img = proxyImg(a.image);
+    return `
+      <article class="story-card">
+        <div class="story-media"><img src="${img}" alt=""></div>
+        <div class="story-body">
+          <div class="story-source">${a.source || ""}</div>
+          <h3 class="story-title">${a.title || ""}</h3>
+          <p class="story-summary">${(a.summary || "").replace(/\s+/g," ").slice(0,220)}</p>
+          <div class="story-actions">
+            <a class="btn" href="/article.html?id=${encodeURIComponent(a.id)}">Read summary</a>
+            <a class="btn" href="${a.url}" target="_blank" rel="noopener">Full article</a>
           </div>
         </div>
-      </a>
-    </article>
-  `;
-}
-function makeCard(a){
-  const img = a.image ? `${API_BASE}/img?u=${encodeURIComponent(a.image)}` : "/cover.jpg";
-  const el = document.createElement("div");
-  el.className = "card";
-  el.innerHTML = `
-    <a class="thumb" href="article.html?id=${a.id}" aria-label="${a.title}">
-      <img src="${img}" alt="${a.title}" loading="lazy" decoding="async">
-    </a>
-    <div class="info">
-      <h3>${a.title}</h3>
-      <p class="summary">${a.summary || ""}</p>
-      <div class="meta">
-        <span>${a.source || ""}</span>
-        <a href="article.html?id=${a.id}" class="read">Read more →</a>
-      </div>
-    </div>
-  `;
-  // Open on card click (not only links)
-  el.addEventListener("click", (e) => {
-    if (e.target.closest("a")) return;
-    location.href = `article.html?id=${a.id}`;
+      </article>
+    `;
+  };
+
+  sm.innerHTML = renderCard(0);
+
+  let startY=0;
+  sm.addEventListener("touchstart",(e)=>{ startY = e.touches[0].clientY; },{passive:true});
+  sm.addEventListener("touchend",(e)=>{
+    const dy = e.changedTouches[0].clientY - startY;
+    if (Math.abs(dy) < 60) return;
+    const dir = dy < 0 ? 1 : -1; // swipe up -> next
+    const next = state.storyIndex + dir;
+    if (next < 0 || next >= list.length) return;
+
+    const animOut = dy < 0 ? "slide-out-up" : "slide-out-down";
+    const animIn  = dy < 0 ? "slide-in-up"  : "slide-in-down";
+
+    const cur = sm.firstElementChild;
+    cur.classList.add(animOut);
+    cur.addEventListener("animationend", ()=>{
+      state.storyIndex = next;
+      sm.innerHTML = renderCard(next);
+      sm.firstElementChild.classList.add(animIn);
+    }, { once:true });
+  },{passive:true});
+
+  $("#storyNext")?.addEventListener("click", ()=>{
+    const next = state.storyIndex + 1;
+    if (next >= list.length) return;
+    state.storyIndex = next;
+    sm.innerHTML = renderCard(next);
   });
-  return el;
-}
-async function renderCategory(){
-  const items = currentList();
-
-  if (grid) grid.innerHTML = "";
-  renderHero(null);
-
-  if (!items || !items.length) {
-    if (grid) grid.innerHTML = `<div class="empty">No articles found.</div>`;
-    return;
-  }
-  renderHero(items[0]);
-  items.slice(1).forEach(a => grid.appendChild(makeCard(a)));
 }
 
-/* ---------- Data ---------- */
-async function loadArticles(){
-  const res = await fetch(`${API_BASE}/api/articles?region=${encodeURIComponent(REGION)}`, { cache:"no-store" });
-  const data = await res.json();
-  ARTICLES = data;
+/* ---------- Donate (MetaMask) ---------- */
+function wireDonate(){
+  const act = (e)=>{
+    e.preventDefault();
+    ensureEthersLoaded(async ()=>{
+      if (!window.ethereum){ alert("Please install MetaMask or a compatible wallet."); return; }
+      try{
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        const signer = provider.getSigner();
 
-  // mark active category
-  const active = document.querySelector(`.main-nav .nav-btn[data-cat="${currentCat}"]`);
-  if (active){
-    document.querySelectorAll(".main-nav .nav-btn").forEach(b => b.classList.remove("active"));
-    active.classList.add("active");
-  }
-  applyRegionLabel();
-  await renderCategory();
-}
-
-/* ---------- Category clicks ---------- */
-document.getElementById("catBar")?.addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-cat]");
-  if (!btn) return;
-  if (btn.id === "usBtn") return; // handled by dropdown
-  const cat = btn.dataset.cat;
-  if (!cat || cat === currentCat) return;
-  currentCat = cat;
-  storyIndex = 0;
-  document.querySelectorAll(".main-nav .nav-btn").forEach(b => b.classList.remove("active"));
-  btn.classList.add("active");
-  renderCategory();
-});
-
-/* ---------- Donate (optional client-side Web3) ---------- */
-donateBtn?.addEventListener("click", async (e) => {
-  e.preventDefault();
-  if (!window.ethers || !window.ethereum) {
-    alert("Please install MetaMask or a compatible wallet.");
-    return;
-  }
-  try {
-    const provider = new ethers.providers.Web3Provider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
-    const signer = provider.getSigner();
-
-    // Your donation contract address (BSC):
-    const CONTRACT = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
-    // Minimal ABI with receive() not needed for sending native value; we can just send to address:
-    const tx = await signer.sendTransaction({
-      to: CONTRACT,
-      value: ethers.utils.parseEther("0.01") // fixed 0.01 BNB example
+        const CONTRACT = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
+        const tx = await signer.sendTransaction({
+          to: CONTRACT,
+          value: ethers.utils.parseEther("0.01")
+        });
+        await tx.wait();
+        alert("Thank you for your donation!");
+      }catch(err){
+        console.error(err);
+        alert("Donation failed: " + (err?.message || err));
+      }
     });
-    await tx.wait();
-    alert("Thank you for your donation!");
-  } catch (err) {
-    console.error(err);
-    alert("Donation failed: " + (err?.message || err));
-  }
-});
+  };
+  $("#donateBtn")?.addEventListener("click", act);
+  $("#donateBtnFooter")?.addEventListener("click", act);
+}
 
-/* ---------- Single-logo logic (image OR text) ---------- */
+/* ---------- Single-logo logic (no double logos) ---------- */
 (function ensureSingleLogo(){
   const brand = document.getElementById('brand');
   const img   = brand?.querySelector('.logo-img');
@@ -276,164 +291,10 @@ donateBtn?.addEventListener("click", async (e) => {
   }
 })();
 
-// ===== helpers =====
-const $ = (sel, root=document) => root.querySelector(sel);
-const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
-
-// store current picks
-let CURRENT_REGION = localStorage.getItem('region') || 'us'; // 'us' | 'cn' | 'pk' | 'id' | 'uk'
-let CURRENT_CAT    = localStorage.getItem('cat')    || 'us';
-
-// Toggle accent for CN (CSS uses :root.cn-accent)
-document.documentElement.classList.toggle('cn-accent', CURRENT_REGION === 'cn');
-
-// ===== mobile-friendly dropdown toggle =====
-(function initRegionDropdown(){
-  const btn  = $('#usBtn');
-  const menu = $('#regionMenu');
-  const code = $('#regionCode');
-  if (!btn || !menu || !code) return;
-
-  // Fill menu items once (US/CN/PK/ID/UK)
-  if (!menu.dataset.ready) {
-    const opts = [
-      {key:'us', label:'United States (US)', code:'US'},
-      {key:'cn', label:'China (CN)',         code:'CN'},
-      {key:'pk', label:'Pakistan (PK)',      code:'PK'},
-      {key:'id', label:'Indonesia (ID)',     code:'ID'},
-      {key:'uk', label:'United Kingdom (UK)',code:'UK'},
-    ];
-    menu.innerHTML = opts.map(o => `<li><button class="nav-sub-btn" data-region="${o.key}">${o.label}</button></li>`).join('');
-    menu.dataset.ready = '1';
-  }
-
-  const close = () => { menu.classList.remove('show'); btn.setAttribute('aria-expanded','false'); };
-
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const open = !menu.classList.contains('show');
-    document.querySelectorAll('.nav-dropmenu.show').forEach(m => m.classList.remove('show'));
-    if (open) { menu.classList.add('show'); btn.setAttribute('aria-expanded','true'); }
-    else close();
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!menu.contains(e.target) && e.target !== btn) close();
-  });
-
-  // Pick region
-  menu.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-region]');
-    if (!b) return;
-    const region = b.getAttribute('data-region');
-    CURRENT_REGION = region;
-    localStorage.setItem('region', region);
-    code.textContent = region.toUpperCase();
-    document.documentElement.classList.toggle('cn-accent', region === 'cn');
-
-    // If your backend separates categories by region (e.g. us_cn),
-    // switch the active category mapping here:
-    if (CURRENT_CAT === 'us' || CURRENT_CAT.startsWith('us_')) {
-      CURRENT_CAT = (region === 'us') ? 'us' : `us_${region}`;
-      localStorage.setItem('cat', CURRENT_CAT);
-    }
-
-    // refresh data
-    loadAndRender();
-    close();
-  });
-
-  // Reflect saved selection in UI
-  code.textContent = CURRENT_REGION.toUpperCase();
-  if (CURRENT_REGION !== 'us' && (CURRENT_CAT === 'us')) {
-    CURRENT_CAT = `us_${CURRENT_REGION}`;
-  }
-})();
-
-// ===== category buttons & swipe left/right =====
-(function initCats(){
-  const bar = $('#catBar');
-  if (!bar) return;
-
-  // click: set CURRENT_CAT
-  bar.addEventListener('click', (e) => {
-    const b = e.target.closest('.nav-btn[data-cat]');
-    if (!b) return;
-    const cat = b.getAttribute('data-cat');
-    CURRENT_CAT = cat === 'us' && CURRENT_REGION !== 'us' ? `us_${CURRENT_REGION}` : cat;
-    localStorage.setItem('cat', CURRENT_CAT);
-    highlightActiveCat();
-    renderArticles(window.__ARTICLES || {});
-  });
-
-  function highlightActiveCat(){
-    $$('.nav-btn[data-cat]').forEach(b => b.classList.toggle('active', b.getAttribute('data-cat') === (CURRENT_CAT.startsWith('us_') ? 'us' : CURRENT_CAT)));
-    $('#regionCode') && ($('#regionCode').textContent = (CURRENT_CAT.startsWith('us_') ? CURRENT_CAT.split('_')[1].toUpperCase() : CURRENT_REGION.toUpperCase()));
-  }
-
-  // global swipe (mobile) to move category
-  let touchX = 0, touchY = 0;
-  document.addEventListener('touchstart', (e) => {
-    const t = e.changedTouches[0]; touchX = t.clientX; touchY = t.clientY;
-  }, {passive:true});
-  document.addEventListener('touchend', (e) => {
-    const t = e.changedTouches[0];
-    const dx = t.clientX - touchX, dy = t.clientY - touchY;
-    if (Math.abs(dx) > 60 && Math.abs(dy) < 40) {
-      const order = ['us','world','entertainment','finance','crypto'];
-      const effective = CURRENT_CAT.startsWith('us_') ? 'us' : CURRENT_CAT;
-      let idx = order.indexOf(effective);
-      if (dx < 0) idx = Math.min(order.length-1, idx+1); // swipe left → next
-      else        idx = Math.max(0, idx-1);             // swipe right → prev
-      const nextCat = order[idx];
-      CURRENT_CAT = (nextCat === 'us' && CURRENT_REGION !== 'us') ? `us_${CURRENT_REGION}` : nextCat;
-      localStorage.setItem('cat', CURRENT_CAT);
-      highlightActiveCat();
-      renderArticles(window.__ARTICLES || {});
-    }
-  }, {passive:true});
-
-  highlightActiveCat();
-})();
-
-// ===== fetch + render wiring =====
-async function loadAndRender(){
-  try {
-    const res = await fetch(`${window.API_BASE || ''}/api/articles?limit=12`, { cache: 'no-store' });
-    const data = await res.json();
-    window.__ARTICLES = data.categories || {};
-
-    // Choose active list
-    const pick = (cats, key) => cats[key] || [];
-    const cats = window.__ARTICLES;
-
-    // hero = first of current category (fallback to US/World)
-    const currentList =
-      pick(cats, CURRENT_CAT) ||
-      pick(cats, CURRENT_CAT.startsWith('us_') ? 'us' : CURRENT_CAT) ||
-      pick(cats, 'us') || [];
-    renderHero(currentList[0]);
-
-    // render cards grid (existing function)
-    renderGrid(currentList); // keep your existing implementation
-  } catch (e) {
-    console.error('load error', e);
-  }
-}
-
-// kick off
-loadAndRender();
-
-/* ---------- Init ---------- */
-function populateRegionMenuAndLabel(){
-  applyRegionLabel();
-  populateRegionMenu();
-}
-(async function init(){
-  populateRegionMenuAndLabel();
-  showRegionModalIfNeeded();     // shows once if region not chosen
-  await loadArticles();
-  // Story block size for mobile
-  setStoryHeight();
-  window.addEventListener('resize', setStoryHeight);
-})();
+/* ---------- Boot ---------- */
+document.addEventListener("DOMContentLoaded", ()=>{
+  initRegionModal();
+  initCategoryBar();
+  wireDonate();
+  loadArticles();
+});
