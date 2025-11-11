@@ -163,11 +163,16 @@ async function loadArticles() {
 const catBarEl = document.getElementById("catBar");
 
 function setAccentByCategory() {
-  // Toggle a class on <html> so CSS can switch the accent color
   document.documentElement.classList.toggle("cn-accent", currentCat === "cn");
 }
 
+function updateUsCnLabel() {
+  const label = document.querySelector("#usCnBtn .label");
+  if (label) label.textContent = (currentCat === "cn" ? "CN" : "US");
+}
+
 catBarEl?.addEventListener("click", (e) => {
+  // Only react to REAL category buttons (those with data-cat)
   const btn = e.target.closest("button[data-cat]");
   if (!btn) return;
 
@@ -177,40 +182,40 @@ catBarEl?.addEventListener("click", (e) => {
   currentCat = cat;
   storyIndex = 0;
 
-  // Active state: ONLY the clicked button (so CN shows “active” when chosen)
+  // Active state: clear all, set only the chosen one (sub or regular)
   document.querySelectorAll(".nav-btn, .nav-sub-btn").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
 
-  // Close dropdown (mobile) if open
-  const sub = catBarEl.querySelector(".nav-dropdown .nav-sub");
-  const mainBtn = catBarEl.querySelector('.nav-dropdown > .nav-btn');
+  // Close the US/CN submenu if open (mobile)
+  const sub = document.getElementById("usCnSub");
+  const mainBtn = document.getElementById("usCnBtn");
   if (sub && sub.style.display === "block") {
     sub.style.display = "none";
     document.body.classList.remove("menu-open");
     mainBtn?.setAttribute("aria-expanded", "false");
   }
 
+  // Update the parent label and accent color
+  updateUsCnLabel();
   setAccentByCategory();
+
   renderCategory(currentCat);
-  setStoryHeight?.();
+  if (typeof setStoryHeight === "function") setStoryHeight();
 });
 
-// --- US/CN dropdown: open on tap (mobile); desktop hover is CSS ---
+// --- US/CN dropdown: open on tap (mobile); desktop hover via CSS ---
 (function(){
-  const catBar  = document.getElementById("catBar");
-  if (!catBar) return;
+  const mainBtn = document.getElementById("usCnBtn");
+  const sub     = document.getElementById("usCnSub");
+  const wrap    = document.querySelector(".nav-dropdown");
 
-  const subWrap = catBar.querySelector(".nav-dropdown");
-  const sub     = catBar.querySelector(".nav-dropdown .nav-sub");
-  const mainBtn = catBar.querySelector('.nav-dropdown > .nav-btn');
-
-  if (!subWrap || !sub || !mainBtn) return;
+  if (!mainBtn || !sub || !wrap) return;
 
   let open = false;
 
-  // Toggle on click of main US button (mobile). Desktop hover handled by CSS.
+  // Toggle only on mobile (no hover)
   mainBtn.addEventListener("click", (e) => {
-    if (window.matchMedia("(hover:hover)").matches) return; // desktop: ignore
+    if (window.matchMedia("(hover:hover)").matches) return; // desktop: hover CSS handles it
     e.preventDefault();
     open = !open;
     sub.style.display = open ? "block" : "none";
@@ -218,19 +223,21 @@ catBarEl?.addEventListener("click", (e) => {
     mainBtn.setAttribute("aria-expanded", open ? "true" : "false");
   });
 
-  // Close when clicking outside (mobile)
+  // Click outside to close (mobile)
   document.addEventListener("click", (e) => {
     if (!open) return;
-    if (!subWrap.contains(e.target)) {
+    if (!wrap.contains(e.target)) {
       open = false;
       sub.style.display = "none";
       document.body.classList.remove("menu-open");
       mainBtn.setAttribute("aria-expanded", "false");
     }
   });
-
-  // When a submenu item (US or CN) is clicked, the handler above will run.
 })();
+
+// Call once on load so the label & accent reflect the initial category
+updateUsCnLabel();
+setAccentByCategory();
 
 /* ---------------- Manual Refresh ---------------- */
 const refreshBtn = document.getElementById("refreshBtn");
