@@ -238,3 +238,7 @@ a{text-decoration:none;color:inherit}
   padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#f8fafc; font-weight:600; cursor:pointer;
 }
 .region-grid button:hover{ background:#eef2f7; }
+
+/* Keep the region menu above hero/cards */
+.nav-dropmenu { z-index: 100; }
+

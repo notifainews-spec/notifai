@@ -276,6 +276,154 @@ donateBtn?.addEventListener("click", async (e) => {
   }
 })();
 
+// ===== helpers =====
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+// store current picks
+let CURRENT_REGION = localStorage.getItem('region') || 'us'; // 'us' | 'cn' | 'pk' | 'id' | 'uk'
+let CURRENT_CAT    = localStorage.getItem('cat')    || 'us';
+
+// Toggle accent for CN (CSS uses :root.cn-accent)
+document.documentElement.classList.toggle('cn-accent', CURRENT_REGION === 'cn');
+
+// ===== mobile-friendly dropdown toggle =====
+(function initRegionDropdown(){
+  const btn  = $('#usBtn');
+  const menu = $('#regionMenu');
+  const code = $('#regionCode');
+  if (!btn || !menu || !code) return;
+
+  // Fill menu items once (US/CN/PK/ID/UK)
+  if (!menu.dataset.ready) {
+    const opts = [
+      {key:'us', label:'United States (US)', code:'US'},
+      {key:'cn', label:'China (CN)',         code:'CN'},
+      {key:'pk', label:'Pakistan (PK)',      code:'PK'},
+      {key:'id', label:'Indonesia (ID)',     code:'ID'},
+      {key:'uk', label:'United Kingdom (UK)',code:'UK'},
+    ];
+    menu.innerHTML = opts.map(o => `<li><button class="nav-sub-btn" data-region="${o.key}">${o.label}</button></li>`).join('');
+    menu.dataset.ready = '1';
+  }
+
+  const close = () => { menu.classList.remove('show'); btn.setAttribute('aria-expanded','false'); };
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = !menu.classList.contains('show');
+    document.querySelectorAll('.nav-dropmenu.show').forEach(m => m.classList.remove('show'));
+    if (open) { menu.classList.add('show'); btn.setAttribute('aria-expanded','true'); }
+    else close();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!menu.contains(e.target) && e.target !== btn) close();
+  });
+
+  // Pick region
+  menu.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-region]');
+    if (!b) return;
+    const region = b.getAttribute('data-region');
+    CURRENT_REGION = region;
+    localStorage.setItem('region', region);
+    code.textContent = region.toUpperCase();
+    document.documentElement.classList.toggle('cn-accent', region === 'cn');
+
+    // If your backend separates categories by region (e.g. us_cn),
+    // switch the active category mapping here:
+    if (CURRENT_CAT === 'us' || CURRENT_CAT.startsWith('us_')) {
+      CURRENT_CAT = (region === 'us') ? 'us' : `us_${region}`;
+      localStorage.setItem('cat', CURRENT_CAT);
+    }
+
+    // refresh data
+    loadAndRender();
+    close();
+  });
+
+  // Reflect saved selection in UI
+  code.textContent = CURRENT_REGION.toUpperCase();
+  if (CURRENT_REGION !== 'us' && (CURRENT_CAT === 'us')) {
+    CURRENT_CAT = `us_${CURRENT_REGION}`;
+  }
+})();
+
+// ===== category buttons & swipe left/right =====
+(function initCats(){
+  const bar = $('#catBar');
+  if (!bar) return;
+
+  // click: set CURRENT_CAT
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('.nav-btn[data-cat]');
+    if (!b) return;
+    const cat = b.getAttribute('data-cat');
+    CURRENT_CAT = cat === 'us' && CURRENT_REGION !== 'us' ? `us_${CURRENT_REGION}` : cat;
+    localStorage.setItem('cat', CURRENT_CAT);
+    highlightActiveCat();
+    renderArticles(window.__ARTICLES || {});
+  });
+
+  function highlightActiveCat(){
+    $$('.nav-btn[data-cat]').forEach(b => b.classList.toggle('active', b.getAttribute('data-cat') === (CURRENT_CAT.startsWith('us_') ? 'us' : CURRENT_CAT)));
+    $('#regionCode') && ($('#regionCode').textContent = (CURRENT_CAT.startsWith('us_') ? CURRENT_CAT.split('_')[1].toUpperCase() : CURRENT_REGION.toUpperCase()));
+  }
+
+  // global swipe (mobile) to move category
+  let touchX = 0, touchY = 0;
+  document.addEventListener('touchstart', (e) => {
+    const t = e.changedTouches[0]; touchX = t.clientX; touchY = t.clientY;
+  }, {passive:true});
+  document.addEventListener('touchend', (e) => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchX, dy = t.clientY - touchY;
+    if (Math.abs(dx) > 60 && Math.abs(dy) < 40) {
+      const order = ['us','world','entertainment','finance','crypto'];
+      const effective = CURRENT_CAT.startsWith('us_') ? 'us' : CURRENT_CAT;
+      let idx = order.indexOf(effective);
+      if (dx < 0) idx = Math.min(order.length-1, idx+1); // swipe left → next
+      else        idx = Math.max(0, idx-1);             // swipe right → prev
+      const nextCat = order[idx];
+      CURRENT_CAT = (nextCat === 'us' && CURRENT_REGION !== 'us') ? `us_${CURRENT_REGION}` : nextCat;
+      localStorage.setItem('cat', CURRENT_CAT);
+      highlightActiveCat();
+      renderArticles(window.__ARTICLES || {});
+    }
+  }, {passive:true});
+
+  highlightActiveCat();
+})();
+
+// ===== fetch + render wiring =====
+async function loadAndRender(){
+  try {
+    const res = await fetch(`${window.API_BASE || ''}/api/articles?limit=12`, { cache: 'no-store' });
+    const data = await res.json();
+    window.__ARTICLES = data.categories || {};
+
+    // Choose active list
+    const pick = (cats, key) => cats[key] || [];
+    const cats = window.__ARTICLES;
+
+    // hero = first of current category (fallback to US/World)
+    const currentList =
+      pick(cats, CURRENT_CAT) ||
+      pick(cats, CURRENT_CAT.startsWith('us_') ? 'us' : CURRENT_CAT) ||
+      pick(cats, 'us') || [];
+    renderHero(currentList[0]);
+
+    // render cards grid (existing function)
+    renderGrid(currentList); // keep your existing implementation
+  } catch (e) {
+    console.error('load error', e);
+  }
+}
+
+// kick off
+loadAndRender();
+
 /* ---------- Init ---------- */
 function populateRegionMenuAndLabel(){
   applyRegionLabel();
