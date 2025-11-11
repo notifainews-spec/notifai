@@ -129,20 +129,21 @@ function render(){
   const hero = pickHero(list);
 
   // Hero
-  const heroEl = $("#hero");
-  if (hero){
-    const heroImg = $("#heroImg");
-    heroImg.src = proxyImg(hero.image);
-    heroImg.alt = hero.title || "";
+  // Inside your render of the first/top story (the “hero”):
+const heroHtml = `
+  <a class="hero-card" href="article.html?id=${encodeURIComponent(item.id)}" aria-label="${item.title}">
+    <img class="hero-img" src="${item.image || 'cover.jpg'}" alt="">
+    <div class="hero-gradient"></div>
+    <div class="hero-copy">
+      <span class="hero-source">${item.source || ''}</span>
+      <h2 class="hero-title">${item.title}</h2>
+      <p class="hero-summary">${(item.summary || '').replace(/\s+/g,' ').trim().slice(0, 180)}</p>
+    </div>
+  </a>
+`;
 
-    $("#heroLink").href   = `/article.html?id=${encodeURIComponent(hero.id)}`;
-    $("#heroKicker").textContent = (state.category==='us'?'Politics':state.category).toUpperCase();
-    $("#heroTitle").textContent  = hero.title || "";
-    $("#heroRead").href   = `/article.html?id=${encodeURIComponent(hero.id)}`;
-    heroEl.hidden = false;
-  } else {
-    heroEl.hidden = true;
-  }
+// Then inject heroHtml into your hero container:
+document.getElementById('hero').innerHTML = heroHtml;
 
   // Grid
   const grid = $("#grid");

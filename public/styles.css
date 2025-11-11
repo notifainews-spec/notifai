@@ -57,25 +57,94 @@ a{text-decoration:none;color:inherit}
 .container{max-width:1150px;margin:20px auto;padding:0 16px}
 .notice{background:#fff7ed;border:1px solid var(--border);color:#9a3412;padding:8px 10px;border-radius:8px;margin-bottom:14px}
 
-/* ===== Hero / Top story ===== */
-.hero-block{position:relative;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px;box-shadow:var(--shadow)}
-.hero-media{position:relative;aspect-ratio:16/9;display:block;/* removed grey background */}
-.hero-media img{width:100%;height:100%;object-fit:cover}
-.hero-overlay{
-  position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,.48), rgba(0,0,0,.08) 40%, rgba(0,0,0,0));
-  display:flex;align-items:flex-end
+/* ===== HERO (Headline story) ===== */
+.hero-card{
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16/9;            /* keeps image from “jumping” */
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;              /* safe fallback behind image */
 }
-.hero-info{color:#fff;padding:18px}
-.hero-kicker{opacity:.9;font-size:12px;margin-bottom:6px}
-.hero-title{margin:0;font-size:28px;line-height:1.15;font-weight:800}
-.hero-actions{display:flex;gap:10px;margin-top:10px}
-.hero-actions .btn{background:#fff;color:#111;border-radius:10px;padding:8px 12px;border:0}
 
-/* Mobile hero text smaller */
+.hero-img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;             /* always cover fully */
+  display: block;
+  filter: saturate(1.05);
+}
+
+.hero-gradient{
+  position: absolute;
+  inset: 0;
+  /* soft top → strong bottom gradient for legible text */
+  background: linear-gradient(
+    180deg,
+    rgba(0,0,0,0.00) 0%,
+    rgba(0,0,0,0.45) 55%,
+    rgba(0,0,0,0.75) 100%
+  );
+  pointer-events: none;
+}
+
+.hero-copy{
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.4);
+  max-width: 90ch;               /* don’t let the text stretch too wide */
+}
+
+.hero-source{
+  display: inline-block;
+  font-size: .8rem;
+  line-height: 1;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.35);
+  backdrop-filter: blur(2px);
+  opacity: .9;
+}
+
+.hero-title{
+  margin: .4rem 0 .2rem;
+  font-size: clamp(1.1rem, 2.8vw, 2rem);
+  line-height: 1.15;
+  font-weight: 800;
+}
+
+.hero-summary{
+  margin: 0;
+  font-size: clamp(.85rem, 1.6vw, 1rem);
+  line-height: 1.35;
+  opacity: .95;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;         /* keep it tight */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 @media (max-width: 720px){
-  .hero-title{ font-size:20px; line-height:1.25; }
-  .hero-info{ padding:12px; }
-  .hero-kicker{ font-size:11px; margin-bottom:4px; }
+  .hero-card{
+    aspect-ratio: 4 / 5;         /* taller on phones so copy sits on image */
+    border-radius: 12px;
+  }
+  .hero-copy{
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+  .hero-title{
+    font-size: clamp(1rem, 5vw, 1.4rem);
+    font-weight: 800;
+  }
+  .hero-summary{
+    -webkit-line-clamp: 3;       /* allow one more line on phones if needed */
+  }
 }
 
 /* ===== Cards grid ===== */
