@@ -1,4 +1,4 @@
-// NotifAi News — Frontend App (scrolling UX; swipe to change category; modal + logo fixes)
+// NotifAi News — Frontend App (desktop hero only; mobile = cards; swipe to change category; logo fallback kept)
 
 const API_BASE = window.API_BASE || window.location.origin;
 const COVER = "/cover.jpg";
@@ -17,7 +17,7 @@ function normalizeCat(c) {
   return CATS.includes(c) ? c : "us";
 }
 
-const $ = (sel, root = document) => root.querySelector(sel);
+const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 /* -------------------- Utilities -------------------- */
@@ -35,132 +35,88 @@ function setNotice(text) {
     n.textContent = text;
   }
 }
-function saveRegion(r) { try { localStorage.setItem("region", r); } catch {} }
+function saveRegion(r)   { try { localStorage.setItem("region", r); } catch {} }
 function saveCategory(c) { try { localStorage.setItem("cat", c); } catch {} }
+function isMobile()      { return window.matchMedia("(max-width: 768px)").matches; }
 
-// Convenience: add event listener with sane defaults
-function on(el, evt, fn, opts) {
-  if (!el) return;
-  el.addEventListener(evt, fn, opts || false);
-}
+function on(el, evt, fn, opts) { if (el) el.addEventListener(evt, fn, opts || false); }
+function esc(s) { return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+function hydro(id){ return (id == null ? "" : String(id)); }
 
-/* -------------------- Region Modal -------------------- */
+/* -------------------- Region Modal (unchanged) -------------------- */
 function openRegionModal() {
-  const m = $("#regionModal");
-  if (!m) return;
-  m.hidden = false;       // important: toggle the attribute
-  m.classList.add("show");
+  const m = $("#regionModal"); if (!m) return;
+  m.hidden = false; m.classList.add("show");
 }
 function closeRegionModal() {
-  const m = $("#regionModal");
-  if (!m) return;
-  m.classList.remove("show");
-  m.hidden = true;        // important: toggle the attribute
+  const m = $("#regionModal"); if (!m) return;
+  m.classList.remove("show"); m.hidden = true;
 }
 function initRegionModal() {
   const modal = $("#regionModal");
   if (!modal) return;
 
-  // First visit? Show it. Otherwise keep it hidden.
-  if (!localStorage.getItem("region")) {
-    modal.hidden = false;
-    modal.classList.add("show");
-  } else {
-    modal.hidden = true;
-    modal.classList.remove("show");
-  }
+  if (!localStorage.getItem("region")) { modal.hidden = false; modal.classList.add("show"); }
+  else { modal.hidden = true; modal.classList.remove("show"); }
 
-  // Click on region buttons
   on(modal, "click", (e) => {
     const btn = e.target.closest("button[data-region]");
-    if (!btn) {
-      // click outside inner card closes modal
-      if (e.target === modal) closeRegionModal();
-      return;
-    }
+    if (!btn) { if (e.target === modal) closeRegionModal(); return; }
     const r = (btn.getAttribute("data-region") || "").toLowerCase();
     if (!REGIONS.includes(r)) return;
-    state.region = r;
-    saveRegion(r);
-    // keep current category if valid; else fallback to 'us'
+    state.region = r; saveRegion(r);
     state.category = normalizeCat(state.category);
     closeRegionModal();
     loadArticles();
   });
 
-  // Footer/menu triggers
-  $("[data-action='change-region']") && on($("[data-action='change-region']"), "click", (e) => {
-    e.preventDefault();
-    openRegionModal();
-  });
-  on($("#changeRegion"), "click", (e) => { e.preventDefault(); openRegionModal(); });
+  const footerTrigger = $("[data-action='change-region']");
+  if (footerTrigger) on(footerTrigger, "click", (e) => { e.preventDefault(); openRegionModal(); });
 
-  // Escape to close
-  on(document, "keydown", (e) => {
-    if (e.key === "Escape") closeRegionModal();
-  });
+  const changeRegionBtn = $("#changeRegion");
+  if (changeRegionBtn) on(changeRegionBtn, "click", (e) => { e.preventDefault(); openRegionModal(); });
+
+  on(document, "keydown", (e) => { if (e.key === "Escape") closeRegionModal(); });
 }
 
-/* -------------------- Category Bar + Swipe -------------------- */
+/* -------------------- Category bar + swipe anywhere -------------------- */
 function initCategoryBar() {
-    // Click to switch categories
-    $$(".main-nav .nav-btn").forEach(btn => {
-      on(btn, "click", () => {
-        const c = (btn.getAttribute("data-cat") || "").toLowerCase();
-        if (!CATS.includes(c)) return;
-        state.category = c;
-        saveCategory(c);
+  // Click buttons
+  $$(".main-nav .nav-btn").forEach(btn => {
+    on(btn, "click", () => {
+      const c = (btn.getAttribute("data-cat") || "").toLowerCase();
+      if (!CATS.includes(c)) return;
+      state.category = c; saveCategory(c);
+      highlightActiveCat();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  // Swipe anywhere: pointer events for robust mobile + desktop touchpads
+  let startX = 0, startY = 0, down = false;
+  on(document, "pointerdown", (e) => { down = true; startX = e.clientX; startY = e.clientY; }, { passive: true });
+  on(document, "pointerup", (e) => {
+    if (!down) return; down = false;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      const dir = dx > 0 ? -1 : 1; // right swipe => previous; left => next
+      const idx = CATS.indexOf(state.category);
+      const next = Math.min(CATS.length - 1, Math.max(0, idx + dir));
+      if (next !== idx) {
+        state.category = CATS[next]; saveCategory(state.category);
         highlightActiveCat();
-        render(); // re-render lists
-        // scroll to top for a nicer UX
+        render();
         window.scrollTo({ top: 0, behavior: "smooth" });
-      });
-    });
-
-    // Swipe left/right anywhere to change category (robust Pointer Events)
-    let startX = 0, startY = 0, isPointerDown = false;
-    let moved = false;
-
-    on(document, "pointerdown", (e) => {
-      isPointerDown = true;
-      moved = false;
-      startX = e.clientX;
-      startY = e.clientY;
-    });
-
-    on(document, "pointermove", (e) => {
-      if (!isPointerDown) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      if (Math.abs(dx) > 12) moved = true; // started a horizontal gesture
-      // we don't preventDefault to keep page scroll working naturally
-    }, { passive: true });
-
-    on(document, "pointerup", (e) => {
-      if (!isPointerDown) return;
-      isPointerDown = false;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      // treat as swipe if horizontal displacement dominates and is > 50px
-      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-        const dir = dx > 0 ? -1 : 1; // right swipe -> previous, left swipe -> next
-        const idx = CATS.indexOf(state.category);
-        const next = Math.min(CATS.length - 1, Math.max(0, idx + dir));
-        if (next !== idx) {
-          state.category = CATS[next];
-          saveCategory(state.category);
-          highlightActiveCat();
-          render();
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }
       }
-    });
+    }
+  }, { passive: true });
 }
+
 function highlightActiveCat() {
   $$(".main-nav .nav-btn").forEach(b => b.classList.remove("active"));
   const active = $(`.main-nav .nav-btn[data-cat="${state.category}"]`);
-  if (active) active.classList.add("different-bg", "active"); // 'different-bg' optional if you style it
+  if (active) active.classList.add("active");
 }
 
 /* -------------------- Fetch & Render -------------------- */
@@ -185,18 +141,19 @@ async function loadArticles() {
   }
 }
 
-function pickHero(list) {
-  return Array.isArray(list) && list.length ? list[0] : null;
-}
+function pickHero(list) { return Array.isArray(list) && list.length ? list[0] : null; }
 
 function render() {
   const list = state.itemsByCat[state.category] || [];
   const hero = pickHero(list);
 
-  // --- HERO (populate existing DOM, toggle hidden attr) ---
   const heroEl = $("#hero");
+  const hideHero = isMobile(); // mobile = no hero, just cards
+
   if (heroEl) {
-    if (hero) {
+    if (hideHero || !hero) {
+      heroEl.hidden = true;
+    } else {
       const link  = $("#heroLink");
       const img   = $("#heroImg");
       const title = $("#heroTitle");
@@ -209,18 +166,15 @@ function render() {
       if (kicker) kicker.textContent = (hero.source || "Top story");
       if (read)  read.href = `./article.html?id=${encodeURIComponent(hydro(hero.id))}`;
 
-      heroEl.hidden = false; // ensure visible
-    } else {
-      heroEl.hidden = true;
+      heroEl.hidden = false;
     }
   }
 
-  // --- GRID for remaining items ---
   const grid = $("#grid");
   if (!grid) return;
   grid.innerHTML = "";
 
-  const tail = hero ? list.slice(1) : list.slice();
+  const tail = (!hideHero && hero) ? list.slice(1) : list.slice(); // on mobile, show all as cards
   if (!tail.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -245,11 +199,6 @@ function render() {
   }
 }
 
-function esc(s) {
-  return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
-}
-function hydro(id){ return (id == null ? "" : String(id)); }
-
 /* -------------------- Donate (MetaMask) -------------------- */
 function ensureEthersLoaded(cb) {
   if (window.ethers) return cb();
@@ -267,9 +216,6 @@ function wireDonate() {
         const provider = new window.ethers.providers.Web3Provider(window.ethereum);
         await provider.send("eth_request_accounts", []);
         const signer = provider.getSigner();
-        const CONTRACT = "0x6a98b87f8116678ed98f74ae9c15d0e1348658e4444".replace("c15d0e","a2ed5a"); // keep your actual address here
-        // ↑ If you already have the exact address in HTML, remove this line and hardcode it.
-
         const tx = await signer.sendTransaction({
           to: "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846", // your donation wallet/contract
           value: window.ethers.utils.parseEther("0.01")
@@ -292,35 +238,25 @@ function initLogo() {
   if (!brand) return;
   const img = brand.querySelector(".logo-img");
   const label = brand.querySelector(".logo-text");
-
   if (!img) return;
 
   const candidates = ["/logo.png", "/logo.jpg", "/logo.jpeg", "/logo.PNG", "/logo.JPG", "/logo.JPEG"];
 
   function tryNext(i) {
     if (i >= candidates.length) {
-      // no image available -> show text label, hide <img>
       if (label) label.style.display = "inline-block";
       img.style.display = "none";
       return;
     }
     const test = new Image();
-    test.onload = () => {
-      img.src = candidates[i];
-      img.style.display = "";
-      if (label) label.style.display = "none";
-    };
+    test.onload = () => { img.src = candidates[i]; img.style.display = ""; if (label) label.style.display = "none"; };
     test.onerror = () => tryNext(i + 1);
-    test.src = candidates[i] + "?v=" + Date.now(); // bust cache
+    test.src = candidates[i] + "?v=" + Date.now();
   }
 
-  // if current src loads fine, keep it; otherwise fall back
-  if (img.complete && img.naturalWidth > 0) {
-    if (label) label.style.display = "none";
-    img.style.display = "";
-  } else {
+  if (img.complete && img.naturalWidth > 0) { if (label) label.style.display = "none"; img.style.display = ""; }
+  else {
     on(img, "error", () => tryNext(0), { once: true });
-    // also attempt fallback immediately in case src is empty
     if (!img.getAttribute("src")) tryNext(0);
   }
 }
@@ -328,8 +264,8 @@ function initLogo() {
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   initLogo();
-  initRegionModal();
-  initCategoryBar();
+  initRegionModal();   // unchanged
+  initCategoryBar();   // adds swipe-anywhere
   wireDonate();
   loadArticles();
 });
