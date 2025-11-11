@@ -110,8 +110,8 @@ async function loadArticles(){
 
     // Auto story mode ON for mobile only
     if (matchMedia("(max-width: 720px)").matches){
-      document.body.classList.add("story-active");
-      buildStoryMode();
+      document.body.classList.remove("story-active");
+      render();
     } else {
       document.body.classList.remove("story-active");
       render();
