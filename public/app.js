@@ -1,3 +1,4 @@
+<script>
 /* NotifAi News — Frontend app (scrolling on mobile, swipe to change category) */
 
 const API_BASE = window.API_BASE || location.origin;
@@ -7,10 +8,12 @@ const REGIONS = ["us", "cn", "pk", "id", "uk"];
 
 let state = {
   region: (localStorage.getItem("region") || "us").toLowerCase(),
-  category: localStorage.getItem("cat") || "us",
+  category: localizeCat(localStorage.getItem("cat") || "us"),
   data: null,
   itemsByCat: { us: [], finance: [], entertainment: [], world: [], crypto: [] }
 };
+
+function localizeCat(c){ return CATS.includes(c) ? c : "us"; }
 
 const $  = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
@@ -22,10 +25,7 @@ function proxyImg(u) {
 function setNotice(text) {
   const n = $("#notice");
   if (!n) return;
-  if (!text) {
-    n.hidden = true;
-    return;
-  }
+  if (!text) { n.hidden = true; n.textContent = ""; return; }
   n.hidden = false;
   n.textContent = text;
 }
@@ -34,19 +34,31 @@ function saveCategory(c) { try { localStorage.setItem("cat", c); } catch {} }
 
 /* ---------- Region modal + footer trigger ---------- */
 function openRegionModal() {
-  $("#regionModal")?.classList.remove("hidden");
+  const m = $("#regionModal");
+  if (!m) return;
+  m.hidden = false;                 // <-- use attribute, not just a CSS class
+  m.classList.add("show");          // optional styling hook
 }
 function closeRegionModal() {
-  $("#regionModal")?.classList.add("hidden");
+  const m = $("#regionModal");
+  if (!m) return;
+  m.classList.remove("show");
+  m.hidden = true;                  // <-- actually hide the modal
 }
 function initRegionModal() {
   const m = $("#regionModal");
   if (!m) return;
 
-  // show on first visit only
-  if (!localStorage.getItem("region")) m.classList.remove("hidden");
+  // Show on first visit only (no region saved yet)
+  if (!localStorage.getItem("region")) {
+    m.hidden = false;
+    m.classList.add("show");
+  } else {
+    m.hidden = true;
+    m.classList.remove("show");
+  }
 
-  // choose region
+  // Choose region by clicking one of the buttons
   m.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-region]");
     if (!b) return;
@@ -56,26 +68,31 @@ function initRegionModal() {
     saveRegion(r);
     if (!CATS.includes(state.category)) state.category = "us";
     closeRegionModal();
-    loadArticles();
+    loadArticles();                 // re-fetch with new region
   });
 
-  // footer link
-  $("#changeRegion")?.addEventListener("click", (e) => {
+  // Footer "Change Region" link opens the modal
+  $("#changeRegion")?.addAction("click", (e) => {
     e.preventDefault();
     openRegionModal();
   });
 
-  // click outside content to close (optional, safe)
+  // Click outside the inner card closes the modal
   m.addEventListener("mousedown", (e) => {
     if (e.target === m) closeRegionModal();
   });
 }
 
+/* helper: addEventListener shorthand with passive=false by default */
+EventTarget.prototype.addAction = function(type, handler, opts){ 
+  this.addEventListener(type, handler, opts || false);
+};
+
 /* ---------- Category bar + swipe ---------- */
 function initCategoryBar() {
   const catButtons = $$(".main-nav .nav-btn");
   catButtons.forEach((b) => {
-    b.addEventListener("click", () => {
+    b.addAction("click", () => {
       const c = b.getAttribute("data-cat");
       if (!c) return;
       state.category = c;
@@ -87,39 +104,32 @@ function initCategoryBar() {
 
   // Mobile: swipe left/right anywhere to change category
   let tsX = 0, tsY = 0, active = false;
-  document.addEventListener(
-    "touchstart",
-    (e) => {
-      if (!e.touches?.length) return;
-      active = true;
-      tsX = e.touches[0].clientX;
-      tsY = e.touches[0].clientY;
-    },
-    { passive: true }
-  );
-  document.addEventListener(
-    "touchend",
-    (e) => {
-      if (!active) return;
-      active = false;
-      const t = e.changedTouches?.[0];
-      if (!t) return;
-      const dx = t.clientX - tsX;
-      const dy = t.clientY - tsY;
-      // Horizontal intent only
-      if (Math.abs(dx) > 50 && Math.abs(dy) < 40) {
-        const dir = dx > 0 ? -1 : 1;
-        const i = CATS.indexOf(state.category);
-        const ni = Math.min(CATS.length - 1, Math.max(0, i + dir));
-        state.category = CATS[ni];
-        saveCategory(state.category);
-        highlightActiveCat();
-        render();
-      }
-    },
-    { passive: true }
-  );
+  document.addEventListener("touchstart", (e) => {
+    if (!e.touches?.length) return;
+    active = true;
+    tsX = e.touches[0].clientX;
+    tsY = e.touches[0].clientY;
+  }, {passive:true});
+
+  document.addEventListener("touchend", (e) => {
+    if (!active) return;
+    active = false;
+    const t = e.changedTouches?.[0];
+    if (!t) return;
+    const dx = t.clientX - tsX;
+    const dy = t.clientY - tsY;
+    if (Math.abs(dx) > 50 && Math.abs(dy) < 40) {
+      const dir = dx > 0 ? -1 : 1;
+      const i = CATS.indexOf(state.category);
+      const ni = Math.min(CATS.length - 1, Math.max(0, i + dir));
+      state.category = CATS[ni];
+      saveCategory(state.category);
+      highlightActiveCat();
+      render();
+    }
+  }, {passive:true});
 }
+
 function highlightActiveCat() {
   $$(".main-nav .nav-btn").forEach((b) => b.classList.remove("active"));
   const btn = $(`.main-nav .nav-btn[data-cat="${state.category}"]`);
@@ -137,14 +147,11 @@ async function loadArticles() {
     const json = await res.json();
 
     state.data = json;
-    state.itemsByCat =
-      json.categories || { us: [], finance: [], entertainment: [], world: [], crypto: [] };
+    state.itemsByCat = json.categories || { us: [], finance: [], entertainment: [], world: [], crypto: [] };
 
     if (!CATS.includes(state.category)) state.category = "us";
     highlightActiveCat();
 
-    // Always render in scrolling mode (desktop + mobile)
-    document.body.classList.remove("story-active");
     render();
   } catch (e) {
     console.error(e);
@@ -152,34 +159,32 @@ async function loadArticles() {
   }
 }
 
-function pickHero(list) {
-  return list?.length ? list[0] : null;
-}
+function pickHero(list) { return list && list.length ? list[0] : null; }
 
 function render() {
   const list = state.itemsByCat[state.category] || [];
   const hero = pickHero(list);
 
-  /* HERO */
-  const heroEl = $("#hero");
-  if (heroEl) {
+  /* HERO — fill existing DOM nodes from index.html and toggle 'hidden' */
+  const heroSection = $("#hero");
+  if (heroSection) {
     if (hero) {
-      heroEl.innerHTML = `
-        <a class="hero-card" href="article.html?id=${encodeURIComponent(hero.id)}" aria-label="${hero.title}">
-          <img class="hero-img" src="${proxyImg(hero.image)}" alt="">
-          <div class="hero-gradient"></div>
-          <div class="hero-copy">
-            <span class="hero-source">${hero.source || ""}</span>
-            <h2 class="hero-title">${hero.title || ""}</h2>
-            <p class="hero-summary">${(hero.summary || "")
-              .replace(/\s+/g, " ")
-              .trim()
-              .slice(0, 160)}</p>
-          </div>
-        </a>
-      `;
+      const link  = $("#heroLink");
+      const img   = $("#heroImg");
+      const title = $("#heroTitle");
+      const kicker= $("#heroKicker");
+      const read  = $("#heroRead");
+
+      if (link)  link.href  = `./article.html?id=${encodeURIComponent(hero.id)}`;
+      if (img)   { img.src = proxyImg(hero.image); img.alt = hero.title || "Top story"; }
+      if (title) title.textContent = hero.title || "";
+      if (kicker) kicker.textContent = (hero.source || "Top story");
+      if (read)  read.href = `./article.html?id=${encodeURIComponent(hero.id)}`;
+
+      heroSection.hidden = false;   // <-- actually show hero
     } else {
-      heroEl.innerHTML = "";
+      // no hero -> hide the section
+      heroSection.hidden = true;
     }
   }
 
@@ -220,58 +225,53 @@ function render() {
 
 /* ---------- Donate (MetaMask) ---------- */
 function ensureEthersLoaded(cb) {
-  if (window.ethers) {
-    cb();
-    return;
-  }
+  if (window.ethers) { cb(); return; }
   const s = document.createElement("script");
   s.src = "https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js";
   s.onload = cb;
   document.head.appendChild(s);
 }
 function wireDonate() {
-  const act = (e) => {
+  const handler = (e) => {
     e.preventDefault();
     ensureEthersLoaded(async () => {
-      if (!window.ethereum) {
-        alert("Please install MetaMask or a compatible wallet.");
-        return;
-      }
+      if (!window.ethereum) { alert("Please install MetaMask or a compatible wallet."); return; }
       try {
         const provider = new ethers.providers.Web3Provider(window.ethereum);
         await provider.send("eth_requestAccounts", []);
         const signer = provider.getSigner();
-
         const CONTRACT = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
-        const tx = await signer.sendTransaction({
-          to: CONTRACT,
-          value: ethers.utils.parseEther("0.01")
-        });
+        const tx = await signer.sendTransaction({ to: CONTRACT, value: ethers.utils.parseEther("0.01") });
         await tx.wait();
         alert("Thank you for your donation!");
       } catch (err) {
-        console.error(err);
-        alert("Donation failed: " + (err?.message || err));
+        console.error(err); alert("Donation failed: " + (err?.message || err));
       }
     });
   };
-  $("#donateBtn")?.addEventListener("click", act);
-  $("#donateBtnFooter")?.addEventListener("click", act);
+  $("#donateBtn")?.addAction("click", handler);
+  $("#donateBtnFooter")?.addAction("click", handler);
 }
 
 /* ---------- Single-logo guard (prevents double logo text+img) ---------- */
 (function ensureSingleLogo() {
-  const brand = document.getElementById("brand");
-  const img = brand?.querySelector(".logo-img");
-  if (!brand || !img) return;
-  const ok = () => brand.classList.add("logo-has-img");
-  const fail = () => brand.classList.remove("logo-has-img");
-  if (img.complete) {
-    (img.naturalWidth > 0 ? ok : fail)();
-  } else {
-    img.addEventListener("load", ok, { once: true });
-    img.addEventListener("error", fail, { once: true });
+  const brand = $("#brand");
+  if (!brand) return;
+  const img = brand.querySelector(".logo-img");
+  const label = brand.querySelector(".logo-text");
+  if (!img || !label) return;
+  function update() {
+    if (img.naturalWidth > 0) {
+      label.style.display = "none";
+      img.style.display = "";
+    } else {
+      label.style.display = "inline-block";
+      img.style.display = "none";
+    }
   }
+  if (img.complete) { update(); }
+  img.addEventListener("load", update, { once: true });
+  img.addEventListener("error", update, { once: true });
 })();
 
 /* ---------- Boot ---------- */
@@ -281,3 +281,4 @@ document.addEventListener("DOMContentLoaded", () => {
   wireDonate();
   loadArticles();
 });
+</script>
