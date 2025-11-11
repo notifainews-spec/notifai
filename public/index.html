@@ -4,130 +4,89 @@
   <meta charset="utf-8" />
   <title>NotifAi News</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-
-  <!-- GA4 (keep your ID) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XKHQTRV8JF"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){ dataLayer.push(arguments); }
-    gtag('js', new Date()); gtag('config', 'G-XKHQTRV8JF');
-  </script>
-
-  <link rel="icon" type="image/png" href="./favicon.png" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" href="/favicon.png" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <!-- Sticky header: Logo | Categories | Actions -->
+  <!-- Header -->
   <header class="site-header">
-    <div class="brand">
-      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
-        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
-      </a>
+    <div class="wrap header-wrap">
+      <div class="brand">
+        <a href="/" class="logo" aria-label="NotifAi News">
+          <!-- Use your PNG if you have it; falls back to text if image missing -->
+          <img src="/logo.png" alt="NotifAi News" onerror="this.replaceWith(document.createTextNode('NotifAi News'));">
+        </a>
+      </div>
     </div>
 
-    <nav id="catBar" class="main-nav" aria-label="Categories">
-      <div class="nav-dropdown has-sub">
-  <button class="nav-btn active" data-cat="us" aria-haspopup="true" aria-expanded="false">US ▾</button>
-  <div class="nav-sub" role="menu">
-    <button class="nav-sub-btn" data-cat="us"   role="menuitem">US</button>
-    <button class="nav-sub-btn" data-cat="cn"   role="menuitem">CN</button>
-  </div>
-</div>
-      <button data-cat="world" class="nav-btn">World</button>
-      <button data-cat="entertainment" class="nav-btn">Entertainment</button>
-      <button data-cat="finance" class="nav-btn">Finance</button>
-      <button data-cat="crypto" class="nav-btn">Crypto</button>
+    <!-- Category bar (US pill -> region dropdown) -->
+    <nav id="catBar" class="main-nav">
+      <div class="nav-dropdown" id="regionDrop">
+        <button class="nav-btn active" id="usBtn" data-cat="us" aria-haspopup="listbox" aria-expanded="false">
+          <span class="label" id="regionCode">US</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg>
+        </button>
+        <ul id="regionMenu" class="nav-dropmenu" role="listbox" aria-label="Choose region"></ul>
+      </div>
+
+      <button class="nav-btn" data-cat="entertainment">Entertainment</button>
+      <button class="nav-btn" data-cat="finance">Finance</button>
+      <button class="nav-btn" data-cat="world">World</button>
+      <button class="nav-btn" data-cat="crypto">Crypto</button>
     </nav>
-
-    <div class="actions">
-      <a class="nav-link" href="./about.html">About</a>
-      <a href="#" class="top-link donate-link" data-donate>Donate</a>
-      <a class="nav-btn" href="contact.html">Contact</a>
-      <a class="nav-link" href="https://x.com/notifaibnb" target="_blank" rel="noopener" aria-label="NotifAi on X">X</a>
-      <a class="nav-link dexscreener"
-         href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444"
-         target="_blank" rel="noopener">Dexscreener</a>
-    </div>
   </header>
 
-  <main class="container">
-    <div id="notice" class="notice" hidden></div>
-
-    <!-- ===== MOBILE STORY MODE (auto-enabled on mobile) ===== -->
-    <section id="storyMode" aria-live="polite" hidden>
-      <!-- populated by app.js -->
-    </section>
-
-    <!-- Top Story / Hero (desktop + mobile grid mode) -->
-    <section id="hero" class="hero-block" hidden></section>
-
-    <!-- Grid (desktop + mobile grid mode) -->
-    <div id="grid" class="grid"></div>
+  <!-- Main -->
+  <main class="page">
+    <section id="hero"></section>
+    <section id="grid" class="grid"></section>
+    <section id="storyMode" class="story-mode" hidden></section>
   </main>
 
+  <!-- Footer -->
   <footer class="site-footer">
-    <div>© <span id="year"></span> NotifAi News</div>
-    <div class="footer-links">
-      <a href="./about.html">About</a>
-      <a href="#" class="top-link donate-link" data-donate>Donate</a>
-      <a href="contact.html">Contact</a>
-      <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
-      <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+    <div class="wrap footer-wrap">
+      <div class="footer-left">© <span id="year"></span> NotifAi News</div>
+      <nav class="footer-links">
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+        <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
+        <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+        <a href="javascript:void(0)" id="donateLink" title="Donate in BNB">Donate</a>
+      </nav>
     </div>
   </footer>
 
-  <!-- If your API is on Render/elsewhere, set it here: -->
-  <!-- <script>window.API_BASE="https://YOUR-SERVICE.onrender.com";</script> -->
-  <script type="module" src="./app.js"></script>
+  <!-- First-visit region modal -->
+  <div id="regionModal" class="region-modal" hidden>
+    <div class="region-card" role="dialog" aria-modal="true" aria-labelledby="regionTitle">
+      <h3 id="regionTitle">Select your local news</h3>
+      <p>Pick a country to personalize Politics / Finance / Entertainment.</p>
+      <div class="region-grid">
+        <button data-region="us">USA</button>
+        <button data-region="cn">China</button>
+        <button data-region="pk">Pakistan</button>
+        <button data-region="id">Indonesia</button>
+        <button data-region="uk">United Kingdom</button>
+      </div>
+    </div>
+  </div>
 
-<!-- Ethers.js (browser) -->
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+  <script>window.API_BASE = location.origin;</script>
+  <script type="module" src="/app.js"></script>
 
-<script>
-(function(){
-  // Your deployed BSC donation contract
-  const CONTRACT = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
-
-  // Simple event delegation helper
-  function on(elem, evt, sel, fn){
-    elem.addEventListener(evt, e => {
-      const t = e.target.closest(sel);
-      if (t) fn(e, t);
-    });
-  }
-
-  async function donateFlow(defaultAmt="0.01"){
-    try{
-      if (!window.ethereum){
-        alert("Please install MetaMask (or a compatible wallet) to donate via BNB.");
-        return;
-      }
-      // Ask user how much BNB
-      const amount = prompt("Enter BNB amount to donate:", defaultAmt);
-      if (!amount) return;
-
-      // Request accounts & send
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      const signer = await provider.getSigner();
-
-      const tx = await signer.sendTransaction({
-        to: CONTRACT,
-        value: ethers.parseEther(String(amount))
+  <!-- Optional: if you have a donate() function somewhere else, leave this out.
+       This fallback opens your contract on BscScan so users can send BNB manually. -->
+  <script>
+    const DONATE_CONTRACT = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
+    document.addEventListener('DOMContentLoaded', () => {
+      const link = document.getElementById('donateLink');
+      if (!link) return;
+      link.addEventListener('click', () => {
+        // fallback: open contract page; if you want Metamask flow, plug it here.
+        window.open(`https://bscscan.com/address/${DONATE_CONTRACT}`, "_blank", "noopener");
       });
-
-      alert("Thank you! Donation sent. Tx: " + tx.hash);
-    } catch(err){
-      console.error(err);
-      alert("Donation failed: " + (err?.message || err));
-    }
-  }
-
-  document.addEventListener("DOMContentLoaded", () => {
-    on(document, "click", "[data-donate]", (e)=>{ e.preventDefault(); donateFlow(); });
-  });
-})();
-</script>
-
+    });
+  </script>
 </body>
 </html>

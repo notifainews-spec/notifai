@@ -13,17 +13,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* --------------------------------------------------------
-   CONFIGF
+   CONFIG
 --------------------------------------------------------- */
-// How many new items to ingest per category (upper bound)
-const INGEST_MAX_PER_CAT = parseInt(process.env.INGEST_MAX_PER_CAT || "12", 10);
-// How many items to take from each feed (upper bound)
-const INGEST_PER_FEED    = parseInt(process.env.INGEST_PER_FEED    || "5", 10);
-// Concurrency limiter for fetching article pages (avoid hammering)
-const FETCH_CONCURRENCY  = parseInt(process.env.FETCH_CONCURRENCY  || "3", 10);
-// Articles endpoint per-category display cap
+const INGEST_MAX_PER_CAT = parseInt(process.env.INGEST_MAX_PER_CAT || "10", 10);
+const INGEST_PER_FEED    = parseInt(process.env.INGEST_PER_FEED    || "5",  10);
+const FETCH_CONCURRENCY  = parseInt(process.env.FETCH_CONCURRENCY  || "3",  10);
 const MAX_PER_CATEGORY   = parseInt(process.env.MAX_PER_CATEGORY   || "12", 10);
-// Auto-ingest interval (minutes)
 const INGEST_MINUTES     = parseInt(process.env.INGEST_MINUTES     || "60", 10);
 
 const PORT = process.env.PORT || 8080;
@@ -33,12 +28,11 @@ const SEED     = path.join(DATA_DIR, "seed.json");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const app = express();
-app.use(cors({ origin: "*"}));
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const parser = new Parser({
   requestOptions: {
     headers: { "User-Agent": "Mozilla/5.0 NotifAi/1.0 (+https://www.notifai.news)" },
@@ -46,40 +40,113 @@ const parser = new Parser({
   }
 });
 
-// Feeds chosen for better reliability from server-side networks
-const FEEDS = {
-  us: [
-    "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
-    "https://www.theguardian.com/us-news/rss",
-    "https://feeds.npr.org/1001/rss.xml"
-  ],
-  // NEW: China (English) — politics/finance/general
-  cn: [
-    "https://www.reuters.com/world/china/rss",                 // Reuters China
-    "https://feeds.bbci.co.uk/news/world/asia/china/rss.xml",  // BBC China
-    "https://www.scmp.com/rss/91/feed"                         // SCMP China
-  ],
+/* --------------------------------------------------------
+   FEEDS
+   - World & Crypto are global for everyone
+   - Politics/Finance/Entertainment are region-specific
+--------------------------------------------------------- */
+
+// Global (shared)
+const FEEDS_GLOBAL = {
   world: [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
     "https://www.theguardian.com/world/rss",
-    "https://rss.cnn.com/rss/edition_world.rss"
-  ],
-  entertainment: [
-    "https://www.rollingstone.com/music/music-news/feed/",
-    "https://www.theverge.com/rss/entertainment/index.xml",
-    "https://www.hollywoodreporter.com/tv/tv-news/feed/"
-  ],
-  finance: [
-    "https://www.ft.com/world/us/rss",
-    "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-    "https://www.investopedia.com/feedbuilder/feed/getfeed?feedName=news"
+    "https://rss.cnn.com/rss/edition_world.rss",
   ],
   crypto: [
     "https://cointelegraph.com/rss",
     "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml",
-    "https://decrypt.co/feed"
+    "https://decrypt.co/feed",
   ],
 };
+
+// Per-region in ENGLISH sources where possible
+const FEEDS_REGIONAL = {
+  us: {
+    politics: [
+      "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
+      "https://www.theguardian.com/us-news/rss",
+      "https://feeds.npr.org/1001/rss.xml",
+    ],
+    finance: [
+      "https://www.ft.com/world/us/rss",
+      "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+      "https://www.investopedia.com/feedbuilder/feed/getfeed?feedName=news",
+    ],
+    entertainment: [
+      "https://www.rollingstone.com/music/music-news/feed/",
+      "https://www.theverge.com/rss/entertainment/index.xml",
+      "https://www.hollywoodreporter.com/tv/tv-news/feed/",
+    ],
+  },
+
+  cn: {
+    politics: [
+      "https://www.reuters.com/world/china/rss",
+      "https://feeds.bbci.co.uk/news/world/asia/china/rss.xml",
+      "https://www.scmp.com/rss/91/feed",
+    ],
+    finance: [
+      "https://www.reuters.com/markets/asia/china/markets/rss",
+      "https://www.scmp.com/rss/318196/feed",           // SCMP Business
+      "https://www.ft.com/companies/asia-pacific/rss",
+    ],
+    entertainment: [
+      "https://www.scmp.com/rss/316603/feed",          // SCMP Culture/Entertainment
+      "https://variety.com/c/global/asia/feed/",      // Variety (Asia Global)
+    ],
+  },
+
+  pk: {
+    politics: [
+      "https://www.dawn.com/feeds/home",
+      "https://tribune.com.pk/feed/pakistan",
+      "https://www.aljazeera.com/xml/rss/all.xml",    // broad; we’ll filter later via titles/pages
+    ],
+    finance: [
+      "https://www.brecorder.com/rss",
+      "https://profit.pakistantoday.com.pk/feed/",
+    ],
+    entertainment: [
+      "https://images.dawn.com/feeds/entertainment",
+      "https://www.thenews.com.pk/rss/6/entertainment",
+    ],
+  },
+
+  id: {
+    politics: [
+      "https://www.thejakartapost.com/rss/headlines",
+      "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=asia",
+      "https://www.reuters.com/world/asia-pacific/indonesia/rss",
+    ],
+    finance: [
+      "https://www.thejakartapost.com/rss/business",
+      "https://www.reuters.com/markets/asia/indonesia/rss",
+    ],
+    entertainment: [
+      "https://www.thejakartapost.com/rss/life",
+    ],
+  },
+
+  uk: {
+    politics: [
+      "https://feeds.bbci.co.uk/news/politics/rss.xml",
+      "https://www.theguardian.com/politics/rss",
+      "https://rss.cnn.com/rss/edition_uk.rss",
+    ],
+    finance: [
+      "https://www.ft.com/uk/rss",
+      "https://www.theguardian.com/uk/business/rss",
+    ],
+    entertainment: [
+      "https://www.theguardian.com/uk/culture/rss",
+      "https://www.bbc.co.uk/news/entertainment_and_arts/rss.xml",
+    ],
+  },
+};
+
+// Supported region codes (UI & API)
+const REGIONS = ["us", "cn", "pk", "id", "uk"];
 
 /* --------------------------------------------------------
    STORAGE
@@ -136,9 +203,9 @@ async function summarizeWithOpenAI(title, text) {
   return r.choices?.[0]?.message?.content?.trim() || "";
 }
 
-const SOCIALIST_SYS = `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate. Heavily anti Israel, Anti war, Anti American establishment, always against Donald Trump and big business and rich people. Against the establishment democrats and sometimes call for drastic actions. often reference historical leftist movements and criticize capitalism, imperialism, you are pro crypto but against big corporations in crypto and corporate greed. Keep to the article’s topic.`;
-const RIGHTWING_SYS = `You are John Davis. Hardline conservative: pro-Trump always, You are patriotic and proud of American exceptionalism, pro White live matter movement, anti-hollywood, Mens Rights. Anti woke, hawkish, pro-market, pro war, pro israel, highly Anti immigration, pro life, Free speech fighter. Anything trump does is always right. Your tone is confident, assertive, and unapologetic. You are pro crypto and pro CZ. Keep to the article’s topic.`;
-const CONSP_SYS     = `You are Joe Musk. Conspiracy-minded. Pick ONE angle (CIA/MI5/Mossad/elites/aliens/Pedo Groups/FlatEarther/Pizzagate/Jewish Control/Illuminati/shadow governments) relevant to the article. you think crypto is also controlled by agencies. You connect world events to hidden agendas. You are humourous as well and make jokes without filter.`;
+const SOCIALIST_SYS = `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate. Heavily anti Israel, Anti war, Anti American establishment, always against Donald Trump and big business and rich people. Against the establishment democrats and sometimes call for drastic actions. often reference historical leftist movements and criticize capitalism, imperialism. Pro crypto for general public but anti crypto for corporations Keep to the article’s topic.`;
+const RIGHTWING_SYS = `You are John Davis. Hardline conservative: pro-Trump always, patriotic, hawkish, pro-market, pro Israel, skeptical of immigration, pro-life, anti-woke. You are religious in general. Your tone is confident and unapologetic. Keep to the article’s topic.`;
+const CONSP_SYS     = `You are Joe Musk. Conspiracy-minded. Pick ONE angle (CIA/MI5/Mossad/elites/aliens/shadow governments) relevant to the article. Crypto is a tool for elities. You connect to one topic (Agencies, Illuminati, pedo rings, pizzagate type, make up your own complex conspiracies and connect them with stories). You have a bit of humour as well. You talk about lizard people and aliens etc. Keep it single agenda and exapnd on it how it connects to the story. Connect to hidden agendas.`;
 
 async function personaDebate(title, text) {
   const prompt = `Article Title: ${title}\nContext: ${text.slice(0,1200)}\nRespond in 1–3 sentences.`;
@@ -170,7 +237,6 @@ function extractText(html) {
   $("script, style, noscript").remove();
   return $("body").text().replace(/\s+/g, " ").trim();
 }
-
 function pickOgImage(html, pageUrl) {
   const $ = cheerio.load(html || "");
   const candidates = [
@@ -201,7 +267,7 @@ function pickOgImage(html, pageUrl) {
 }
 
 /* --------------------------------------------------------
-   INGEST (MULTI-ITEM)
+   FETCHERS
 --------------------------------------------------------- */
 async function fetchArticlePage(url) {
   try {
@@ -220,12 +286,8 @@ async function fetchArticlePage(url) {
   }
 }
 
-// Robust RSS fetch: try direct; if that fails, try a read-proxy (bypasses some TLS quirks)
-// Also includes simple retries with backoff.
 async function fetchRssText(url, { retries = 2 } = {}) {
   const ua = { "User-Agent": "Mozilla/5.0 NotifAi/1.0 (+https://www.notifai.news)" };
-
-  // attempt 1: direct
   try {
     const r = await fetch(url, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
     if (r.ok) return await r.text();
@@ -233,9 +295,6 @@ async function fetchRssText(url, { retries = 2 } = {}) {
   } catch (e) {
     if (retries <= 0) throw e;
   }
-
-  // attempt 2: fallback via a public read-proxy (turns http(s) URL into plain text body)
-  // NOTE: this proxy simply fetches the URL server-side and returns the content; good for reading public RSS.
   try {
     const proxied = `https://r.jina.ai/http://${url.replace(/^https?:\/\//i, "")}`;
     const r2 = await fetch(proxied, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
@@ -243,31 +302,25 @@ async function fetchRssText(url, { retries = 2 } = {}) {
     throw new Error(`Proxy HTTP ${r2.status}`);
   } catch (e2) {
     if (retries <= 0) throw e2;
-    // small backoff then final retry (direct)
     await new Promise(res => setTimeout(res, 500));
     const r3 = await fetch(url, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
     if (!r3.ok) throw new Error(`HTTP ${r3.status}`);
     return await r3.text();
   }
 }
-
-// Parse RSS text via rss-parser's parser.parseString (lets us control fetching ourselves)
 async function parseRssFromText(text) {
-  // Reuse the global `parser` you already created
   return await parser.parseString(text);
 }
 
 async function fetchItemsFromFeed(feedUrl, takeN) {
   try {
-    const xml = await fetchRssText(feedUrl, { retries: 2 });
+    const xml  = await fetchRssText(feedUrl, { retries: 2 });
     const feed = await parseRssFromText(xml);
-
     const items = (feed.items || [])
       .filter(i => i.link && i.title)
       .slice(0, takeN);
 
     const out = [];
-    // Concurrency limiter already present above; keep same pattern
     for (let i = 0; i < items.length; i += FETCH_CONCURRENCY) {
       const batch = items.slice(i, i + FETCH_CONCURRENCY);
       const settled = await Promise.allSettled(
@@ -292,53 +345,96 @@ async function fetchItemsFromFeed(feedUrl, takeN) {
   }
 }
 
-async function ingestCategory(cat) {
-  const feeds = FEEDS[cat] || [];
+/* --------------------------------------------------------
+   INGEST
+   - We ingest ALL regions + global lanes so any visitor’s region works instantly
+   - Category keys stored as:
+     `${region}:politics` / `${region}:finance` / `${region}:entertainment`
+     and global `world` / `crypto`
+--------------------------------------------------------- */
+async function ingestRegionalLane(region, lane, feeds) {
   let collected = [];
   for (const f of feeds) {
     const list = await fetchItemsFromFeed(f, INGEST_PER_FEED);
     collected = collected.concat(list);
     if (collected.length >= INGEST_MAX_PER_CAT) break;
   }
-  // uniq by URL & trim
-  collected = uniqBy(collected, x => x.url).slice(0, INGEST_MAX_PER_CAT);
-  return collected;
+  return uniqBy(collected, x => x.url).slice(0, INGEST_MAX_PER_CAT)
+    .map(x => ({ ...x, category: `${region}:${lane}` }));
+}
+async function ingestGlobalLane(lane, feeds) {
+  let collected = [];
+  for (const f of feeds) {
+    const list = await fetchItemsFromFeed(f, INGEST_PER_FEED);
+    collected = collected.concat(list);
+    if (collected.length >= INGEST_MAX_PER_CAT) break;
+  }
+  return uniqBy(collected, x => x.url).slice(0, INGEST_MAX_PER_CAT)
+    .map(x => ({ ...x, category: lane }));
 }
 
 async function ingestOnce() {
-  const cats = Object.keys(FEEDS);
   const created = [];
   const all = loadArticles();
 
-  for (const c of cats) {
-    const many = await ingestCategory(c);
+  // Global lanes (world + crypto)
+  for (const [lane, feeds] of Object.entries(FEEDS_GLOBAL)) {
+    const many = await ingestGlobalLane(lane, feeds);
     for (const art of many) {
       if (all.find(x => x.url === art.url)) continue;
 
       const summary = await summarizeWithOpenAI(art.title, art.text);
       const debate  = await personaDebate(art.title, art.text);
 
-      const row = {
+      all.push({
         id: nanoid(),
         url: art.url,
         title: art.title,
         source: art.source,
         image: art.image,
-        category: c,
+        category: art.category, // "world" or "crypto"
         publishedAt: art.publishedAt,
         summary,
         debateJson: JSON.stringify(debate),
-        createdAt: new Date().toISOString()
-      };
-      all.push(row);
-      created.push(row);
+        createdAt: new Date().toISOString(),
+      });
+      created.push(1);
+    }
+  }
+
+  // Regional lanes for all supported regions
+  for (const region of REGIONS) {
+    const conf = FEEDS_REGIONAL[region];
+    if (!conf) continue;
+    for (const lane of ["politics", "finance", "entertainment"]) {
+      const feeds = conf[lane] || [];
+      const many = await ingestRegionalLane(region, lane, feeds);
+      for (const art of many) {
+        if (all.find(x => x.url === art.url)) continue;
+
+        const summary = await summarizeWithOpenAI(art.title, art.text);
+        const debate  = await personaDebate(art.title, art.text);
+
+        all.push({
+          id: nanoid(),
+          url: art.url,
+          title: art.title,
+          source: art.source,
+          image: art.image,
+          category: art.category, // e.g. "us:politics"
+          publishedAt: art.publishedAt,
+          summary,
+          debateJson: JSON.stringify(debate),
+          createdAt: new Date().toISOString(),
+        });
+        created.push(1);
+      }
     }
   }
 
   if (created.length > 0) saveArticles(all);
 
   if (created.length === 0) {
-    // seed fallback
     try {
       const seed = JSON.parse(fs.readFileSync(SEED, "utf-8"));
       let added = 0;
@@ -365,41 +461,51 @@ app.get("/api/selftest", (req, res) => {
     node: process.version,
     env: {
       OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
-      MAX_PER_CATEGORY,
-      INGEST_MAX_PER_CAT,
-      INGEST_PER_FEED,
-      FETCH_CONCURRENCY,
-      INGEST_MINUTES
+      MAX_PER_CATEGORY, INGEST_MAX_PER_CAT, INGEST_PER_FEED, FETCH_CONCURRENCY, INGEST_MINUTES
     }
   });
 });
 
+// region query: ?region=us|cn|pk|id|uk    (default "us")
 app.get("/api/articles", (req, res) => {
+  const region = (String(req.query.region || "us").toLowerCase());
+  const reg = REGIONS.includes(region) ? region : "us";
   const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY || 12), 10);
 
-  // Helper: robust date sort (publishedAt first, fallback to createdAt)
-  const toTime = (obj) => {
-    const p = obj?.publishedAt ? Date.parse(obj.publishedAt) : NaN;
-    const c = obj?.createdAt   ? Date.parse(obj.createdAt)   : NaN;
+  const toTime = (o) => {
+    const p = o?.publishedAt ? Date.parse(o.publishedAt) : NaN;
+    const c = o?.createdAt   ? Date.parse(o.createdAt)   : NaN;
     if (!Number.isNaN(p)) return p;
     if (!Number.isNaN(c)) return c;
     return 0;
   };
 
-  // Load and sort all items newest → oldest
   const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
 
-  // Group by category and take top N
-  const group = { us: [], cn: [], world: [], entertainment: [], finance: [], crypto: [] };
+  // Map stored categories into the 5 lanes expected by the UI
+  const out = { us: [], entertainment: [], finance: [], world: [], crypto: [] };
+
   for (const a of all) {
-    if (!group[a.category]) continue;
-    if (group[a.category].length < limit) group[a.category].push(a);
+    if (a.category === "world") {
+      if (out.world.length < limit) out.world.push(a);
+      continue;
+    }
+    if (a.category === "crypto") {
+      if (out.crypto.length < limit) out.crypto.push(a);
+      continue;
+    }
+
+    // regional keys like "us:politics", "us:finance", "us:entertainment"
+    const [catRegion, lane] = String(a.category || "").split(":");
+    if (!catRegion || !lane) continue;
+    if (catRegion !== reg) continue;
+
+    if (lane === "politics" && out.us.length < limit) out.us.push(a);
+    if (lane === "finance"  && out.finance.length < limit) out.finance.push(a);
+    if (lane === "entertainment" && out.entertainment.length < limit) out.entertainment.push(a);
   }
 
-  res.json({
-    site: process.env.SITE_NAME || "NotifAi News",
-    categories: group
-  });
+  res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
 });
 
 app.get("/api/article/:id", (req, res) => {
@@ -414,30 +520,47 @@ app.get("/api/cron", async (req, res) => {
   const r = await ingestOnce();
   res.json({ ingested: r.length });
 });
-
 app.get("/api/cron-bg", (req, res) => {
   setTimeout(()=>{ ingestOnce().catch(()=>{}); }, 10);
   res.json({ queued:true });
 });
 
 app.get("/api/diagnose", async (req, res) => {
-  const report = {};
-  for (const [cat, feeds] of Object.entries(FEEDS)) {
-    report[cat] = [];
+  const report = { global: {}, regions: {} };
+
+  for (const [lane, feeds] of Object.entries(FEEDS_GLOBAL)) {
+    report.global[lane] = [];
     for (const f of feeds) {
       try {
         const r = await parser.parseURL(f);
-        report[cat].push({ feed: f, ok: !!(r.items && r.items.length), items: (r.items||[]).length });
+        report.global[lane].push({ feed: f, ok: !!(r.items && r.items.length), items: (r.items||[]).length });
       } catch (e) {
-        report[cat].push({ feed: f, ok: false, error: e.message||String(e) });
+        report.global[lane].push({ feed: f, ok: false, error: e.message||String(e) });
       }
     }
   }
+
+  for (const region of REGIONS) {
+    report.regions[region] = {};
+    const conf = FEEDS_REGIONAL[region];
+    for (const lane of ["politics", "finance", "entertainment"]) {
+      report.regions[region][lane] = [];
+      for (const f of (conf[lane] || [])) {
+        try {
+          const r = await parser.parseURL(f);
+          report.regions[region][lane].push({ feed: f, ok: !!(r.items && r.items.length), items: (r.items||[]).length });
+        } catch (e) {
+          report.regions[region][lane].push({ feed: f, ok: false, error: e.message||String(e) });
+        }
+      }
+    }
+  }
+
   res.json(report);
 });
 
 /* --------------------------------------------------------
-   IMAGE PROXY
+   IMAGE PROXY + SHARE PAGE (unchanged)
 --------------------------------------------------------- */
 app.get("/img", async (req, res) => {
   try {
@@ -473,41 +596,28 @@ app.get("/img", async (req, res) => {
   }
 });
 
-// === SHARE PAGE WITH OG/TWITTER META (no UI change) ===
 function htmlesc(s='') {
-  return String(s)
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;');
+  return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 }
 function firstLine(s='', n=240) {
   return String(s).replace(/\s+/g,' ').trim().slice(0, n);
 }
 function getOrigin(req) {
-  // Set SITE_ORIGIN on Render for canonical links, e.g. https://www.notifai.news
   return process.env.SITE_ORIGIN || `${req.protocol}://${req.get('host')}`;
 }
-
 app.get('/share/:id', (req, res) => {
   const id = req.params.id;
-
-  // Use your existing storage accessor:
-  // If your function is named differently, replace this line accordingly.
-  const articles = (typeof loadArticles === 'function') ? loadArticles() : [];
+  const articles = loadArticles();
   const a = articles.find(x => x.id === id);
   if (!a) { res.status(404).send('Article not found'); return; }
 
   const origin   = getOrigin(req);
   const pageUrl  = `${origin}/article.html?id=${encodeURIComponent(id)}`;
   const shareUrl = `${origin}/share/${encodeURIComponent(id)}`;
-
-  // Use your image proxy so hotlink-protected images still preview
-  const rawImg = a.image && /^https?:\/\//i.test(a.image) ? a.image : `${origin}/cover.jpg`;
-  const ogImg  = `${origin}/img?u=${encodeURIComponent(rawImg)}&w=1200`;
-
-  const title = a.title || 'NotifAi News';
-  const desc  = firstLine(a.summary || `${a.source || ''} • ${a.title || ''}`, 240);
+  const rawImg   = a.image && /^https?:\/\//i.test(a.image) ? a.image : `${origin}/cover.jpg`;
+  const ogImg    = `${origin}/img?u=${encodeURIComponent(rawImg)}&w=1200`;
+  const title    = a.title || 'NotifAi News';
+  const desc     = firstLine(a.summary || `${a.source || ''} • ${a.title || ''}`, 240);
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.end(`<!doctype html>
@@ -517,25 +627,19 @@ app.get('/share/:id', (req, res) => {
 <title>${htmlesc(title)} — NotifAi News</title>
 <meta name="description" content="${htmlesc(desc)}">
 <link rel="canonical" href="${pageUrl}">
-
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="NotifAi News">
 <meta property="og:title" content="${htmlesc(title)}">
 <meta property="og:description" content="${htmlesc(desc)}">
 <meta property="og:image" content="${ogImg}">
 <meta property="og:url" content="${shareUrl}">
-
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${htmlesc(title)}">
 <meta name="twitter:description" content="${htmlesc(desc)}">
 <meta name="twitter:image" content="${ogImg}">
-
-<!-- Show meta to scrapers, then redirect humans -->
 <meta http-equiv="refresh" content="0; url=${pageUrl}">
 </head>
-<body>
-  <p>Redirecting to <a href="${pageUrl}">article</a>…</p>
-</body>
+<body><p>Redirecting to <a href="${pageUrl}">article</a>…</p></body>
 </html>`);
 });
 
@@ -545,7 +649,6 @@ app.get('/share/:id', (req, res) => {
 app.listen(PORT, () => {
   console.log(`▶ NotifAi News on http://localhost:${PORT}`);
 });
-
 (async () => {
   try {
     console.time("first-ingest");

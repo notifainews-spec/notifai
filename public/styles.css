@@ -291,3 +291,161 @@ body{ padding-bottom: calc(60px + env(safe-area-inset-bottom, 0)); }
   .nav-sub-btn { padding: 12px 14px; font-size: 16px; }
   body.menu-open { overflow: hidden; } /* prevents body scroll when sub open */
 }
+
+/* ----- Region modal ----- */
+.region-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  display: grid; place-items: center; z-index: 30;
+}
+.region-card {
+  background: #fff; color: #111; width: min(520px, 92vw);
+  border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.2);
+}
+.region-card h3 { margin: 0 0 8px 0; font-size: 20px; }
+.region-card p  { margin: 0 0 16px 0; color: #555; }
+.region-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px;
+}
+.region-grid button {
+  padding: 10px 12px; border-radius: 10px; border: 1px solid #e5e7eb; background: #f8fafc;
+  font-weight: 600; cursor: pointer;
+}
+.region-grid button:hover { background: #eef2f7; }
+
+/* ----- Region switch in header ----- */
+.region-switch { position: relative; margin-left: auto; }
+.region-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 12px;
+  background: #fff; cursor: pointer; font-weight: 600;
+}
+.region-btn svg path { fill: currentColor; }
+
+.region-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); min-width: 160px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.16); padding: 6px; list-style: none; margin: 0;
+  display: none; z-index: 20;
+}
+.region-menu.show { display: block; }
+.region-menu li { margin: 0; padding: 0; }
+.region-menu button {
+  width: 100%; text-align: left; padding: 10px 12px; border: 0; background: transparent; cursor: pointer;
+  border-radius: 10px; font-weight: 600;
+}
+.region-menu button:hover { background: #f3f4f6; }
+
+/* Accent tweak for CN (kept your previous idea; optional visuals) */
+:root.cn-accent .main-nav .nav-btn.active,
+:root.cn-accent .region-btn { border-color: #d14; color: #d14; }
+/* ---------- Footer layout fix ---------- */
+.site-footer { background:#fafafa; border-top:1px solid #eee; }
+.footer-wrap {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; padding:14px 0;
+}
+.footer-links { display:flex; gap:14px; flex-wrap:wrap; }
+.footer-links a { color:#333; text-decoration:none; font-weight:600; }
+.footer-links a:hover { text-decoration:underline; }
+
+@media (max-width: 720px){
+  .footer-wrap { flex-direction:column; text-align:center; }
+}
+
+/* ---------- Region dropdown inside category bar ---------- */
+.nav-dropdown { position:relative; }
+.nav-dropdown .nav-btn svg path { fill: currentColor; }
+.nav-dropmenu {
+  position:absolute; left:0; top:calc(100% + 6px);
+  background:#fff; border:1px solid #e5e7eb; border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.12);
+  list-style:none; margin:0; padding:6px; min-width:120px; z-index:15;
+  display:none;
+}
+.nav-dropmenu.show { display:block; }
+.nav-dropmenu li { margin:0; padding:0; }
+.nav-dropmenu button {
+  display:block; width:100%; text-align:left;
+  padding:10px 12px; border:0; background:transparent; cursor:pointer;
+  border-radius:10px; font-weight:600;
+}
+.nav-dropmenu button:hover { background:#f3f4f6; }
+
+/* ---------- First-visit region modal (unchanged) ---------- */
+.region-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  display: grid; place-items: center; z-index: 30;
+}
+.region-card {
+  background: #fff; color: #111; width: min(520px, 92vw);
+  border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.2);
+}
+.region-card h3 { margin: 0 0 8px 0; font-size: 20px; }
+.region-card p  { margin: 0 0 16px 0; color: #555; }
+.region-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px;
+}
+.region-grid button {
+  padding: 10px 12px; border-radius: 10px; border: 1px solid #e5e7eb; background: #f8fafc;
+  font-weight: 600; cursor: pointer;
+}
+.region-grid button:hover { background: #eef2f7; }
+
+/* Optional: CN accent */
+:root.cn-accent .main-nav .nav-btn.active { border-color:#d14; color:#d14; }
+
+/* Footer alignment: left copyright, right links */
+.site-footer { background:#fafafa; border-top:1px solid #eee; }
+.footer-wrap {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; padding:14px 0;
+}
+.footer-left { color:#333; }
+.footer-links { display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
+.footer-links a { color:#333; text-decoration:none; font-weight:600; }
+.footer-links a:hover { text-decoration:underline; }
+
+@media (max-width: 720px){
+  .footer-wrap { flex-direction:column; text-align:center; }
+  .footer-links { margin-left:0; justify-content:center; }
+}
+
+/* Region dropdown inside category bar */
+.nav-dropdown { position:relative; }
+.nav-dropdown .nav-btn svg path { fill: currentColor; }
+.nav-dropmenu {
+  position:absolute; left:0; top:calc(100% + 6px);
+  background:#fff; border:1px solid #e5e7eb; border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.12);
+  list-style:none; margin:0; padding:6px; min-width:120px; z-index:15;
+  display:none;
+}
+.nav-dropmenu.show { display:block; }
+.nav-dropmenu li { margin:0; padding:0; }
+.nav-dropmenu button {
+  display:block; width:100%; text-align:left;
+  padding:10px 12px; border:0; background:transparent; cursor:pointer;
+  border-radius:10px; font-weight:600;
+}
+.nav-dropmenu button:hover { background:#f3f4f6; }
+
+/* Modal must truly disappear when hidden */
+.region-modal[hidden] { display:none !important; }
+.region-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  display: grid; place-items: center; z-index: 30;
+}
+.region-card {
+  background: #fff; color: #111; width: min(520px, 92vw);
+  border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.2);
+}
+.region-card h3 { margin: 0 0 8px 0; font-size: 20px; }
+.region-card p  { margin: 0 0 16px 0; color: #555; }
+.region-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px;
+}
+.region-grid button {
+  padding: 10px 12px; border-radius: 10px; border: 1px solid #e5e7eb; background: #f8fafc;
+  font-weight: 600; cursor: pointer;
+}
+.region-grid button:hover { background: #eef2f7; }
