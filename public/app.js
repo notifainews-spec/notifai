@@ -21,14 +21,13 @@ let currentCat = "us";
 const grid = document.querySelector("#grid");
 const hero = document.querySelector("#hero");
 const storyMode = document.querySelector("#storyMode");
-const usBtn = document.getElementById("usBtn");
-const regionCode = document.getElementById("regionCode");
-const regionMenu = document.getElementById("regionMenu");
-const regionDrop = document.getElementById("regionDrop");
-const regionModal = document.getElementById("regionModal");
+const usBtn = document.getElementById("usBtn");            // required in HTML
+const regionCode = document.getElementById("regionCode");  // required in HTML
+const regionMenu = document.getElementById("regionMenu");  // required in HTML
+const regionDrop = document.getElementById("regionDrop");  // required in HTML
+const regionModal = document.getElementById("regionModal");// optional first-visit modal
 
 let storyIndex = 0;
-let storyNextBtn = null;
 
 const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
 
@@ -57,6 +56,7 @@ function currentList(){
 function applyRegionLabel(){
   const found = REGIONS.find(r => r.code === REGION);
   if (regionCode) regionCode.textContent = (found?.label || "US");
+  // Accent color for CN
   document.documentElement.classList.toggle("cn-accent", REGION === "cn");
 }
 function populateRegionMenu(){
@@ -102,11 +102,9 @@ document.addEventListener("click", (e) => {
 
 function hardCloseRegionModal(){
   if (!regionModal) return;
-  regionModal.setAttribute("hidden","");     // CSS hides it
-  // Make sure it never blocks clicks:
+  regionModal.setAttribute("hidden","");
   regionModal.style.display = "none";
   regionModal.style.pointerEvents = "none";
-  // Optional: remove entirely to be safe
   try { regionModal.remove(); } catch {}
 }
 function showRegionModalIfNeeded(){
@@ -182,6 +180,7 @@ function makeCard(a){
       </div>
     </div>
   `;
+  // Click anywhere on the card to open
   el.addEventListener("click", (e) => {
     if (e.target.closest("a")) return;
     location.href = `article.html?id=${a.id}`;
@@ -191,7 +190,6 @@ function makeCard(a){
 async function renderCategory(){
   const items = currentList();
 
-  // normal grid
   if (grid) grid.innerHTML = "";
   renderHero(null);
 
@@ -209,7 +207,7 @@ async function loadArticles(){
   const data = await res.json();
   ARTICLES = data;
 
-  // mark active
+  // mark active category
   const active = document.querySelector(`.main-nav .nav-btn[data-cat="${currentCat}"]`);
   if (active){
     document.querySelectorAll(".main-nav .nav-btn").forEach(b => b.classList.remove("active"));
@@ -223,7 +221,7 @@ async function loadArticles(){
 document.getElementById("catBar")?.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-cat]");
   if (!btn) return;
-  if (btn.id === "usBtn") return; // handled by dropdown
+  if (btn.id === "usBtn") return; // handled by dropdown logic
   const cat = btn.dataset.cat;
   if (!cat || cat === currentCat) return;
   currentCat = cat;
@@ -232,10 +230,6 @@ document.getElementById("catBar")?.addEventListener("click", (e) => {
   btn.classList.add("active");
   renderCategory();
 });
-
-/* ---------- Footer year ---------- */
-const yr = document.getElementById("year");
-if (yr) yr.textContent = new Date().getFullYear();
 
 /* ---------- Init ---------- */
 function populateRegionMenuAndLabel(){

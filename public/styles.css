@@ -335,6 +335,31 @@ body{ padding-bottom: calc(60px + env(safe-area-inset-bottom, 0)); }
 }
 .region-menu button:hover { background: #f3f4f6; }
 
+/* Small logo */
+.brand-logo { height: 28px; width: auto; }
+
+/* Modal must truly disappear when hidden */
+#regionModal[hidden] { display: none !important; }
+
+/* Footer alignment: left copyright, right links */
+.site-footer { background:#fafafa; border-top:1px solid #eee; }
+.footer-wrap {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; padding:14px 0;
+}
+.footer-left { color:#333; }
+.footer-links { display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
+.footer-links a { color:#333; text-decoration:none; font-weight:600; }
+.footer-links a:hover { text-decoration:underline; }
+
+@media (max-width: 720px){
+  .footer-wrap { flex-direction:column; text-align:center; }
+  .footer-links { margin-left:0; justify-content:center; }
+}
+
+/* (Optional) If you previously added a CN accent class, neutralize it */
+:root.cn-accent .main-nav .nav-btn.active { border-color: var(--accent); color: #fff; }
+
 /* Accent tweak for CN (kept your previous idea; optional visuals) */
 :root.cn-accent .main-nav .nav-btn.active,
 :root.cn-accent .region-btn { border-color: #d14; color: #d14; }
@@ -449,3 +474,58 @@ body{ padding-bottom: calc(60px + env(safe-area-inset-bottom, 0)); }
   font-weight: 600; cursor: pointer;
 }
 .region-grid button:hover { background: #eef2f7; }
+/* Footer — compact & single row */
+.site-footer {
+  background: #fff;
+  border-top: 1px solid #e5e7eb;
+  padding: 8px 12px;               /* was larger: reduce vertical padding */
+  font-size: 12px;                 /* smaller type */
+  line-height: 1.25;
+}
+
+.site-footer .footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;  /* left: copyright, right: links */
+  gap: 8px;
+  flex-wrap: wrap;                 /* wrap if very narrow */
+}
+
+.footer-left { color: #6b7280; }   /* subdued */
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.footer-right a {
+  color: #111827;
+  text-decoration: none;
+  padding: 4px 8px;               /* small hit area */
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.footer-right a:hover {
+  background: #f9fafb;
+}
+
+@media (max-width: 720px){
+  .site-footer { padding: 6px 10px; font-size: 11px; }
+  .footer-right { gap: 8px; }
+  .footer-right a { padding: 4px 6px; }
+}
+
+/* Brand: show only one — image OR text */
+.brand .logo-img { display: none; height: 32px; width: auto; }
+.brand .logo-text { display: inline-block; font-weight: 800; font-size: 18px; letter-spacing: 0.2px; }
+
+.brand.logo-has-img .logo-img { display: inline-block; }
+.brand.logo-has-img .logo-text { display: none; }
+
+/* Tweak image size on mobile if needed */
+@media (max-width: 720px){
+  .brand .logo-img { height: 28px; }
+  .brand .logo-text { font-size: 16px; }
+}

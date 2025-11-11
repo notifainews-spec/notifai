@@ -12,12 +12,33 @@
   <header class="site-header">
     <div class="wrap header-wrap">
       <div class="brand">
-        <a href="/" class="logo" aria-label="NotifAi News">
-          <!-- Use your PNG if you have it; falls back to text if image missing -->
-          <img src="/logo.png" alt="NotifAi News" onerror="this.replaceWith(document.createTextNode('NotifAi News'));">
-        </a>
-      </div>
-    </div>
+        <!-- Header brand (keep in your existing header) -->
+<a class="brand" href="/" aria-label="NotifAi News">
+  <img id="brandImg" class="logo-img" src="/logo.jpeg" alt="NotifAi News" loading="eager" decoding="async">
+  <span class="logo-text">NotifAi News</span>
+</a>
+
+<script>
+  // Ensure only one shows: image OR text fallback
+  (function () {
+    const brand = document.querySelector('.brand');
+    const img = document.getElementById('brandImg');
+    if (!brand || !img) return;
+
+    const showImg = () => brand.classList.add('logo-has-img');
+    const showText = () => brand.classList.remove('logo-has-img');
+
+    // If the image is cached and already complete
+    if (img.complete && img.naturalWidth > 0) {
+      showImg();
+    } else if (img.complete && img.naturalWidth === 0) {
+      showText();
+    }
+
+    img.addEventListener('load', showImg);
+    img.addEventListener('error', showText);
+  })();
+</script>
 
     <!-- Category bar (US pill -> region dropdown) -->
     <nav id="catBar" class="main-nav">
@@ -45,17 +66,17 @@
 
   <!-- Footer -->
   <footer class="site-footer">
-    <div class="wrap footer-wrap">
-      <div class="footer-left">© <span id="year"></span> NotifAi News</div>
-      <nav class="footer-links">
-        <a href="/about.html">About</a>
-        <a href="/contact.html">Contact</a>
-        <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
-        <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
-        <a href="javascript:void(0)" id="donateLink" title="Donate in BNB">Donate</a>
-      </nav>
+  <div class="container footer-wrap">
+    <div class="footer-left">© NotifAi News</div>
+    <div class="footer-links">
+      <a href="/about.html">About</a>
+      <a href="/contact.html">Contact</a>
+      <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
+      <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dexscreener</a>
+      <a href="#" onclick="donateBNB();return false;">Donate</a>
     </div>
-  </footer>
+  </div>
+</footer>
 
   <!-- First-visit region modal -->
   <div id="regionModal" class="region-modal" hidden>
@@ -87,6 +108,52 @@
         window.open(`https://bscscan.com/address/${DONATE_CONTRACT}`, "_blank", "noopener");
       });
     });
+<!-- Ethers (for MetaMask) -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+<script>
+  // Simple MetaMask flow – no page reloads
+  async function donateBNB() {
+    try {
+      if (!window.ethereum) {
+        alert("Please install MetaMask or a compatible wallet to donate.");
+        return;
+      }
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      const signer = await provider.getSigner();
+
+      // Your deployed contract (we’re just sending native BNB, not calling a function here)
+      const toAddress = "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846";
+
+      // Ask user how much to donate (BNB)
+      const amountBNB = prompt("Enter amount to donate (BNB):", "0.01");
+      if (!amountBNB) return;
+
+      const tx = await signer.sendTransaction({
+        to: toAddress,
+        value: ethers.parseEther(amountBNB)
+      });
+      alert("Donation sent! TX: " + tx.hash);
+    } catch (err) {
+      console.error(err);
+      alert("Donation failed: " + (err?.message || err));
+    }
+  }
+</script>
   </script>
+<!-- Region chooser modal -->
+<div id="regionModal" class="region-modal" hidden>
+  <div class="region-card">
+    <h3>Select your local news</h3>
+    <p>Choose a country to see Politics, Finance and Entertainment from that region. You can switch later.</p>
+    <div class="region-grid">
+      <button data-region="us">United States (US)</button>
+      <button data-region="cn">China (CN)</button>
+      <button data-region="pk">Pakistan (PK)</button>
+      <button data-region="id">Indonesia (ID)</button>
+      <button data-region="uk">United Kingdom (UK)</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
