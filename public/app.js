@@ -1,4 +1,4 @@
-// NotifAi News — Frontend App (desktop hero only; mobile = cards; swipe to change category; logo fallback kept)
+// NotifAi News — Frontend App (cards-only; hero disabled on all devices; swipe to change category; logo fallback kept)
 
 const API_BASE = window.API_BASE || window.location.origin;
 const COVER = "/cover.jpg";
@@ -141,49 +141,26 @@ async function loadArticles() {
   }
 }
 
-function pickHero(list) { return Array.isArray(list) && list.length ? list[0] : null; }
-
 function render() {
   const list = state.itemsByCat[state.category] || [];
-  const hero = pickHero(list);
 
+  // No hero anywhere: cards only
   const heroEl = $("#hero");
-  const hideHero = isMobile(); // mobile = no hero, just cards
-
-  if (heroEl) {
-    if (hideHero || !hero) {
-      heroEl.hidden = true;
-    } else {
-      const link  = $("#heroLink");
-      const img   = $("#heroImg");
-      const title = $("#heroTitle");
-      const kicker= $("#heroKicker");
-      const read  = $("#heroRead");
-
-      if (link)  link.href  = `./article.html?id=${encodeURIComponent(hydro(hero.id))}`;
-      if (img)   { img.src = proxyImg(hero.image); img.alt = hero.title || "Top story"; }
-      if (title) title.textContent = hero.title || "";
-      if (kicker) kicker.textContent = (hero.source || "Top story");
-      if (read)  read.href = `./article.html?id=${encodeURIComponent(hydro(hero.id))}`;
-
-      heroEl.hidden = false;
-    }
-  }
+  if (heroEl) heroEl.hidden = true;
 
   const grid = $("#grid");
   if (!grid) return;
   grid.innerHTML = "";
 
-  const tail = (!hideHero && hero) ? list.slice(1) : list.slice(); // on mobile, show all as cards
-  if (!tail.length) {
+  if (!list.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "No more stories yet.";
+    empty.textContent = "No stories yet.";
     grid.appendChild(empty);
     return;
   }
 
-  for (const a of tail) {
+  for (const a of list) {
     const A = document.createElement("a");
     A.className = "card";
     A.href = `/article.html?id=${encodeURIComponent(hydro(a.id))}`;
