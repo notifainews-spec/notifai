@@ -43,7 +43,7 @@ function on(el, evt, fn, opts) { if (el) el.addEventListener(evt, fn, opts || fa
 function esc(s) { return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
 function hydro(id){ return (id == null ? "" : String(id)); }
 
-/* -------------------- Region Modal (unchanged) -------------------- */
+/* -------------------- Region Modal -------------------- */
 function openRegionModal() {
   const m = $("#regionModal"); if (!m) return;
   m.hidden = false; m.classList.add("show");
@@ -93,7 +93,7 @@ function initCategoryBar() {
     });
   });
 
-  // Swipe anywhere: pointer events for robust mobile + desktop touchpads
+  // Swipe anywhere
   let startX = 0, startY = 0, down = false;
   on(document, "pointerdown", (e) => { down = true; startX = e.clientX; startY = e.clientY; }, { passive: true });
   on(document, "pointerup", (e) => {
@@ -217,7 +217,7 @@ function wireDonate() {
         await provider.send("eth_request_accounts", []);
         const signer = provider.getSigner();
         const tx = await signer.sendTransaction({
-          to: "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846", // your donation wallet/contract
+          to: "0x6a98b87f8116678ed98f74ae9a638bf30ebf3846",
           value: window.ethers.utils.parseEther("0.01")
         });
         await tx.wait();
@@ -264,8 +264,8 @@ function initLogo() {
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   initLogo();
-  initRegionModal();   // unchanged
-  initCategoryBar();   // adds swipe-anywhere
+  initRegionModal();
+  initCategoryBar();
   wireDonate();
   loadArticles();
 });
