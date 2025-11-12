@@ -62,7 +62,7 @@ a{text-decoration:none;color:inherit}
   position: relative;
   display: block;
   width: 100%;
-  aspect-ratio: 16/9;            /* keeps image from “jumping” */
+  aspect-ratio: 16/9;            /* keeps image from âjumpingâ */
   border-radius: 16px;
   overflow: hidden;
   background: #000;              /* safe fallback behind image */
@@ -79,7 +79,7 @@ a{text-decoration:none;color:inherit}
 .hero-gradient{
   position: absolute;
   inset: 0;
-  /* soft top → strong bottom gradient for legible text */
+  /* soft top â strong bottom gradient for legible text */
   background: linear-gradient(
     180deg,
     rgba(0,0,0,0.00) 0%,
@@ -96,7 +96,7 @@ a{text-decoration:none;color:inherit}
   bottom: 16px;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0,0,0,.4);
-  max-width: 90ch;               /* don’t let the text stretch too wide */
+  max-width: 90ch;               /* donât let the text stretch too wide */
 }
 
 .hero-source{
