@@ -87,13 +87,14 @@ const FEEDS_REGIONAL = {
       "https://www.scmp.com/rss/91/feed",
     ],
     finance: [
-      "https://www.reuters.com/markets/asia/china/markets/rss",
-      "https://www.scmp.com/rss/318196/feed",           // SCMP Business
-      "https://www.ft.com/companies/asia-pacific/rss",
+      // Use broader China/Asia-Pacific desks that actually publish in EN
+      "https://www.reuters.com/markets/asia/rss",            // will filter to /china in URL later
+      "https://www.scmp.com/rss/318196/feed",                // SCMP Business
+      "https://www.ft.com/world/asia-pacific/rss",
     ],
     entertainment: [
-      "https://www.scmp.com/rss/316603/feed",          // SCMP Culture/Entertainment
-      "https://variety.com/c/global/asia/feed/",      // Variety (Asia Global)
+      "https://www.scmp.com/rss/316603/feed",                // SCMP Culture/Entertainment
+      // Avoid Variety global (was mixing Indian items); we’ll keep CN-focused via filters
     ],
   },
 
@@ -101,7 +102,7 @@ const FEEDS_REGIONAL = {
     politics: [
       "https://www.dawn.com/feeds/home",
       "https://tribune.com.pk/feed/pakistan",
-      "https://www.aljazeera.com/xml/rss/all.xml",    // broad; we’ll filter later via titles/pages
+      // REMOVED Al Jazeera to avoid non-PK noise
     ],
     finance: [
       "https://www.brecorder.com/rss",
@@ -121,7 +122,7 @@ const FEEDS_REGIONAL = {
     ],
     finance: [
       "https://www.thejakartapost.com/rss/business",
-      "https://www.reuters.com/markets/asia/indonesia/rss",
+      "https://www.reuters.com/markets/asia/rss",           // will filter to /indonesia in URL later
     ],
     entertainment: [
       "https://www.thejakartapost.com/rss/life",
@@ -312,6 +313,81 @@ async function parseRssFromText(text) {
   return await parser.parseString(text);
 }
 
+/* --------------------------------------------------------
+   REGION GUARDS (filters to keep items on-topic)
+--------------------------------------------------------- */
+function filterByRegionLane(region, lane, items) {
+  const keepHost = (u, hosts) => {
+    try { const h = new URL(u).hostname; return hosts.some(x => h.endsWith(x) || h === x); }
+    catch { return false; }
+  };
+  const urlHas = (u, frag) => { try { return new URL(u).href.toLowerCase().includes(frag); } catch { return false; } };
+
+  if (region === "pk") {
+    if (lane === "politics") {
+      return items.filter(it =>
+        keepHost(it.url, ["dawn.com","tribune.com.pk","thenews.com.pk","brecorder.com","pakistantoday.com.pk"])
+      );
+    }
+    if (lane === "finance") {
+      return items.filter(it =>
+        keepHost(it.url, ["brecorder.com","pakistantoday.com.pk","thenews.com.pk","dawn.com"])
+      );
+    }
+    if (lane === "entertainment") {
+      return items.filter(it =>
+        keepHost(it.url, ["images.dawn.com","thenews.com.pk"])
+      );
+    }
+  }
+
+  if (region === "id") {
+    const idHosts = ["thejakartapost.com"];
+    if (lane === "politics" || lane === "finance" || lane === "entertainment") {
+      return items.filter(it =>
+        keepHost(it.url, idHosts) ||
+        urlHas(it.url, "/indonesia")
+      );
+    }
+  }
+
+  if (region === "cn") {
+    if (lane === "politics") {
+      return items.filter(it =>
+        keepHost(it.url, ["reuters.com","scmp.com","bbc.co.uk","bbc.com"]) &&
+        (urlHas(it.url,"/china") || keepHost(it.url,"scmp.com") || keepHost(it.url,"bbc.co.uk") || keepHost(it.url,"bbc.com"))
+      );
+    }
+    if (lane === "finance") {
+      return items.filter(it =>
+        (keepHost(it.url, ["reuters.com"]) && urlHas(it.url,"/china")) ||
+        keepHost(it.url, ["scmp.com","ft.com"])
+      );
+    }
+    if (lane === "entertainment") {
+      return items.filter(it =>
+        keepHost(it.url, ["scmp.com"])
+      );
+    }
+  }
+
+  if (region === "uk") {
+    return items.filter(it =>
+      keepHost(it.url, ["bbc.co.uk","bbc.com","theguardian.com","ft.com","cnn.com"])
+    );
+  }
+
+  if (region === "us") {
+    // already quite clean
+    return items;
+  }
+
+  return items;
+}
+
+/* --------------------------------------------------------
+   FETCH FROM FEED
+--------------------------------------------------------- */
 async function fetchItemsFromFeed(feedUrl, takeN) {
   try {
     const xml  = await fetchRssText(feedUrl, { retries: 2 });
@@ -359,7 +435,9 @@ async function ingestRegionalLane(region, lane, feeds) {
     collected = collected.concat(list);
     if (collected.length >= INGEST_MAX_PER_CAT) break;
   }
-  return uniqBy(collected, x => x.url).slice(0, INGEST_MAX_PER_CAT)
+  // filter strictly to region/lane
+  const filtered = filterByRegionLane(region, lane, uniqBy(collected, x => x.url));
+  return filtered.slice(0, INGEST_MAX_PER_CAT)
     .map(x => ({ ...x, category: `${region}:${lane}` }));
 }
 async function ingestGlobalLane(lane, feeds) {
