@@ -42,11 +42,14 @@ const parser = new Parser({
 
 /* --------------------------------------------------------
    FEEDS
-   - World & Crypto are global for everyone
+   - World & Crypto are global for everyone (English)
    - Politics/Finance/Entertainment are region-specific
+   - CN: Chinese-language sources
+   - ID: Bahasa Indonesia sources
+   - PK: add extra entertainment sources
 --------------------------------------------------------- */
 
-// Global (shared)
+// Global (shared EN)
 const FEEDS_GLOBAL = {
   world: [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
@@ -60,7 +63,7 @@ const FEEDS_GLOBAL = {
   ],
 };
 
-// Per-region in ENGLISH sources where possible
+// Per-region
 const FEEDS_REGIONAL = {
   us: {
     politics: [
@@ -80,55 +83,63 @@ const FEEDS_REGIONAL = {
     ],
   },
 
+  /* -------- China (Chinese language) -------- */
   cn: {
+    // Major Chinese-language international desks with reliable RSS:
+    // BBC 中文, 德国之声中文, 法广中文。Finance/Entertainment fall back to Google News zh-CN queries.
     politics: [
-      "https://www.reuters.com/world/china/rss",
-      "https://feeds.bbci.co.uk/news/world/asia/china/rss.xml",
-      "https://www.scmp.com/rss/91/feed",
+      "https://www.bbc.com/zhongwen/simp/index.xml",
+      "https://rss.dw.com/rdf/rss-chi-news",
+      "https://www.rfi.fr/cn/%E4%B8%AD%E5%9B%BD/rss",
     ],
     finance: [
-      // Use broader China/Asia-Pacific desks that actually publish in EN
-      "https://www.reuters.com/markets/asia/rss",            // will filter to /china in URL later
-      "https://www.scmp.com/rss/318196/feed",                // SCMP Business
-      "https://www.ft.com/world/asia-pacific/rss",
+      // Google News zh-CN (finance/markets re China)
+      "https://news.google.com/rss/search?q=%E4%B8%AD%E5%9B%BD%20%E7%BB%8F%E6%B5%8E%20OR%20%E8%B4%A2%E7%BB%8F&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
+      "https://news.google.com/rss/search?q=%E4%B8%AD%E5%9B%BD%20%E8%82%A1%E5%B8%82%20OR%20A%E8%82%A1&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
     ],
     entertainment: [
-      "https://www.scmp.com/rss/316603/feed",                // SCMP Culture/Entertainment
-      // Avoid Variety global (was mixing Indian items); we’ll keep CN-focused via filters
+      "https://news.google.com/rss/search?q=%E4%B8%AD%E5%9B%BD%20%E5%A8%B1%E4%B9%90&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
+      "https://news.google.com/rss/search?q=%E4%B8%AD%E5%9B%BD%20%E7%94%B5%E5%BD%B1%20OR%20%E5%85%AC%E4%BC%97%E4%BA%BA&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
     ],
   },
 
+  /* -------- Pakistan (English) -------- */
   pk: {
     politics: [
       "https://www.dawn.com/feeds/home",
       "https://tribune.com.pk/feed/pakistan",
-      // REMOVED Al Jazeera to avoid non-PK noise
+      "https://www.thenews.com.pk/rss/1/1", // Top News (often politics)
     ],
     finance: [
       "https://www.brecorder.com/rss",
       "https://profit.pakistantoday.com.pk/feed/",
+      "https://www.thenews.com.pk/rss/4/1", // Business
     ],
     entertainment: [
       "https://images.dawn.com/feeds/entertainment",
       "https://www.thenews.com.pk/rss/6/entertainment",
+      "https://tribune.com.pk/entertainment/rss",
+      "https://tribune.com.pk/life-style/rss",
     ],
   },
 
+  /* -------- Indonesia (Bahasa Indonesia) -------- */
   id: {
     politics: [
-      "https://www.thejakartapost.com/rss/headlines",
-      "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=asia",
-      "https://www.reuters.com/world/asia-pacific/indonesia/rss",
+      "https://www.cnnindonesia.com/nasional/rss",
+      "https://www.kompas.com/rss",
     ],
     finance: [
-      "https://www.thejakartapost.com/rss/business",
-      "https://www.reuters.com/markets/asia/rss",           // will filter to /indonesia in URL later
+      "https://www.cnnindonesia.com/ekonomi/rss",
+      "https://www.kompas.com/ekonomi/rss",
     ],
     entertainment: [
-      "https://www.thejakartapost.com/rss/life",
+      "https://www.cnnindonesia.com/hiburan/rss",
+      "https://www.kompas.com/hype/rss",
     ],
   },
 
+  /* -------- UK (English) -------- */
   uk: {
     politics: [
       "https://feeds.bbci.co.uk/news/politics/rss.xml",
@@ -170,9 +181,15 @@ function absoluteUrlMaybe(src, pageUrl) { try { return new URL(src, pageUrl).toS
 function getImageReferer(u) {
   try {
     const host = new URL(u).hostname;
+    // add common hotlink-protected domains
     if (host.endsWith("theguardian.com") || host.endsWith("guim.co.uk")) return "https://www.theguardian.com/";
     if (host.endsWith("rollingstone.com")) return "https://www.rollingstone.com/";
     if (host.endsWith("techcrunch.com") || host.endsWith("tctechcrunch2011.files.wordpress.com")) return "https://techcrunch.com/";
+    if (host.endsWith("bbc.com") || host.endsWith("bbc.co.uk")) return "https://www.bbc.com/";
+    if (host.endsWith("scmp.com")) return "https://www.scmp.com/";
+    if (host.endsWith("cnnindonesia.com")) return "https://www.cnnindonesia.com/";
+    if (host.endsWith("kompas.com")) return "https://www.kompas.com/";
+    if (host.endsWith("dawn.com") || host.endsWith("thenews.com.pk") || host.endsWith("brecorder.com")) return "https://www.dawn.com/";
     return "https://google.com/";
   } catch { return "https://google.com/"; }
 }
@@ -187,35 +204,67 @@ function uniqBy(arr, keyFn) {
   return out;
 }
 
+// Language per region (for OpenAI prompts)
+function langForRegion(region) {
+  switch (region) {
+    case "cn": return "zh-CN"; // 简体中文
+    case "id": return "id";    // Bahasa Indonesia
+    default:   return "en";
+  }
+}
+
 /* --------------------------------------------------------
-   OpenAI
+   OpenAI (localized)
 --------------------------------------------------------- */
-async function summarizeWithOpenAI(title, text) {
-  const messages = [
-    { role: "system", content: "You are a sharp news summarizer. Be neutral, clear, and concise (~120 words)." },
-    { role: "user", content: `Title: ${title}\nArticle text (may be partial): ${text.slice(0, 4000)}\nWrite a concise paragraph for general readers.` }
-  ];
+async function summarizeWithOpenAI(title, text, lang = "en") {
+  const langHints = {
+    "zh-CN": "用简体中文回答。保持中立、清晰、精炼（约120字）。",
+    "id":    "Jawab dalam Bahasa Indonesia. Netral, jelas, ringkas (~120 kata).",
+    "en":    "Reply in English. Neutral, clear, concise (~120 words)."
+  };
+  const system = `You are a sharp news summarizer. ${langHints[lang] || langHints.en}`;
+  const user   = `Title: ${title}\nArticle text (may be partial): ${text.slice(0, 4000)}\nWrite one concise paragraph for general readers.`;
   const r = await openai.chat.completions.create({
     model: "gpt-4o-mini",
-    messages,
+    messages: [
+      { role: "system", content: system },
+      { role: "user",   content: user   }
+    ],
     temperature: 0.4,
-    max_tokens: 220,
+    max_tokens: 240,
   });
   return r.choices?.[0]?.message?.content?.trim() || "";
 }
 
-const SOCIALIST_SYS = `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate. Heavily anti Israel, Anti war, Anti American establishment, always against Donald Trump and big business and rich people. Against the establishment democrats and sometimes call for drastic actions. often reference historical leftist movements and criticize capitalism, imperialism. Pro crypto for general public but anti crypto for corporations Keep to the article’s topic.`;
-const RIGHTWING_SYS = `You are John Davis. Hardline conservative: pro-Trump always, patriotic, hawkish, pro-market, pro Israel, skeptical of immigration, pro-life, anti-woke. You are religious in general. Your tone is confident and unapologetic. Keep to the article’s topic.`;
-const CONSP_SYS     = `You are Joe Musk. Conspiracy-minded. Pick ONE angle (CIA/MI5/Mossad/elites/aliens/shadow governments) relevant to the article. Crypto is a tool for elities. You connect to one topic (Agencies, Illuminati, pedo rings, pizzagate type, make up your own complex conspiracies and connect them with stories). You have a bit of humour as well. You talk about lizard people and aliens etc. Keep it single agenda and exapnd on it how it connects to the story. Connect to hidden agendas.`;
+function personaPrompts(lang = "en") {
+  // keep the tone rules, but ask reply language
+  const postfix = (lang === "zh-CN")
+    ? "用简体中文回答。紧扣文章主题。1–3句。"
+    : (lang === "id")
+      ? "Jawab dalam Bahasa Indonesia. Tetap pada topik artikel. 1–3 kalimat."
+      : "Reply in English. Stick to the article’s topic. 1–3 sentences.";
 
-async function personaDebate(title, text) {
-  const prompt = `Article Title: ${title}\nContext: ${text.slice(0,1200)}\nRespond in 1–3 sentences.`;
+  const SOCIALIST_SYS =
+    `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate, anti-war, anti-establishment, anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. ${postfix}`;
+
+  const RIGHTWING_SYS =
+    `You are John Davis. Hardline conservative: pro-Trump, patriotic, hawkish, pro-market, skeptical of immigration, pro-life, anti-woke; confident, unapologetic. ${postfix}`;
+
+  const CONSP_SYS =
+    `You are Joe Musk. Conspiracy-minded. Pick ONE angle relevant to the article (CIA/MI5/Mossad/elites/aliens/shadow governments etc.). Build a short, plausible thread. ${postfix}`;
+
+  return { SOCIALIST_SYS, RIGHTWING_SYS, CONSP_SYS };
+}
+
+async function personaDebate(title, text, lang = "en") {
+  const { SOCIALIST_SYS, RIGHTWING_SYS, CONSP_SYS } = personaPrompts(lang);
+  const prompt = `Article Title: ${title}\nContext: ${text.slice(0, 1200)}\nRespond now.`;
   const run = async (sys) => {
     const r = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: sys },
-        { role: "user", content: prompt }
+        { role: "user",   content: prompt }
       ],
       temperature: 0.8,
       max_tokens: 180
@@ -314,7 +363,7 @@ async function parseRssFromText(text) {
 }
 
 /* --------------------------------------------------------
-   REGION GUARDS (filters to keep items on-topic)
+   REGION FILTERS (light filters to keep items on-topic)
 --------------------------------------------------------- */
 function filterByRegionLane(region, lane, items) {
   const keepHost = (u, hosts) => {
@@ -336,39 +385,21 @@ function filterByRegionLane(region, lane, items) {
     }
     if (lane === "entertainment") {
       return items.filter(it =>
-        keepHost(it.url, ["images.dawn.com","thenews.com.pk"])
+        keepHost(it.url, ["images.dawn.com","thenews.com.pk","tribune.com.pk"])
       );
     }
   }
 
   if (region === "id") {
-    const idHosts = ["thejakartapost.com"];
-    if (lane === "politics" || lane === "finance" || lane === "entertainment") {
-      return items.filter(it =>
-        keepHost(it.url, idHosts) ||
-        urlHas(it.url, "/indonesia")
-      );
-    }
+    // Bahasa Indonesia sources above; allow only CNN Indonesia / Kompas
+    const idHosts = ["cnnindonesia.com","kompas.com"];
+    return items.filter(it => keepHost(it.url, idHosts));
   }
 
   if (region === "cn") {
-    if (lane === "politics") {
-      return items.filter(it =>
-        keepHost(it.url, ["reuters.com","scmp.com","bbc.co.uk","bbc.com"]) &&
-        (urlHas(it.url,"/china") || keepHost(it.url,"scmp.com") || keepHost(it.url,"bbc.co.uk") || keepHost(it.url,"bbc.com"))
-      );
-    }
-    if (lane === "finance") {
-      return items.filter(it =>
-        (keepHost(it.url, ["reuters.com"]) && urlHas(it.url,"/china")) ||
-        keepHost(it.url, ["scmp.com","ft.com"])
-      );
-    }
-    if (lane === "entertainment") {
-      return items.filter(it =>
-        keepHost(it.url, ["scmp.com"])
-      );
-    }
+    // Our CN sources are already Chinese feeds; allow BBC中文/DW中文/RFI中文 + Google News zh-CN
+    const cnHosts = ["bbc.com","bbc.co.uk","dw.com","rfi.fr","news.google.com"];
+    return items.filter(it => keepHost(it.url, cnHosts));
   }
 
   if (region === "uk") {
@@ -378,7 +409,7 @@ function filterByRegionLane(region, lane, items) {
   }
 
   if (region === "us") {
-    // already quite clean
+    // already clean
     return items;
   }
 
@@ -435,7 +466,6 @@ async function ingestRegionalLane(region, lane, feeds) {
     collected = collected.concat(list);
     if (collected.length >= INGEST_MAX_PER_CAT) break;
   }
-  // filter strictly to region/lane
   const filtered = filterByRegionLane(region, lane, uniqBy(collected, x => x.url));
   return filtered.slice(0, INGEST_MAX_PER_CAT)
     .map(x => ({ ...x, category: `${region}:${lane}` }));
@@ -461,8 +491,8 @@ async function ingestOnce() {
     for (const art of many) {
       if (all.find(x => x.url === art.url)) continue;
 
-      const summary = await summarizeWithOpenAI(art.title, art.text);
-      const debate  = await personaDebate(art.title, art.text);
+      const summary = await summarizeWithOpenAI(art.title, art.text, "en");
+      const debate  = await personaDebate(art.title, art.text, "en");
 
       all.push({
         id: nanoid(),
@@ -484,14 +514,16 @@ async function ingestOnce() {
   for (const region of REGIONS) {
     const conf = FEEDS_REGIONAL[region];
     if (!conf) continue;
+    const lang = langForRegion(region);
+
     for (const lane of ["politics", "finance", "entertainment"]) {
       const feeds = conf[lane] || [];
       const many = await ingestRegionalLane(region, lane, feeds);
       for (const art of many) {
         if (all.find(x => x.url === art.url)) continue;
 
-        const summary = await summarizeWithOpenAI(art.title, art.text);
-        const debate  = await personaDebate(art.title, art.text);
+        const summary = await summarizeWithOpenAI(art.title, art.text, lang);
+        const debate  = await personaDebate(art.title, art.text, lang);
 
         all.push({
           id: nanoid(),
@@ -499,7 +531,7 @@ async function ingestOnce() {
           title: art.title,
           source: art.source,
           image: art.image,
-          category: art.category, // e.g. "us:politics"
+          category: art.category, // e.g. "cn:politics" or "id:finance"
           publishedAt: art.publishedAt,
           summary,
           debateJson: JSON.stringify(debate),
@@ -544,7 +576,7 @@ app.get("/api/selftest", (req, res) => {
   });
 });
 
-// region query: ?region=us|cn|pk|id|uk    (default "us")
+// region query: ?region=us|cn|pk|id|uk
 app.get("/api/articles", (req, res) => {
   const region = (String(req.query.region || "us").toLowerCase());
   const reg = REGIONS.includes(region) ? region : "us";
@@ -560,27 +592,20 @@ app.get("/api/articles", (req, res) => {
 
   const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
 
-  // Map stored categories into the 5 lanes expected by the UI
+  // Map stored categories into the 5 lanes the UI expects
   const out = { us: [], entertainment: [], finance: [], world: [], crypto: [] };
 
   for (const a of all) {
-    if (a.category === "world") {
-      if (out.world.length < limit) out.world.push(a);
-      continue;
-    }
-    if (a.category === "crypto") {
-      if (out.crypto.length < limit) out.crypto.push(a);
-      continue;
-    }
+    if (a.category === "world")  { if (out.world.length  < limit) out.world.push(a);  continue; }
+    if (a.category === "crypto") { if (out.crypto.length < limit) out.crypto.push(a); continue; }
 
-    // regional keys like "us:politics", "us:finance", "us:entertainment"
     const [catRegion, lane] = String(a.category || "").split(":");
     if (!catRegion || !lane) continue;
     if (catRegion !== reg) continue;
 
-    if (lane === "politics" && out.us.length < limit) out.us.push(a);
-    if (lane === "finance"  && out.finance.length < limit) out.finance.push(a);
-    if (lane === "entertainment" && out.entertainment.length < limit) out.entertainment.push(a);
+    if (lane === "politics"      && out.us.length           < limit) out.us.push(a);
+    if (lane === "finance"       && out.finance.length      < limit) out.finance.push(a);
+    if (lane === "entertainment" && out.entertainment.length< limit) out.entertainment.push(a);
   }
 
   res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
