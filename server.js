@@ -120,6 +120,8 @@ const FEEDS_REGIONAL = {
       "https://www.thenews.com.pk/rss/6/entertainment",
       "https://tribune.com.pk/entertainment/rss",
       "https://tribune.com.pk/life-style/rss",
+      "https://arynews.tv/category/entertainment/feed/",
+      "https://www.samaa.tv/entertainment/feed/"
     ],
   },
 
@@ -181,17 +183,40 @@ function absoluteUrlMaybe(src, pageUrl) { try { return new URL(src, pageUrl).toS
 function getImageReferer(u) {
   try {
     const host = new URL(u).hostname;
-    // add common hotlink-protected domains
-    if (host.endsWith("theguardian.com") || host.endsWith("guim.co.uk")) return "https://www.theguardian.com/";
-    if (host.endsWith("rollingstone.com")) return "https://www.rollingstone.com/";
-    if (host.endsWith("techcrunch.com") || host.endsWith("tctechcrunch2011.files.wordpress.com")) return "https://techcrunch.com/";
-    if (host.endsWith("bbc.com") || host.endsWith("bbc.co.uk")) return "https://www.bbc.com/";
-    if (host.endsWith("scmp.com")) return "https://www.scmp.com/";
-    if (host.endsWith("cnnindonesia.com")) return "https://www.cnnindonesia.com/";
-    if (host.endsWith("kompas.com")) return "https://www.kompas.com/";
-    if (host.endsWith("dawn.com") || host.endsWith("thenews.com.pk") || host.endsWith("brecorder.com")) return "https://www.dawn.com/";
+
+    // existing ones
+    if (host.endsWith("theguardian.com") || host.endsWith("guim.co.uk")) {
+      return "https://www.theguardian.com/";
+    }
+    if (host.endsWith("rollingstone.com")) {
+      return "https://www.rollingstone.com/";
+    }
+    if (
+      host.endsWith("techcrunch.com") ||
+      host.endsWith("tctechcrunch2011.files.wordpress.com")
+    ) {
+      return "https://techcrunch.com/";
+    }
+
+    // ★ RFI (Chinese section uses this domain)
+    if (host.endsWith("rfi.fr")) {
+      return "https://www.rfi.fr/";
+    }
+
+    // ★ Google image / Google News proxies
+    if (
+      host.endsWith("gstatic.com") ||
+      host.endsWith("googleusercontent.com") ||
+      host.endsWith("news.google.com")
+    ) {
+      return "https://news.google.com/";
+    }
+
+    // fallback
     return "https://google.com/";
-  } catch { return "https://google.com/"; }
+  } catch {
+    return "https://google.com/";
+  }
 }
 
 function uniqBy(arr, keyFn) {
@@ -367,28 +392,45 @@ async function parseRssFromText(text) {
 --------------------------------------------------------- */
 function filterByRegionLane(region, lane, items) {
   const keepHost = (u, hosts) => {
-    try { const h = new URL(u).hostname; return hosts.some(x => h.endsWith(x) || h === x); }
-    catch { return false; }
+    try {
+      const h = new URL(u).hostname;
+      return hosts.some(x => h === x || h.endsWith(x));
+    } catch {
+      return false;
+    }
   };
-  const urlHas = (u, frag) => { try { return new URL(u).href.toLowerCase().includes(frag); } catch { return false; } };
 
   if (region === "pk") {
     if (lane === "politics") {
       return items.filter(it =>
-        keepHost(it.url, ["dawn.com","tribune.com.pk","thenews.com.pk","brecorder.com","pakistantoday.com.pk"])
+        keepHost(it.url, [
+          "dawn.com",
+          "tribune.com.pk",
+          "thenews.com.pk",
+          "brecorder.com",
+          "pakistantoday.com.pk"
+        ])
       );
     }
     if (lane === "finance") {
       return items.filter(it =>
-        keepHost(it.url, ["brecorder.com","pakistantoday.com.pk","thenews.com.pk","dawn.com"])
+        keepHost(it.url, [
+          "brecorder.com",
+          "pakistantoday.com.pk",
+          "thenews.com.pk",
+          "dawn.com"
+        ])
       );
     }
     if (lane === "entertainment") {
-      return items.filter(it =>
-        keepHost(it.url, ["images.dawn.com","thenews.com.pk","tribune.com.pk"])
-      );
+      // ★ do NOT aggressively filter here – just return everything
+      return items;
     }
   }
+
+  // all other regions / lanes: keep as-is
+  return items;
+}
 
   if (region === "id") {
     // Bahasa Indonesia sources above; allow only CNN Indonesia / Kompas
