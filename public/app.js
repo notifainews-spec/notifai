@@ -20,6 +20,21 @@ function normalizeCat(c) {
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+// --- expose current category + helper for the swipe handler ---
+window.currentCategory = () => currentCategory;
+
+window.setCategoryFromSwipe = function (direction) {
+  const idx = CATEGORIES.indexOf(currentCategory);
+  if (idx === -1) return;
+
+  const offset = direction === "next" ? 1 : -1;
+  const nextIdx = (idx + offset + CATEGORIES.length) % CATEGORIES.length;
+  const nextCat = CATEGORIES[nextIdx];
+
+  // use your existing helper to switch categories
+  setActiveCategory(nextCat);
+};
+
 /* -------------------- Utilities -------------------- */
 function proxyImg(u) {
   return u && /^https?:/i.test(u) ? `/img?u=${encodeURIComponent(u)}` : COVER;
@@ -246,3 +261,50 @@ document.addEventListener("DOMContentLoaded", () => {
   wireDonate();
   loadArticles();
 });
+
+// ------------------------------------------
+// Mobile swipe: change category left / right
+// ------------------------------------------
+(function enableGlobalSwipeCategory() {
+  // Only enable for touch devices
+  if (!("ontouchstart" in window)) return;
+
+  const order = ["politics", "finance", "entertainment", "world", "crypto"];
+  const H_THRESHOLD = 50;  // minimum horizontal distance
+  const V_THRESHOLD = 80;  // ignore mostly-vertical swipes
+
+  let startX = 0;
+  let startY = 0;
+
+  document.body.addEventListener(
+    "touchstart",
+    (ev) => {
+      const t = ev.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+    },
+    { passive: true }
+  );
+
+  document.body.addEventListener(
+    "touchend",
+    (ev) => {
+      const t = ev.changedTouches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+
+      // ignore mostly vertical moves
+      if (Math.abs(dy) > V_THRESHOLD || Math.abs(dx) < H_THRESHOLD) return;
+
+      const step = dx < 0 ? 1 : -1; // left = next, right = previous
+      const idx = order.indexOf(window.currentCategory || "politics");
+      if (idx === -1) return;
+
+      const next = order[(idx + step + order.length) % order.length];
+      if (typeof window.setCategory === "function") {
+        window.setCategory(next);
+      }
+    },
+    { passive: true }
+  );
+})();
