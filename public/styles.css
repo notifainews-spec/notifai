@@ -230,10 +230,18 @@ a{text-decoration:none;color:inherit}
 .region-grid button:hover{ background:#eef2f7; }
 
 /* ===== Logo: image OR text (no double logos) ===== */
-.brand .logo-img{ display:none; height:32px; width:auto; }
-.brand .logo-text{ display:inline-block; font-weight:800; font-size:18px; }
-.brand.logo-has-img .logo-img{ display:inline-block; }
-.brand.logo-has-img .logo-text{ display:none; }
+.logo-img {
+  height: 28px;
+  width: auto;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.brand-text {
+  font-weight: 600;
+  font-size: 20px;
+  vertical-align: middle;
+}
 
 @media (max-width: 720px){
   .brand .logo-img{ height:28px; }
