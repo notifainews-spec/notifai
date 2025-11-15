@@ -104,7 +104,7 @@ const FEEDS_REGIONAL = {
   },
 
   /* -------- Pakistan (English) -------- */
-  pk: {
+      pk: {
     politics: [
       "https://www.dawn.com/feeds/home",
       "https://tribune.com.pk/feed/pakistan",
@@ -120,11 +120,8 @@ const FEEDS_REGIONAL = {
       "https://www.thenews.com.pk/rss/6/entertainment",
       "https://tribune.com.pk/entertainment/rss",
       "https://tribune.com.pk/life-style/rss",
-<<<<<<< HEAD
-=======
       "https://arynews.tv/category/entertainment/feed/",
       "https://www.samaa.tv/entertainment/feed/"
->>>>>>> 27d310f9b53503c7081101b7419f7cc81af60654
     ],
   },
 
@@ -186,19 +183,8 @@ function absoluteUrlMaybe(src, pageUrl) { try { return new URL(src, pageUrl).toS
 function getImageReferer(u) {
   try {
     const host = new URL(u).hostname;
-<<<<<<< HEAD
-    // add common hotlink-protected domains
-    if (host.endsWith("theguardian.com") || host.endsWith("guim.co.uk")) return "https://www.theguardian.com/";
-    if (host.endsWith("rollingstone.com")) return "https://www.rollingstone.com/";
-    if (host.endsWith("techcrunch.com") || host.endsWith("tctechcrunch2011.files.wordpress.com")) return "https://techcrunch.com/";
-    if (host.endsWith("bbc.com") || host.endsWith("bbc.co.uk")) return "https://www.bbc.com/";
-    if (host.endsWith("scmp.com")) return "https://www.scmp.com/";
-    if (host.endsWith("cnnindonesia.com")) return "https://www.cnnindonesia.com/";
-    if (host.endsWith("kompas.com")) return "https://www.kompas.com/";
-    if (host.endsWith("dawn.com") || host.endsWith("thenews.com.pk") || host.endsWith("brecorder.com")) return "https://www.dawn.com/";
-=======
 
-    // existing ones
+    // common hotlink-protected domains
     if (host.endsWith("theguardian.com") || host.endsWith("guim.co.uk")) {
       return "https://www.theguardian.com/";
     }
@@ -211,13 +197,32 @@ function getImageReferer(u) {
     ) {
       return "https://techcrunch.com/";
     }
+    if (host.endsWith("bbc.com") || host.endsWith("bbc.co.uk")) {
+      return "https://www.bbc.com/";
+    }
+    if (host.endsWith("scmp.com")) {
+      return "https://www.scmp.com/";
+    }
+    if (host.endsWith("cnnindonesia.com")) {
+      return "https://www.cnnindonesia.com/";
+    }
+    if (host.endsWith("kompas.com")) {
+      return "https://www.kompas.com/";
+    }
+    if (
+      host.endsWith("dawn.com") ||
+      host.endsWith("thenews.com.pk") ||
+      host.endsWith("brecorder.com")
+    ) {
+      return "https://www.dawn.com/";
+    }
 
-    // ★ RFI (Chinese section uses this domain)
+    // RFI (Chinese)
     if (host.endsWith("rfi.fr")) {
       return "https://www.rfi.fr/";
     }
 
-    // ★ Google image / Google News proxies
+    // Google image / Google News proxies
     if (
       host.endsWith("gstatic.com") ||
       host.endsWith("googleusercontent.com") ||
@@ -227,7 +232,6 @@ function getImageReferer(u) {
     }
 
     // fallback
->>>>>>> 27d310f9b53503c7081101b7419f7cc81af60654
     return "https://google.com/";
   } catch {
     return "https://google.com/";
@@ -285,7 +289,6 @@ function personaPrompts(lang = "en") {
       : "Reply in English. Stick to the article’s topic. 1–3 sentences.";
 
   const SOCIALIST_SYS =
-<<<<<<< HEAD
     `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate, anti-war, anti-establishment, always anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. You are pro crypto for users but anti crypto for corporations. ${postfix}`;
 
   const RIGHTWING_SYS =
@@ -293,15 +296,6 @@ function personaPrompts(lang = "en") {
 
   const CONSP_SYS =
     `You are Joe Musk. Conspiracy-minded. Pick ONE angle relevant to the article (CIA/MI5/Mossad/elites/aliens/shadow governments etc.). You look at consipracies online and see which best fits the narratives. Lizard people, aliens, pedo rings and pizzagate are somethings you believe in. You are a bit funny as well.  Build a plausible thread. ${postfix}`;
-=======
-    `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate, anti-war, anti-establishment, anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. ${postfix}`;
-
-  const RIGHTWING_SYS =
-    `You are John Davis. Hardline conservative: pro-Trump, patriotic, hawkish, pro-market, skeptical of immigration, pro-life, anti-woke; confident, unapologetic. ${postfix}`;
-
-  const CONSP_SYS =
-    `You are Joe Musk. Conspiracy-minded. Pick ONE angle relevant to the article (CIA/MI5/Mossad/elites/aliens/shadow governments etc.). Build a short, plausible thread. ${postfix}`;
->>>>>>> 27d310f9b53503c7081101b7419f7cc81af60654
 
   return { SOCIALIST_SYS, RIGHTWING_SYS, CONSP_SYS };
 }
@@ -417,12 +411,6 @@ async function parseRssFromText(text) {
 --------------------------------------------------------- */
 function filterByRegionLane(region, lane, items) {
   const keepHost = (u, hosts) => {
-<<<<<<< HEAD
-    try { const h = new URL(u).hostname; return hosts.some(x => h.endsWith(x) || h === x); }
-    catch { return false; }
-  };
-  const urlHas = (u, frag) => { try { return new URL(u).href.toLowerCase().includes(frag); } catch { return false; } };
-=======
     try {
       const h = new URL(u).hostname;
       return hosts.some(x => h === x || h.endsWith(x));
@@ -430,14 +418,10 @@ function filterByRegionLane(region, lane, items) {
       return false;
     }
   };
->>>>>>> 27d310f9b53503c7081101b7419f7cc81af60654
 
   if (region === "pk") {
     if (lane === "politics") {
       return items.filter(it =>
-<<<<<<< HEAD
-        keepHost(it.url, ["dawn.com","tribune.com.pk","thenews.com.pk","brecorder.com","pakistantoday.com.pk"])
-=======
         keepHost(it.url, [
           "dawn.com",
           "tribune.com.pk",
@@ -445,23 +429,10 @@ function filterByRegionLane(region, lane, items) {
           "brecorder.com",
           "pakistantoday.com.pk"
         ])
->>>>>>> 27d310f9b53503c7081101b7419f7cc81af60654
       );
     }
     if (lane === "finance") {
       return items.filter(it =>
-<<<<<<< HEAD
-        keepHost(it.url, ["brecorder.com","pakistantoday.com.pk","thenews.com.pk","dawn.com"])
-      );
-    }
-    if (lane === "entertainment") {
-      return items.filter(it =>
-        keepHost(it.url, ["images.dawn.com","thenews.com.pk","tribune.com.pk"])
-      );
-    }
-  }
-
-=======
         keepHost(it.url, [
           "brecorder.com",
           "pakistantoday.com.pk",
@@ -471,31 +442,24 @@ function filterByRegionLane(region, lane, items) {
       );
     }
     if (lane === "entertainment") {
-      // ★ do NOT aggressively filter here – just return everything
+      // keep everything for PK entertainment (feeds are already curated)
       return items;
     }
   }
 
-  // all other regions / lanes: keep as-is
-  return items;
-}
-
->>>>>>> 27d310f9b53503c7081101b7419f7cc81af60654
   if (region === "id") {
-    // Bahasa Indonesia sources above; allow only CNN Indonesia / Kompas
-    const idHosts = ["cnnindonesia.com","kompas.com"];
+    const idHosts = ["cnnindonesia.com", "kompas.com"];
     return items.filter(it => keepHost(it.url, idHosts));
   }
 
   if (region === "cn") {
-    // Our CN sources are already Chinese feeds; allow BBC中文/DW中文/RFI中文 + Google News zh-CN
-    const cnHosts = ["bbc.com","bbc.co.uk","dw.com","rfi.fr","news.google.com"];
+    const cnHosts = ["bbc.com", "bbc.co.uk", "dw.com", "rfi.fr", "news.google.com"];
     return items.filter(it => keepHost(it.url, cnHosts));
   }
 
   if (region === "uk") {
     return items.filter(it =>
-      keepHost(it.url, ["bbc.co.uk","bbc.com","theguardian.com","ft.com","cnn.com"])
+      keepHost(it.url, ["bbc.co.uk", "bbc.com", "theguardian.com", "ft.com", "cnn.com"])
     );
   }
 
