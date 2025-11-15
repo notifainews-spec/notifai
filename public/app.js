@@ -93,30 +93,50 @@ function initCategoryBar() {
     });
   });
 
-  // Swipe anywhere
-  let startX = 0, startY = 0, down = false;
-  on(document, "pointerdown", (e) => { down = true; startX = e.clientX; startY = e.clientY; }, { passive: true });
-  on(document, "pointerup", (e) => {
-    if (!down) return; down = false;
-    const dx = e.clientX - startX, dy = e.clientY - startY;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-      const dir = dx > 0 ? -1 : 1; // right swipe => previous; left => next
-      const idx = CATS.indexOf(state.category);
-      const next = Math.min(CATS.length - 1, Math.max(0, idx + dir));
-      if (next !== idx) {
-        state.category = CATS[next]; saveCategory(state.category);
-        highlightActiveCat();
-        render();
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }
-    }
-  }, { passive: true });
-}
+  // Swipe anywhere on screen (mobile only)
+  let startX = 0;
+  let startY = 0;
+  let activeId = null;
 
-function highlightActiveCat() {
-  $$(".main-nav .nav-btn").forEach(b => b.classList.remove("active"));
-  const active = $(`.main-nav .nav-btn[data-cat="${state.category}"]`);
-  if (active) active.classList.add("active");
+  const onDown = (e) => {
+    if (!isMobile()) return;        // only on mobile
+    activeId = e.pointerId;
+    startX = e.clientX;
+    startY = e.clientY;
+  };
+
+  const onUp = (e) => {
+    if (!isMobile()) return;
+    if (activeId === null || e.pointerId !== activeId) return;
+    activeId = null;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    // Mostly horizontal + long enough
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+
+    const dir = dx > 0 ? -1 : 1; // right swipe => previous; left => next
+    const idx = CATS.indexOf(state.category);
+    const next = Math.min(CATS.length - 1, Math.max(0, idx + dir));
+
+    if (next !== idx) {
+      state.category = CATS[next];
+      saveCategory(state.category);
+      highlightActiveCat();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const onCancel = (e) => {
+    if (!isMobile()) return;
+    if (e.pointerId === activeId) activeId = null;
+  };
+
+  document.addEventListener("pointerdown", onDown, { passive: true });
+  document.addEventListener("pointerup", onUp, { passive: true });
+  document.addEventListener("pointercancel", onCancel, { passive: true });
 }
 
 /* -------------------- Fetch & Render -------------------- */
