@@ -182,9 +182,11 @@ function absoluteUrlMaybe(src, pageUrl) { try { return new URL(src, pageUrl).toS
 
 function getImageReferer(u) {
   try {
-    const host = new URL(u).hostname;
+    const url = new URL(u);
+    const host = url.hostname;
+    const origin = url.origin; // e.g. "https://static.rfi.fr"
 
-    // common hotlink-protected domains
+    // 1) Known picky sites where we prefer a canonical referer
     if (host.endsWith("theguardian.com") || host.endsWith("guim.co.uk")) {
       return "https://www.theguardian.com/";
     }
@@ -217,12 +219,12 @@ function getImageReferer(u) {
       return "https://www.dawn.com/";
     }
 
-    // RFI (Chinese)
+    // 2) RFI (Chinese + others)
     if (host.endsWith("rfi.fr")) {
       return "https://www.rfi.fr/";
     }
 
-    // Google image / Google News proxies
+    // 3) Google image / Google News proxies
     if (
       host.endsWith("gstatic.com") ||
       host.endsWith("googleusercontent.com") ||
@@ -231,9 +233,10 @@ function getImageReferer(u) {
       return "https://news.google.com/";
     }
 
-    // fallback
-    return "https://google.com/";
+    // 4) Default: use the image's own origin
+    return origin;
   } catch {
+    // last-resort fallback
     return "https://google.com/";
   }
 }

@@ -79,27 +79,37 @@ function initRegionModal() {
   on(document, "keydown", (e) => { if (e.key === "Escape") closeRegionModal(); });
 }
 
+/* -------------------- Highlight active category -------------------- */
+function highlightActiveCat() {
+  $$(".main-nav .nav-btn").forEach(btn => {
+    const c = (btn.getAttribute("data-cat") || "").toLowerCase();
+    btn.classList.toggle("active", c === state.category);
+  });
+}
+
 /* -------------------- Category bar + swipe anywhere -------------------- */
 function initCategoryBar() {
-  // Click buttons
+  // Click buttons (desktop + mobile)
   $$(".main-nav .nav-btn").forEach(btn => {
     on(btn, "click", () => {
       const c = (btn.getAttribute("data-cat") || "").toLowerCase();
       if (!CATS.includes(c)) return;
-      state.category = c; saveCategory(c);
+      state.category = c; 
+      saveCategory(c);
       highlightActiveCat();
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
   });
 
-  // Swipe anywhere on screen (mobile only)
+  // Swipe anywhere on screen (MOBILE ONLY)
   let startX = 0;
   let startY = 0;
   let activeId = null;
 
   const onDown = (e) => {
-    if (!isMobile()) return;        // only on mobile
+    if (!isMobile()) return;              // only care on mobile widths
+    if (e.pointerType && e.pointerType !== "touch") return; // ignore mouse
     activeId = e.pointerId;
     startX = e.clientX;
     startY = e.clientY;
@@ -113,10 +123,10 @@ function initCategoryBar() {
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
 
-    // Mostly horizontal + long enough
+    // must be mostly horizontal and long enough
     if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
 
-    const dir = dx > 0 ? -1 : 1; // right swipe => previous; left => next
+    const dir = dx > 0 ? -1 : 1; // swipe right => previous, left => next
     const idx = CATS.indexOf(state.category);
     const next = Math.min(CATS.length - 1, Math.max(0, idx + dir));
 

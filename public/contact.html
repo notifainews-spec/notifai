@@ -1,68 +1,95 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Contact Us — NotifAi News</title>
-  <link rel="icon" type="image/png" href="/favicon.png" />
+  <meta charset="utf-8" />
+  <title>Contact — NotifAi News</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="/favicon.png" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
-
 <body>
   <!-- Header -->
   <header class="site-header">
-    <div class="brand">
-      <a href="index.html" class="brand-link">
-        <img src="/favicon.png" alt="NotifAi Logo" class="brand-logo" />
-        <span class="brand-name">NotifAi News</span>
+    <div class="brand" id="brand">
+      <a class="brand-link" href="/index.html">
+        <img class="brand-logo logo-img" src="/logo.jpeg" alt="NotifAi"
+             onerror="this.style.display='none';document.querySelector('.logo-text').style.display='inline-block';">
+        <span class="logo-text" style="display:none">NotifAi News</span>
       </a>
     </div>
 
-    <nav class="main-nav">
-      <a class="nav-btn" href="index.html">Home</a>
-      <a class="nav-btn" href="about.html">About</a>
-      <a class="nav-btn active" href="contact.html">Contact</a>
+    <nav class="main-nav" id="categoryBar">
+      <button class="nav-btn" data-cat="us" onclick="location.href='/'">Home</button>
     </nav>
 
     <div class="actions">
-      <a class="nav-link" href="https://x.com/notifainews" target="_blank" rel="noopener">X (Twitter)</a>
+      <a class="nav-link" href="/about.html">About</a>
+      <a class="nav-link" href="/contact.html">Contact</a>
+      <a class="nav-link" href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
     </div>
   </header>
 
-  <!-- Main Content -->
-  <main class="container">
-    <section class="contact-section">
-      <h1>Contact Us</h1>
+  <main class="simple-page">
+    <section class="simple-card">
+      <h1>Get in touch</h1>
       <p>
-        We love hearing from our readers and the community.  
-        Whether you have suggestions, feedback, partnership ideas, or news tips — feel free to reach out!
+        NotifAi News is still evolving, and we genuinely care about how it feels to use.
+        If you have an idea, found a bug, want to collaborate, or just want to say hi,
+        we’d love to hear from you.
       </p>
 
-      <div class="contact-card">
-        <h2>Get in touch</h2>
-        <p>Email us anytime at:</p>
-        <a href="mailto:notifainews@gmail.com" class="contact-email">notifainews@gmail.com</a>
-      </div>
+      <h2>Email</h2>
+      <p>
+        The simplest way to reach us is by email. We read every message.
+      </p>
+      <p>
+        <strong>Email:</strong>
+        <!-- TODO: Replace with your real email address -->
+        <a href="mailto:notifainews@gmail.com">notifainews@gmail.com</a>
+      </p>
+      <p class="contact-small">
+        Share feedback about the AI debates, suggest new regions or topics, or tell us
+        how you use NotifAi in your daily news routine.
+      </p>
 
-      <p class="note">
-        Our small team reads every message, and while we might not reply immediately, we value your input greatly.  
-        Together, we can make NotifAi the most dynamic and balanced AI-driven news platform.
+      <h2>Social</h2>
+      <p>
+        For quick thoughts, reactions to stories, or to follow updates as we ship new
+        features, follow us on X.
+      </p>
+      <p>
+        <a class="btn btn-ghost btn-sm" href="https://x.com/notifaibnb" target="_blank" rel="noopener">
+          Follow @notifaibnb
+        </a>
+      </p>
+
+      <h2>What you can reach out about</h2>
+      <ul class="simple-list">
+        <li>Feature ideas for the website or future mobile apps.</li>
+        <li>Requests for better coverage of your country or region.</li>
+        <li>Suggestions to improve the AI personalities and debates.</li>
+        <li>Partnerships, media collaborations, or Web3 integrations.</li>
+        <li>Any bugs, glitches, or strange behaviour you spot.</li>
+      </ul>
+
+      <p>
+        Your feedback helps shape where NotifAi News goes next — from regional coverage
+        to how the AI voices are tuned. Don’t hesitate to reach out.
       </p>
     </section>
   </main>
 
-  <!-- Footer -->
   <footer class="site-footer">
-    <p>© <span id="year"></span> NotifAi News</p>
-    <div class="footer-links">
-      <a href="about.html">About</a>
-      <a href="contact.html">Contact</a>
-      <a href="https://x.com/notifainews" target="_blank" rel="noopener">X</a>
+    <div class="footer-inner">
+      <div class="footer-left">© <span id="yr"></span> NotifAi News</div>
+      <div class="footer-right">
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+        <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
+      </div>
     </div>
   </footer>
 
-  <script>
-    document.getElementById("year").textContent = new Date().getFullYear();
-  </script>
+  <script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
 </body>
 </html>

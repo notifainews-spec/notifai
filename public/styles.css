@@ -247,3 +247,355 @@ a{text-decoration:none;color:inherit}
   .brand .logo-img{ height:28px; }
   .brand .logo-text{ font-size:16px; }
 }
+
+/* ===== Generic buttons ===== */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  padding:8px 14px;
+  border-radius:999px;
+  font-size:0.85rem;
+  border:1px solid var(--border);
+  background:#ffffff;
+  color:var(--text);
+  cursor:pointer;
+  white-space:nowrap;
+  transition:background .12s,border-color .12s,box-shadow .12s,transform .06s;
+}
+.btn:hover{
+  background:#f9fafb;
+  box-shadow:var(--shadow);
+  transform:translateY(-1px);
+}
+.btn-primary{
+  background:var(--accent);
+  border-color:var(--accent);
+  color:#ffffff;
+}
+.btn-primary:hover{
+  background:#0284c7;
+  border-color:#0284c7;
+}
+.btn-ghost{
+  background:#f8fafc;
+}
+.btn-ghost:hover{
+  background:#e5f3fb;
+}
+.btn-sm{
+  padding:6px 10px;
+  font-size:0.78rem;
+}
+
+/* ===== Article view ===== */
+.article-view{
+  max-width:900px;
+  margin:24px auto 56px;
+  padding:0 16px 40px;
+}
+
+/* Keep article-card wrapper only for spacing, not as a card */
+.article-card{
+  background:transparent;
+  border:none;
+  border-radius:0;
+  box-shadow:none;
+  padding:12px 0 28px;
+}
+
+.a-title{
+  font-size:2rem;
+  line-height:1.18;
+  margin:0 0 10px;
+  font-weight:800;
+}
+
+.byline{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+  font-size:0.9rem;
+  color:var(--muted);
+  margin-bottom:18px;
+}
+.byline .dot{
+  width:4px;
+  height:4px;
+  border-radius:999px;
+  background:var(--muted);
+  display:inline-block;
+}
+
+.article-hero{
+  margin-bottom:14px;
+  border-radius:18px;
+  overflow:hidden;
+  background:#000;
+}
+.article-hero img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+
+/* Mobile tweaks for article */
+@media (max-width: 720px){
+  .article-view{
+    margin:12px auto 80px;
+    padding:0 14px 80px; /* extra bottom space above fixed footer */
+  }
+  .article-card{
+    padding:8px 0 24px;
+  }
+  .a-title{
+    font-size:1.4rem;
+    line-height:1.2;
+    margin-bottom:8px;
+  }
+  .byline{
+    font-size:0.8rem;
+    margin-bottom:12px;
+  }
+  .article-hero{
+    border-radius:12px;
+    margin-bottom:12px;
+  }
+}
+
+/* ===== About & Contact pages ===== */
+.simple-page{
+  max-width:800px;
+  margin:24px auto 40px;
+  padding:0 16px 32px;
+}
+.simple-card{
+  background:#ffffff;
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  box-shadow:var(--shadow);
+  padding:22px 18px 22px;
+}
+.simple-card h1{
+  margin:0 0 10px;
+  font-size:1.6rem;
+}
+.simple-card h2{
+  margin:18px 0 6px;
+  font-size:1.15rem;
+}
+.simple-card p{
+  margin:0 0 8px;
+  font-size:0.95rem;
+  line-height:1.6;
+}
+.simple-list{
+  margin:6px 0 10px;
+  padding-left:18px;
+  font-size:0.95rem;
+}
+.simple-list li{
+  margin:4px 0;
+}
+
+/* Contact form */
+.contact-form{
+  margin-top:10px;
+  display:grid;
+  gap:10px;
+}
+.contact-form label{
+  font-size:0.85rem;
+  font-weight:500;
+  display:block;
+  margin-bottom:2px;
+}
+.contact-form input,
+.contact-form textarea{
+  width:100%;
+  padding:8px 10px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  font:inherit;
+  resize:vertical;
+}
+.contact-form textarea{
+  min-height:90px;
+}
+.contact-small{
+  font-size:0.8rem;
+  color:var(--muted);
+  margin-top:4px;
+}
+
+/* ===== Article view ===== */
+.article-view{
+  max-width:860px;
+  margin:24px auto 72px;
+  padding:0 16px 40px;
+}
+
+/* Open, editorial-style article wrapper */
+.article-card{
+  background:transparent;
+  border:none;
+  border-radius:0;
+  box-shadow:none;
+  padding:8px 0 32px;
+}
+
+/* Headline + byline */
+.a-title{
+  font-size:clamp(1.6rem, 2.3vw, 2.1rem);
+  line-height:1.18;
+  margin:0 0 6px;
+  font-weight:800;
+}
+
+.byline{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+  font-size:0.9rem;
+  color:var(--muted);
+  margin-bottom:14px;
+  padding-bottom:8px;
+  border-bottom:1px solid var(--border);
+}
+.byline .dot{
+  width:4px;
+  height:4px;
+  border-radius:999px;
+  background:var(--muted);
+  display:inline-block;
+}
+
+/* Hero image block */
+.article-hero{
+  margin:16px 0 18px;
+  border-radius:18px;
+  overflow:hidden;
+  background:#000;
+}
+.article-hero img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+
+/* Full article + share row */
+.full-article-row{
+  margin:2px 0 10px;   /* <- creates gap before share buttons */
+}
+.full-article-row .btn{
+  font-weight:600;
+}
+
+.share-row{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  margin:2px 0 18px;   /* spacing below full article button + gap below shares */
+}
+.share-label{
+  font-size:0.8rem;
+  color:var(--muted);
+  margin-right:4px;
+}
+.share-btn{
+  /* share buttons already use .btn + .btn-ghost, we just tweak layout here */
+}
+
+/* ===== Summary block ===== */
+.summary-block{
+  margin-top:6px;
+  padding:14px 16px 16px;
+  border-radius:14px;
+  background:#f9fafb;
+  border:1px solid #e2e8f0;
+}
+.summary-block h2{
+  margin:0 0 8px;
+  font-size:1rem;
+  letter-spacing:.01em;
+}
+.summary-block p{
+  margin:0;
+  font-size:0.96rem;
+  line-height:1.55;
+}
+
+/* ===== Perspectives block ===== */
+.perspectives{
+  margin-top:20px;
+  border-radius:14px;
+  border:1px solid #e2e8f0;
+  background:#ffffff;
+  padding:10px 14px 14px;
+}
+.perspectives > summary{
+  cursor:pointer;
+  font-weight:600;
+  font-size:0.95rem;
+  list-style:none;
+}
+.perspectives[open]{
+  box-shadow:var(--shadow);
+}
+.perspectives[open] > summary{
+  margin-bottom:8px;
+}
+.voices{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:12px;
+  margin-top:6px;
+}
+.voice h3{
+  margin:0 0 4px;
+  font-size:0.95rem;
+}
+.voice p{
+  margin:0;
+  font-size:0.9rem;
+  line-height:1.5;
+  color:var(--text);
+}
+
+/* ===== Mobile tweaks for article ===== */
+@media (max-width: 720px){
+  .article-view{
+    margin:10px auto 80px;
+    padding:0 14px 80px; /* extra bottom space above fixed footer */
+  }
+  .article-card{
+    padding:6px 0 26px;
+  }
+  .a-title{
+    font-size:1.4rem;
+    line-height:1.2;
+    margin-bottom:6px;
+  }
+  .byline{
+    font-size:0.8rem;
+    margin-bottom:10px;
+    padding-bottom:6px;
+  }
+  .article-hero{
+    border-radius:12px;
+    margin:12px 0 14px;
+  }
+  .summary-block{
+    padding:12px 12px 14px;
+  }
+  .perspectives{
+    padding:10px 12px 12px;
+  }
+  .share-row{
+    margin-bottom:16px;
+  }
+}

@@ -14,84 +14,108 @@
     gtag('config', 'G-XKHQTRV8JF');
   </script>
 
-  <link rel="icon" type="image/png" href="./favicon.png" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <!-- Single header: logo (left) + Home -->
+  <!-- Same header style as index -->
   <header class="site-header">
     <div class="brand">
-      <a href="./index.html" class="brand-link" aria-label="NotifAi News">
-        <img src="./logo.jpeg" alt="NotifAi" class="brand-logo" />
+      <a href="/index.html" class="brand-link" aria-label="NotifAi News">
+        <img src="/logo.jpeg" alt="NotifAi" class="brand-logo logo-img"
+             onerror="this.style.display='none';document.querySelector('.logo-text').style.display='inline-block';" />
+        <span class="logo-text" style="display:none;">NotifAi News</span>
       </a>
     </div>
 
     <nav class="main-nav">
-      <a class="nav-btn" href="./index.html">Home</a>
+      <a class="nav-btn" href="/index.html">Home</a>
     </nav>
 
-    <div class="actions"><!-- intentionally empty --></div>
+    <div class="actions">
+      <a class="nav-link" href="/about.html">About</a>
+      <a class="nav-link" href="/contact.html">Contact</a>
+      <a class="nav-link" href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
+    </div>
   </header>
 
-  <main class="container article-view">
-    <h1 id="title" class="a-title"></h1>
-    <div class="byline">
-      <span id="source"></span>
-      <span class="dot">•</span>
-      <time id="when"></time>
-    </div>
+  <main class="article-view">
+    <article class="article-card">
+      <h1 id="title" class="a-title"></h1>
 
-    <div class="hero">
-      <!-- Clicking the image opens the original source -->
-      <a id="sourceLinkImage" href="#" target="_blank" rel="noopener">
-        <img id="hero" src="/cover.jpg" alt="" onerror="this.onerror=null;this.src='/cover.jpg';" />
-      </a>
-    </div>
-
-    <!-- Full source link under the image -->
-    <div class="full-article-row">
-      <a id="fullLink" class="full-link" href="#" target="_blank" rel="noopener">Full News Article</a>
-    </div>
-
-    <!-- Share row -->
-    <div class="share-row">
-      <span class="share-label">Share:</span>
-      <a id="share-wa" class="share-btn" target="_blank" rel="noopener" href="#">WhatsApp</a>
-      <a id="share-x"  class="share-btn" target="_blank" rel="noopener" href="#">X</a>
-      <a id="share-fb" class="share-btn" target="_blank" rel="noopener" href="#">Facebook</a>
-    </div>
-
-    <section class="summary-block">
-      <h2>Summary</h2>
-      <p id="summary"></p>
-    </section>
-
-    <!-- Collapsible Perspectives -->
-    <details id="perspectives" class="perspectives">
-      <summary>Show perspectives</summary>
-      <div class="voices">
-        <div class="voice">
-          <h3>Jessica Rebella</h3>
-          <p id="v-socialist"></p>
-        </div>
-        <div class="voice">
-          <h3>John Davis</h3>
-          <p id="v-rightwing"></p>
-        </div>
-        <div class="voice">
-          <h3>Joe Musk</h3>
-          <p id="v-conspiracy"></p>
-        </div>
+      <div class="byline">
+        <span id="source"></span>
+        <span class="dot"></span>
+        <time id="when"></time>
       </div>
-    </details>
+
+      <div class="article-hero">
+        <!-- Clicking the image opens the original source -->
+        <a id="sourceLinkImage" href="#" target="_blank" rel="noopener">
+          <img id="hero"
+               src="/cover.jpg"
+               alt=""
+               onerror="this.onerror=null;this.src='/cover.jpg';" />
+        </a>
+      </div>
+
+      <!-- Full source link under the image -->
+      <div class="full-article-row">
+        <a id="fullLink"
+           class="btn btn-primary full-link"
+           href="#"
+           target="_blank"
+           rel="noopener">
+          Read full article
+        </a>
+      </div>
+
+      <!-- Share row -->
+      <div class="share-row">
+        <span class="share-label">Share:</span>
+        <a id="share-wa" class="btn btn-ghost btn-sm share-btn" target="_blank" rel="noopener" href="#">WhatsApp</a>
+        <a id="share-x"  class="btn btn-ghost btn-sm share-btn" target="_blank" rel="noopener" href="#">X</a>
+        <a id="share-fb" class="btn btn-ghost btn-sm share-btn" target="_blank" rel="noopener" href="#">Facebook</a>
+      </div>
+
+      <section class="summary-block">
+        <h2>Summary</h2>
+        <p id="summary"></p>
+      </section>
+
+      <!-- Collapsible Perspectives -->
+      <details id="perspectives" class="perspectives">
+        <summary>Show AI perspectives on this story</summary>
+        <div class="voices">
+          <div class="voice">
+            <h3>Jessica Rebella</h3>
+            <p id="v-socialist"></p>
+          </div>
+          <div class="voice">
+            <h3>John Davis</h3>
+            <p id="v-rightwing"></p>
+          </div>
+          <div class="voice">
+            <h3>Joe Musk</h3>
+            <p id="v-conspiracy"></p>
+          </div>
+        </div>
+      </details>
+    </article>
   </main>
 
   <footer class="site-footer">
-    <div>© <span id="year"></span> NotifAi News</div>
-    <a href="contact.html">Contact</a>
-    <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">Follow on X</a>
+    <div class="footer-inner">
+      <div class="footer-left">© <span id="yr"></span> NotifAi News</div>
+      <div class="footer-right">
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+        <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
+      </div>
+    </div>
   </footer>
 
-  <script type="module" src="./article.js"></script>
+  <script type="module" src="/article.js"></script>
+  <script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
 </body>
 </html>
