@@ -3,7 +3,7 @@
 const API_BASE = window.API_BASE || window.location.origin;
 const COVER = "/cover.jpg";
 const CATS = ["us", "finance", "entertainment", "world", "crypto"];
-const REGIONS = ["us", "cn", "pk", "id", "uk"];
+const REGIONS = ["us", "cn", "pk", "id", "uk", "ng"];
 
 let state = {
   region: (localStorage.getItem("region") || "us").toLowerCase(),
@@ -107,11 +107,19 @@ function initCategoryBar() {
   let startY = 0;
   let swiping = false;
 
+  function getPoint(e) {
+    if (e.touches && e.touches[0]) return e.touches[0];
+    if (e.changedTouches && e.changedTouches[0]) return e.changedTouches[0];
+    return e;
+  }
+
   const onDown = (e) => {
     if (!isMobile()) return; // only care on mobile widths
+    const p = getPoint(e);
+    if (!p) return;
     swiping = true;
-    startX = e.clientX;
-    startY = e.clientY;
+    startX = p.clientX;
+    startY = p.clientY;
   };
 
   const onUp = (e) => {
@@ -119,8 +127,11 @@ function initCategoryBar() {
     if (!swiping) return;
     swiping = false;
 
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
+    const p = getPoint(e);
+    if (!p) return;
+
+    const dx = p.clientX - startX;
+    const dy = p.clientY - startY;
 
     // must be mostly horizontal and long enough
     if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
@@ -143,11 +154,16 @@ function initCategoryBar() {
     swiping = false;
   };
 
+  // Touch events (for iOS / Android)
+  document.addEventListener("touchstart", onDown, { passive: true });
+  document.addEventListener("touchend", onUp, { passive: true });
+  document.addEventListener("touchcancel", onCancel, { passive: true });
+
+  // Pointer events (for browsers that support them)
   document.addEventListener("pointerdown", onDown, { passive: true });
   document.addEventListener("pointerup", onUp, { passive: true });
   document.addEventListener("pointercancel", onCancel, { passive: true });
-} // <-- IMPORTANT: closes initCategoryBar
-
+}
 
 /* -------------------- Fetch & Render -------------------- */
 async function loadArticles() {

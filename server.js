@@ -83,25 +83,27 @@ const FEEDS_REGIONAL = {
     ],
   },
 
-  /* -------- China (Chinese language) -------- */
+    /* -------- China (Chinese language) -------- */
   cn: {
-    // Major Chinese-language international desks with reliable RSS:
-    // BBC 中文, 德国之声中文, 法广中文。Finance/Entertainment fall back to Google News zh-CN queries.
+    // Politics: keep BBC 中文 / DW 中文 / RFI 中文
     politics: [
       "https://www.bbc.com/zhongwen/simp/index.xml",
       "https://rss.dw.com/rdf/rss-chi-news",
-      "https://www.rfi.fr/cn/%E4%B8%AD%E5%9B%BD/rss",
-    ],
-    // Finance: switch away from Google News to Xinhua's business RSS
-    finance: [
-      "https://www.xinhuanet.com/english/rss/businessrss.xml",
     ],
 
-    // Entertainment: Xinhua entertainment RSS instead of Google News
+    // Finance: Chinese-language business news (Sina 财经)
+    finance: [
+      "http://rss.sina.com.cn/news/allnews/finance.xml",
+      "http://rss.sina.com.cn/finance/gncj.xml", // 国内财经
+      "http://rss.sina.com.cn/finance/gjcj.xml", // 国际财经
+    ],
+
+    // Entertainment: Sina 娱乐
     entertainment: [
-      "https://www.xinhuanet.com/english/rss/entertainmentrss.xml",
+      "http://rss.sina.com.cn/news/allnews/ent.xml",
     ],
   },
+
 
   /* -------- Pakistan (English) -------- */
       pk: {
@@ -122,6 +124,33 @@ const FEEDS_REGIONAL = {
       "https://tribune.com.pk/life-style/rss",
       "https://arynews.tv/category/entertainment/feed/",
       "https://www.samaa.tv/entertainment/feed/"
+    ],
+  },
+
+  /* -------- Nigeria (English) -------- */
+  ng: {
+    // General Nigeria news / politics-heavy
+    politics: [
+      "https://guardian.ng/feed/",
+      "https://www.premiumtimesng.com/feed",
+      "https://dailypost.ng/feed",
+      "https://thenationonlineng.net/feed/"
+    ],
+
+    // Business / finance-focused Nigeria feeds
+    finance: [
+      "https://businessday.ng/feed/",
+      "https://nairametrics.com/feed",
+      "https://www.premiumtimesng.com/feed"
+    ],
+
+        // Entertainment / celebrity / lifestyle
+    entertainment: [
+      "https://guardian.ng/feed",                      // Guardian Nigeria – includes entertainment & lifestyle:contentReference[oaicite:0]{index=0}
+      "https://independent.ng/feed",                   // Independent Nigeria – general but strong showbiz/life coverage:contentReference[oaicite:1]{index=1}
+      "https://informationng.com/feed",                // Information Nigeria – heavy on entertainment & celebrity gossip:contentReference[oaicite:2]{index=2}
+      "https://www.legit.ng/rss/all.rss",              // Legit.ng – big mix incl. entertainment & Nollywood:contentReference[oaicite:3]{index=3}
+      "https://www.yohaig.ng/author/gistlover/feed"    // Gistlover via Yohaig – Naija entertainment & celebrity gist:contentReference[oaicite:4]{index=4}
     ],
   },
 
@@ -160,7 +189,7 @@ const FEEDS_REGIONAL = {
 };
 
 // Supported region codes (UI & API)
-const REGIONS = ["us", "cn", "pk", "id", "uk"];
+const REGIONS = ["us", "cn", "pk", "id", "uk", "ng"];
 
 /* --------------------------------------------------------
    STORAGE
@@ -456,7 +485,7 @@ function filterByRegionLane(region, lane, items) {
     }
   };
 
-  if (region === "pk") {
+    if (region === "pk") {
     if (lane === "politics") {
       return items.filter(it =>
         keepHost(it.url, [
@@ -464,7 +493,9 @@ function filterByRegionLane(region, lane, items) {
           "tribune.com.pk",
           "thenews.com.pk",
           "brecorder.com",
-          "pakistantoday.com.pk"
+          "pakistantoday.com.pk",
+          "arynews.tv",        // NEW
+          "samaa.tv"           // NEW
         ])
       );
     }
@@ -474,7 +505,8 @@ function filterByRegionLane(region, lane, items) {
           "brecorder.com",
           "pakistantoday.com.pk",
           "thenews.com.pk",
-          "dawn.com"
+          "dawn.com",
+          "tribune.com.pk"     // NEW: in case you add Tribune business
         ])
       );
     }
@@ -489,16 +521,16 @@ function filterByRegionLane(region, lane, items) {
     return items.filter(it => keepHost(it.url, idHosts));
   }
 
-    if (region === "cn") {
+      if (region === "cn") {
     const cnHosts = [
       "bbc.com",
       "bbc.co.uk",
       "dw.com",
       "rfi.fr",
-      "news.google.com",
       "xinhuanet.com",
       "english.news.cn",
-      "news.cn"
+      "news.cn",
+      "sina.com.cn"       // NEW: Sina (finance + entertainment)
     ];
     return items.filter(it => keepHost(it.url, cnHosts));
   }
@@ -512,6 +544,24 @@ function filterByRegionLane(region, lane, items) {
   if (region === "us") {
     // already clean
     return items;
+  }
+
+    if (region === "ng") {
+    const ngHosts = [
+      "guardian.ng",
+      "independent.ng",      // NEW
+      "premiumtimesng.com",
+      "dailypost.ng",
+      "thenationonlineng.net",
+      "businessday.ng",
+      "nairametrics.com",
+      "legit.ng",
+      "informationng.com",
+      "tribuneonlineng.com",
+      "punchng.com",
+      "yohaig.ng"            // NEW – Gistlover feed host
+    ];
+    return items.filter(it => keepHost(it.url, ngHosts));
   }
 
   return items;
