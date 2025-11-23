@@ -92,14 +92,14 @@ const FEEDS_REGIONAL = {
       "https://rss.dw.com/rdf/rss-chi-news",
       "https://www.rfi.fr/cn/%E4%B8%AD%E5%9B%BD/rss",
     ],
+    // Finance: switch away from Google News to Xinhua's business RSS
     finance: [
-      // Google News zh-CN (finance/markets re China)
-      "https://news.google.com/rss/search?q=%E4%B8%AD%E5%9B%BD%20%E7%BB%8F%E6%B5%8E%20OR%20%E8%B4%A2%E7%BB%8F&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
-      "https://news.google.com/rss/search?q=%E4%B8%AD%E5%9B%BD%20%E8%82%A1%E5%B8%82%20OR%20A%E8%82%A1&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
+      "https://www.xinhuanet.com/english/rss/businessrss.xml",
     ],
+
+    // Entertainment: Xinhua entertainment RSS instead of Google News
     entertainment: [
-      "https://news.google.com/rss/search?q=%E4%B8%AD%E5%9B%BD%20%E5%A8%B1%E4%B9%90&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
-      "https://news.google.com/rss/search?q=%E4%B8%AD%E5%9B%BD%20%E7%94%B5%E5%BD%B1%20OR%20%E5%85%AC%E4%BC%97%E4%BA%BA&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
+      "https://www.xinhuanet.com/english/rss/entertainmentrss.xml",
     ],
   },
 
@@ -201,6 +201,9 @@ function getImageReferer(u) {
     }
     if (host.endsWith("bbc.com") || host.endsWith("bbc.co.uk")) {
       return "https://www.bbc.com/";
+    }
+    if (host.endsWith("dw.com")) {
+      return "https://www.dw.com/";
     }
     if (host.endsWith("scmp.com")) {
       return "https://www.scmp.com/";
@@ -367,20 +370,51 @@ function pickOgImage(html, pageUrl) {
    FETCHERS
 --------------------------------------------------------- */
 async function fetchArticlePage(url) {
-  try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 NotifAi/1.0" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) return { html: "", text: "", image: "" };
-    const html = await res.text();
-    const text = extractText(html).slice(0, 7000);
-    const image = pickOgImage(html, url);
-    return { html, text, image };
-  } catch {
-    return { html: "", text: "", image: "" };
+  const ua = { "User-Agent": "Mozilla/5.0 NotifAi/1.0" };
+
+  async function fetchOnce(target) {
+    try {
+      const res = await fetch(target, {
+        headers: ua,
+        redirect: "follow",
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return { html: "", text: "", image: "" };
+      const html = await res.text();
+      const text = extractText(html).slice(0, 7000);
+      const image = pickOgImage(html, target);
+      return { html, text, image };
+    } catch {
+      return { html: "", text: "", image: "" };
+    }
   }
+
+  // First fetch (could be Google News wrapper or real article)
+  let { html, text, image } = await fetchOnce(url);
+
+  // If this is a Google News wrapper, try to follow canonical to real article
+  try {
+    const host = new URL(url).hostname;
+    if (host === "news.google.com" && html) {
+      const $ = cheerio.load(html || "");
+      const canon =
+        $('link[rel="canonical"]').attr("href") ||
+        $('meta[property="og:url"]').attr("content");
+      if (canon && looksLikeUrl(canon)) {
+        const realUrl = new URL(canon).toString();
+        const second = await fetchOnce(realUrl);
+        // Prefer real article image/text if we got something useful
+        if (second.image) image = second.image;
+        if (second.text && second.text.length > text.length / 2) {
+          text = second.text;
+        }
+      }
+    }
+  } catch {
+    // ignore canonical-follow errors, keep first fetch result
+  }
+
+  return { html, text, image };
 }
 
 async function fetchRssText(url, { retries = 2 } = {}) {
@@ -455,8 +489,17 @@ function filterByRegionLane(region, lane, items) {
     return items.filter(it => keepHost(it.url, idHosts));
   }
 
-  if (region === "cn") {
-    const cnHosts = ["bbc.com", "bbc.co.uk", "dw.com", "rfi.fr", "news.google.com"];
+    if (region === "cn") {
+    const cnHosts = [
+      "bbc.com",
+      "bbc.co.uk",
+      "dw.com",
+      "rfi.fr",
+      "news.google.com",
+      "xinhuanet.com",
+      "english.news.cn",
+      "news.cn"
+    ];
     return items.filter(it => keepHost(it.url, cnHosts));
   }
 

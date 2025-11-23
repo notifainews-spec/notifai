@@ -94,7 +94,7 @@ function initCategoryBar() {
     on(btn, "click", () => {
       const c = (btn.getAttribute("data-cat") || "").toLowerCase();
       if (!CATS.includes(c)) return;
-      state.category = c; 
+      state.category = c;
       saveCategory(c);
       highlightActiveCat();
       render();
@@ -105,20 +105,19 @@ function initCategoryBar() {
   // Swipe anywhere on screen (MOBILE ONLY)
   let startX = 0;
   let startY = 0;
-  let activeId = null;
+  let swiping = false;
 
   const onDown = (e) => {
-    if (!isMobile()) return;              // only care on mobile widths
-    if (e.pointerType && e.pointerType !== "touch") return; // ignore mouse
-    activeId = e.pointerId;
+    if (!isMobile()) return; // only care on mobile widths
+    swiping = true;
     startX = e.clientX;
     startY = e.clientY;
   };
 
   const onUp = (e) => {
     if (!isMobile()) return;
-    if (activeId === null || e.pointerId !== activeId) return;
-    activeId = null;
+    if (!swiping) return;
+    swiping = false;
 
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
@@ -139,15 +138,16 @@ function initCategoryBar() {
     }
   };
 
-  const onCancel = (e) => {
+  const onCancel = () => {
     if (!isMobile()) return;
-    if (e.pointerId === activeId) activeId = null;
+    swiping = false;
   };
 
   document.addEventListener("pointerdown", onDown, { passive: true });
   document.addEventListener("pointerup", onUp, { passive: true });
   document.addEventListener("pointercancel", onCancel, { passive: true });
-}
+} // <-- IMPORTANT: closes initCategoryBar
+
 
 /* -------------------- Fetch & Render -------------------- */
 async function loadArticles() {
