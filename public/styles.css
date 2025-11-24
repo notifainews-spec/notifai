@@ -40,15 +40,28 @@ a{text-decoration:none;color:inherit}
 .actions .dexscreener{border-color:#0ea5e9}
 .actions .dexscreener:hover{background:#0ea5e9;color:#fff}
 
-/* Mobile header */
 @media (max-width: 720px){
   .site-header{
-    grid-template-columns:auto auto;
+    grid-template-columns:1fr auto;  /* center area + right menu */
     align-items:center;
-    text-align:left;
+    text-align:center;
   }
-  .brand{justify-self:flex-start}
-  .actions{display:none} /* no inline header links now */
+
+  /* Center the logo block */
+  .brand{
+    justify-self:center;
+  }
+
+  /* Show hamburger on mobile, keep it on the right */
+  .menu-toggle{
+    display:flex;
+    justify-self:end;
+  }
+
+  /* Hide inline header links on mobile */
+  .actions{
+    display:none;
+  }
 
   .main-nav{
     grid-column:1 / span 2;
