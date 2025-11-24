@@ -41,10 +41,16 @@ a{text-decoration:none;color:inherit}
 .actions .dexscreener:hover{background:#0ea5e9;color:#fff}
 
 @media (max-width: 720px){
+  /* Header: make it a single-column grid and reserve space on the right
+     so the absolute-positioned hamburger doesn't overlap the logo */
   .site-header{
-    grid-template-columns:1fr auto;  /* center area + right menu */
+    grid-template-columns:1fr;
     align-items:center;
     text-align:center;
+    padding-right:56px; /* space for hamburger on the right */
+    position:sticky;
+    top:0;
+    z-index:50;
   }
 
   /* Center the logo block */
@@ -52,24 +58,40 @@ a{text-decoration:none;color:inherit}
     justify-self:center;
   }
 
-  /* Show hamburger on mobile, keep it on the right */
+  /* Hamburger: always visible, pinned to top-right inside header */
   .menu-toggle{
     display:flex;
-    justify-self:end;
+    position:absolute;
+    top:12px;
+    right:18px;
   }
 
-  /* Hide inline header links on mobile */
+  /* Hide inline header links on mobile (we use the drawer instead) */
   .actions{
     display:none;
   }
 
+  /* Categories row goes below the header row */
   .main-nav{
-    grid-column:1 / span 2;
-    overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;padding:0 6px 4px;margin:6px -6px 0;scrollbar-width:none;
-    touch-action: pan-y; overscroll-behavior-x: contain; scroll-snap-type: x mandatory;
+    grid-column:1;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    gap:6px;
+    padding:0 6px 4px;
+    margin:6px -6px 0;
+    scrollbar-width:none;
+    touch-action: pan-y;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
   }
   .main-nav::-webkit-scrollbar{display:none}
-  .nav-btn{flex:0 0 auto;white-space:nowrap;font-size:13px;padding:6px 10px;scroll-snap-align:center}
+  .nav-btn{
+    flex:0 0 auto;
+    white-space:nowrap;
+    font-size:13px;
+    padding:6px 10px;
+    scroll-snap-align:center;
+  }
 }
 
 /* ===== Hamburger menu button ===== */
