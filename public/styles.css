@@ -41,13 +41,12 @@ a{text-decoration:none;color:inherit}
 .actions .dexscreener:hover{background:#0ea5e9;color:#fff}
 
 @media (max-width: 720px){
-  /* Header: make it a single-column grid and reserve space on the right
-     so the absolute-positioned hamburger doesn't overlap the logo */
+  /* Header: single column, no weird right padding so logo is truly centered */
   .site-header{
     grid-template-columns:1fr;
     align-items:center;
     text-align:center;
-    padding-right:56px; /* space for hamburger on the right */
+    padding:12px 18px;
     position:sticky;
     top:0;
     z-index:50;
@@ -56,6 +55,7 @@ a{text-decoration:none;color:inherit}
   /* Center the logo block */
   .brand{
     justify-self:center;
+    max-width:100%;
   }
 
   /* Hamburger: always visible, pinned to top-right inside header */
@@ -71,14 +71,16 @@ a{text-decoration:none;color:inherit}
     display:none;
   }
 
-  /* Categories row goes below the header row */
+  /* Categories row goes below the header row and stays centered */
   .main-nav{
     grid-column:1;
+    justify-content:center;   /* center flex children */
+    justify-self:center;      /* center as grid item */
     overflow-x:auto;
     -webkit-overflow-scrolling:touch;
     gap:6px;
     padding:0 6px 4px;
-    margin:6px -6px 0;
+    margin:6px 0 0;           /* remove negative margin that pulled it left */
     scrollbar-width:none;
     touch-action: pan-y;
     overscroll-behavior-x: contain;
