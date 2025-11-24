@@ -26,14 +26,10 @@
       <button class="nav-btn" data-cat="crypto">Crypto</button>
     </nav>
 
-    <!-- Right-side actions -->
-    <div class="actions">
-      <a class="nav-link" href="/about.html">About</a>
-      <a class="nav-link" href="/contact.html">Contact</a>
-      <a class="nav-link" href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
-      <a class="nav-link dexscreener" target="_blank" rel="noopener" href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444">Dexscreener</a>
-      <a class="nav-link" id="donateBtn" href="#">Donate</a>
-    </div>
+    <!-- Right-side menu toggle -->
+    <button class="menu-toggle" id="menuToggle" aria-label="Open menu">
+      <span class="menu-lines"></span>
+    </button>
   </header>
 
   <main class="container">
@@ -63,18 +59,24 @@
     <div id="storyNext"><span>Next story</span><span class="arrow"></span></div>
   </main>
 
-  <!-- Footer (Change Region lives here now) -->
-  <footer class="site-footer">
+  <!-- Slide-up menu -->
+  <div class="site-menu-overlay" id="siteMenu" hidden>
+    <div class="site-menu">
+      <button class="menu-close" id="menuClose" aria-label="Close menu">&times;</button>
+      <nav class="menu-list">
+        <a href="/about.html" class="menu-item">About</a>
+        <a href="/contact.html" class="menu-item">Contact</a>
+        <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener" class="menu-item">Dex</a>
+        <a href="https://x.com/notifaibnb" target="_blank" rel="noopener" class="menu-item">X</a>
+        <button type="button" class="menu-item" data-action="change-region">Region</button>
+        <button type="button" class="menu-item" id="menuDonate">Donate</button>
+      </nav>
+    </div>
+  </div>
+
+       <footer class="site-footer">
     <div class="footer-inner">
       <div class="footer-left">©<span id="yr"></span> NotifAi News</div>
-      <div class="footer-right">
-        <a href="#" id="changeRegion">Region</a>
-        <a href="/about.html">About</a>
-        <a href="/contact.html">Contact</a>
-        <a href="https://x.com/notifaibnb" target="_blank" rel="noopener">X</a>
-        <a href="https://dexscreener.com/bsc/0x70131b713a5d0e9d900feca15d0e1348658e4444" target="_blank" rel="noopener">Dex</a>
-        <a href="#" id="donateBtnFooter">Donate</a>
-      </div>
     </div>
   </footer>
 
@@ -106,5 +108,35 @@
 
   <script src="/app.js"></script>
   <script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
+
+  <script>
+  (function(){
+    const overlay = document.getElementById('siteMenu');
+    const toggle  = document.getElementById('menuToggle');
+    const closeBtn = document.getElementById('menuClose');
+
+    function openMenu(){
+      if (!overlay) return;
+      overlay.hidden = false;
+      overlay.classList.add('open');
+      if (toggle) toggle.classList.add('open');
+    }
+    function closeMenu(){
+      if (!overlay) return;
+      overlay.classList.remove('open');
+      overlay.hidden = true;
+      if (toggle) toggle.classList.remove('open');
+    }
+
+    if (toggle) toggle.addEventListener('click', openMenu);
+    if (closeBtn) closeBtn.addEventListener('click', closeMenu);
+    if (overlay){
+      overlay.addEventListener('click', function(e){
+        if (e.target === overlay) closeMenu();  // click outside drawer closes
+      });
+    }
+  })();
+ </script>
+
 </body>
 </html>

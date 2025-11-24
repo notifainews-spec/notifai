@@ -102,39 +102,37 @@ function initCategoryBar() {
     });
   });
 
-  // Swipe anywhere on screen (MOBILE ONLY)
+  // Swipe anywhere on screen (MOBILE ONLY, including over cards)
   let startX = 0;
   let startY = 0;
-  let swiping = false;
+  let tracking = false;
 
-  function getPoint(e) {
-    if (e.touches && e.touches[0]) return e.touches[0];
-    if (e.changedTouches && e.changedTouches[0]) return e.changedTouches[0];
-    return e;
+  function onTouchStart(e) {
+    if (!isMobile()) return;
+    if (!e.touches || !e.touches[0]) return;
+    tracking = true;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
   }
 
-  const onDown = (e) => {
-    if (!isMobile()) return; // only care on mobile widths
-    const p = getPoint(e);
-    if (!p) return;
-    swiping = true;
-    startX = p.clientX;
-    startY = p.clientY;
-  };
-
-  const onUp = (e) => {
+  function onTouchMove(e) {
     if (!isMobile()) return;
-    if (!swiping) return;
-    swiping = false;
+    if (!tracking) return;
+    if (!e.touches || !e.touches[0]) return;
 
-    const p = getPoint(e);
-    if (!p) return;
+    const x = e.touches[0].clientX;
+    const y = e.touches[0].clientY;
+    const dx = x - startX;
+    const dy = y - startY;
 
-    const dx = p.clientX - startX;
-    const dy = p.clientY - startY;
+    // Only treat as swipe if it's clearly horizontal
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.3) {
+      return; // let vertical scroll happen
+    }
 
-    // must be mostly horizontal and long enough
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    // At this point, it's a horizontal swipe -> prevent accidental click/scroll
+    e.preventDefault();
+    tracking = false;
 
     const dir = dx > 0 ? -1 : 1; // swipe right => previous, left => next
     const idx = CATS.indexOf(state.category);
@@ -147,22 +145,24 @@ function initCategoryBar() {
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  };
+  }
 
-  const onCancel = () => {
+  function onTouchEnd() {
     if (!isMobile()) return;
-    swiping = false;
-  };
+    tracking = false;
+  }
 
-  // Touch events (for iOS / Android)
-  document.addEventListener("touchstart", onDown, { passive: true });
-  document.addEventListener("touchend", onUp, { passive: true });
-  document.addEventListener("touchcancel", onCancel, { passive: true });
+  function onTouchCancel() {
+    if (!isMobile()) return;
+    tracking = false;
+  }
 
-  // Pointer events (for browsers that support them)
-  document.addEventListener("pointerdown", onDown, { passive: true });
-  document.addEventListener("pointerup", onUp, { passive: true });
-  document.addEventListener("pointercancel", onCancel, { passive: true });
+  // Attach only touch handlers so it works reliably on phones
+  document.addEventListener("touchstart", onTouchStart, { passive: true });
+  // touchmove must be non-passive so we *can* preventDefault on horizontal swipe
+  document.addEventListener("touchmove", onTouchMove, { passive: false });
+  document.addEventListener("touchend", onTouchEnd, { passive: true });
+  document.addEventListener("touchcancel", onTouchCancel, { passive: true });
 }
 
 /* -------------------- Fetch & Render -------------------- */
@@ -253,6 +253,7 @@ function wireDonate() {
   };
   on($("#donateBtn"), "click", click);
   on($("#donateBtnFooter"), "click", click);
+  on($("#menuDonate"), "click", click);
 }
 
 /* -------------------- Logo fallback (png/jpg/jpeg) -------------------- */

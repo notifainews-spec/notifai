@@ -83,47 +83,60 @@ const FEEDS_REGIONAL = {
     ],
   },
 
-    /* -------- China (Chinese language) -------- */
+      /* -------- China (Chinese language) -------- */
   cn: {
-    // Politics: keep BBC 中文 / DW 中文 / RFI 中文
+    // Politics: Chinese-language international & local
     politics: [
-      "https://www.bbc.com/zhongwen/simp/index.xml",
-      "https://rss.dw.com/rdf/rss-chi-news",
+      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", // BBC 中文
+      "https://rss.dw.com/rdf/rss-chi-all",            // DW 中文综合
+      "https://www.ifeng.com/rss/hotnews.xml",         // 凤凰新闻热点
     ],
 
-    // Finance: Chinese-language business news (Sina 财经)
+    // Finance: economy / business stories (still in Chinese)
     finance: [
-      "http://rss.sina.com.cn/news/allnews/finance.xml",
-      "http://rss.sina.com.cn/finance/gncj.xml", // 国内财经
-      "http://rss.sina.com.cn/finance/gjcj.xml", // 国际财经
+      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", // BBC 中文 (includes economy)
+      "https://rss.dw.com/rdf/rss-chi-all",            // DW 中文综合 (includes economy)
+      // Optional: Chinese business/finance via Jiemian
+      "https://www.jiemian.com/rss/fintech.xml",
     ],
 
-    // Entertainment: Sina 娱乐
+    // Entertainment: Chinese entertainment via DW + HK01/NetEase/Sohu (via RSSHub)
     entertainment: [
-      "http://rss.sina.com.cn/news/allnews/ent.xml",
+      "https://rss.dw.com/rdf/rss-chi-all",                 // DW 中文 soft news / culture
+      "https://rsshub.app/163/ent/hot",                     // 网易娱乐热点
+      "https://rsshub.app/sohu/news/entertainment",         // 搜狐娱乐
+      "https://rsshub.app/hk01/zone/11"                     // 香港01 娱乐
     ],
   },
 
-
-  /* -------- Pakistan (English) -------- */
-      pk: {
+    /* -------- Pakistan (English) -------- */
+  pk: {
+    // More English-heavy, Pakistan-focused politics / national news
     politics: [
-      "https://www.dawn.com/feeds/home",
-      "https://tribune.com.pk/feed/pakistan",
-      "https://www.thenews.com.pk/rss/1/1", // Top News (often politics)
+      "https://www.dawn.com/feeds/home",              // Dawn – top stories (lots of politics)
+      "https://tribune.com.pk/feed/pakistan",         // Express Tribune – Pakistan section
+      "https://www.thenews.com.pk/rss/1/1",           // The News – Top News (politics heavy)
+      "https://arynews.tv/feed",                      // ARY News – full English feed
+      "https://www.pakistantoday.com.pk/feed",        // Pakistan Today – national & politics
+      "https://thecurrent.pk/feed"                    // The Current – young, English, mix of news
     ],
+
     finance: [
-      "https://www.brecorder.com/rss",
-      "https://profit.pakistantoday.com.pk/feed/",
-      "https://www.thenews.com.pk/rss/4/1", // Business
+      "https://www.brecorder.com/rss",                // Business Recorder
+      "https://profit.pakistantoday.com.pk/feed/",    // Profit (Pakistan Today) – business
+      "https://www.thenews.com.pk/rss/4/1",           // The News – Business
     ],
+
+    // Beefed up entertainment so it always feels fresh
     entertainment: [
-      "https://images.dawn.com/feeds/entertainment",
-      "https://www.thenews.com.pk/rss/6/entertainment",
-      "https://tribune.com.pk/entertainment/rss",
-      "https://tribune.com.pk/life-style/rss",
-      "https://arynews.tv/category/entertainment/feed/",
-      "https://www.samaa.tv/entertainment/feed/"
+      "https://images.dawn.com/feeds/entertainment",  // Dawn Images – entertainment
+      "https://www.thenews.com.pk/rss/6/entertainment", // The News – Entertainment
+      "https://tribune.com.pk/entertainment/rss",     // Express Tribune – Entertainment
+      "https://tribune.com.pk/life-style/rss",        // Tribune Life & Style
+      "https://arynews.tv/category/entertainment/feed/", // ARY – Entertainment
+      "https://www.samaa.tv/entertainment/feed/",     // SAMAA – Entertainment
+      "https://www.pakshowbiz.com/feed",              // PakShowbiz – pure showbiz/gossip
+      "https://thecurrent.pk/feed"                    // The Current – lots of celeb / pop culture
     ],
   },
 
@@ -521,17 +534,21 @@ function filterByRegionLane(region, lane, items) {
     return items.filter(it => keepHost(it.url, idHosts));
   }
 
-      if (region === "cn") {
+        if (region === "cn") {
+    // For CN politics + finance we keep only trusted Chinese-language sources
     const cnHosts = [
       "bbc.com",
       "bbc.co.uk",
       "dw.com",
-      "rfi.fr",
-      "xinhuanet.com",
-      "english.news.cn",
-      "news.cn",
-      "sina.com.cn"       // NEW: Sina (finance + entertainment)
+      "ifeng.com",
+      "jiemian.com"
     ];
+
+    // Entertainment uses RSSHub + various Chinese sites; don't over-filter
+    if (lane === "entertainment") {
+      return items; // keep all entertainment items for CN
+    }
+
     return items.filter(it => keepHost(it.url, cnHosts));
   }
 
