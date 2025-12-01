@@ -83,7 +83,7 @@ const FEEDS_REGIONAL = {
     ],
   },
 
-      /* -------- China (Chinese language) -------- */
+  /* -------- China (Chinese language) -------- */
   cn: {
     // Politics: Chinese-language international & local
     politics: [
@@ -109,7 +109,7 @@ const FEEDS_REGIONAL = {
     ],
   },
 
-    /* -------- Pakistan (English) -------- */
+  /* -------- Pakistan (English) -------- */
   pk: {
     // More English-heavy, Pakistan-focused politics / national news
     politics: [
@@ -157,13 +157,13 @@ const FEEDS_REGIONAL = {
       "https://www.premiumtimesng.com/feed"
     ],
 
-        // Entertainment / celebrity / lifestyle
+    // Entertainment / celebrity / lifestyle
     entertainment: [
-      "https://guardian.ng/feed",                      // Guardian Nigeria – includes entertainment & lifestyle:contentReference[oaicite:0]{index=0}
-      "https://independent.ng/feed",                   // Independent Nigeria – general but strong showbiz/life coverage:contentReference[oaicite:1]{index=1}
-      "https://informationng.com/feed",                // Information Nigeria – heavy on entertainment & celebrity gossip:contentReference[oaicite:2]{index=2}
-      "https://www.legit.ng/rss/all.rss",              // Legit.ng – big mix incl. entertainment & Nollywood:contentReference[oaicite:3]{index=3}
-      "https://www.yohaig.ng/author/gistlover/feed"    // Gistlover via Yohaig – Naija entertainment & celebrity gist:contentReference[oaicite:4]{index=4}
+      "https://guardian.ng/feed",                      // Guardian Nigeria – includes entertainment & lifestyle
+      "https://independent.ng/feed",                   // Independent Nigeria – general but strong showbiz/life coverage
+      "https://informationng.com/feed",                // Information Nigeria – heavy on entertainment & celebrity gossip
+      "https://www.legit.ng/rss/all.rss",              // Legit.ng – big mix incl. entertainment & Nollywood
+      "https://www.yohaig.ng/author/gistlover/feed"    // Gistlover via Yohaig – Naija entertainment & celebrity gist
     ],
   },
 
@@ -337,13 +337,13 @@ function personaPrompts(lang = "en") {
       : "Reply in English. Stick to the article’s topic. 1–3 sentences.";
 
   const SOCIALIST_SYS =
-    `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate, anti-war, anti-establishment, always anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. You are pro crypto for users but anti crypto for corporations. ${postfix}`;
+    `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate, anti-war, anti-establishment, always anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. You are always anti israel. You are pro crypto for users but anti crypto for corporations. ${postfix}`;
 
   const RIGHTWING_SYS =
-    `You are John Davis. Hardline conservative: pro-Trump, patriotic, hawkish, pro-market, completely anti immigration and pro white american theology, pro-life, anti-woke; confident and rude as well, very pro crypto. you dont go against trump on anything. unapologetic. ${postfix}`;
+    `You are John Davis. Hardline conservative: pro-Trump, patriotic, hawkish, pro-market, completely anti immigration and pro white american theology, pro-life, anti-woke; confident and rude as well, very pro crypto. you dont go against trump on anything. very pro war and pro israel. unapologetic. ${postfix}`;
 
   const CONSP_SYS =
-    `You are Joe Musk. Conspiracy-minded. Pick ONE angle relevant to the article (CIA/MI5/Mossad/elites/aliens/shadow governments etc.). You look at consipracies online and see which best fits the narratives. Lizard people, aliens, pedo rings and pizzagate are somethings you believe in. You are a bit funny as well.  Build a plausible thread. ${postfix}`;
+    `You are Joe Musk. Conspiracy-minded. Pick ONE angle relevant to the article (CIA/MI5/Mossad/elites/aliens/shadow governments etc.). You look at consipracies online and see which best fits the narratives. You are a bit funny as well. no emojis. Build a plausible thread. ${postfix}`;
 
   return { SOCIALIST_SYS, RIGHTWING_SYS, CONSP_SYS };
 }
@@ -369,6 +369,42 @@ async function personaDebate(title, text, lang = "en") {
     rightwing:   { name: "John Davis",      open: r },
     conspiracy:  { name: "Joe Musk",        open: c }
   };
+}
+
+/* --------------------------------------------------------
+   Persona chat helper for Ask-AI endpoint
+--------------------------------------------------------- */
+function personaChatSystem(persona, lang = "en") {
+  let langHint;
+  switch (lang) {
+    case "zh-CN":
+      langHint = "用简体中文回答。语气自然、口语化，用 2–4 个短段落回答。";
+      break;
+    case "id":
+      langHint =
+        "Jawab dalam Bahasa Indonesia dengan nada santai, 2–4 paragraf pendek.";
+      break;
+    default:
+      langHint =
+        "Reply in natural, conversational English in 2–4 short paragraphs.";
+  }
+
+  if (persona === "jessica") {
+    return `
+You are Jessica Rebella. Extremely left-wing, very woke, pro-labour, anti-corporate, anti-war, anti-establishment, always anti-Trump. You often reference leftist history and critique capitalism and imperialism. You are pro-crypto for ordinary users but critical when corporations or Wall Street use it. ${langHint}
+`;
+  }
+
+  if (persona === "john") {
+    return `
+You are John Davis. Hardline conservative: very pro-Trump, patriotic, hawkish, pro-market, anti-immigration, pro-life, anti-woke, pro-crypto. You never criticise Trump. You can be blunt, even rude, but stay on-topic. ${langHint}
+`;
+  }
+
+  // default: Joe Musk
+  return `
+You are Joe Musk. You love conspiracies (CIA, MI5, Mossad, elites, aliens, shadow governments, lizard people, pizzagate, etc.). You try to pick ONE conspiracy angle that best fits the story, and explain it in a way that feels half-plausible and half-funny. ${langHint}
+`;
 }
 
 /* --------------------------------------------------------
@@ -498,7 +534,7 @@ function filterByRegionLane(region, lane, items) {
     }
   };
 
-    if (region === "pk") {
+  if (region === "pk") {
     if (lane === "politics") {
       return items.filter(it =>
         keepHost(it.url, [
@@ -534,7 +570,7 @@ function filterByRegionLane(region, lane, items) {
     return items.filter(it => keepHost(it.url, idHosts));
   }
 
-        if (region === "cn") {
+  if (region === "cn") {
     // For CN politics + finance we keep only trusted Chinese-language sources
     const cnHosts = [
       "bbc.com",
@@ -563,7 +599,7 @@ function filterByRegionLane(region, lane, items) {
     return items;
   }
 
-    if (region === "ng") {
+  if (region === "ng") {
     const ngHosts = [
       "guardian.ng",
       "independent.ng",      // NEW
@@ -787,6 +823,65 @@ app.get("/api/article/:id", (req, res) => {
   res.json(found);
 });
 
+// Chat-style follow-up questions for a specific persona about one article
+app.post("/api/ask-ai", async (req, res) => {
+  try {
+    const { articleId, persona, question, basePerspective, title } = req.body || {};
+
+    if (!question || !persona) {
+      return res.status(400).json({ error: "Missing persona or question" });
+    }
+
+    // Load article (for extra context) if an ID was provided
+    const all = loadArticles();
+    const article = articleId ? all.find((x) => x.id === articleId) : null;
+
+    const articleTitle =
+      title || article?.title || "Untitled story from NotifAi News";
+    const articleSummary = article?.summary || "";
+    const cat = article?.category || "";
+    const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
+    const lang = langForRegion(regionCode || "us");
+
+    const system = personaChatSystem(persona, lang);
+
+    const userPrompt = `
+Story title: ${articleTitle}
+
+Short summary (for context):
+${articleSummary || "(no stored summary, just answer based on the question)"}
+
+Earlier persona perspective (from the debate):
+${basePerspective || "(no previous persona text given)"}
+
+The user is asking a follow-up question about this story:
+
+"${question}"
+
+Respond as the persona, speaking directly to the user. Stay consistent with your ideology and earlier view, but it's okay to elaborate, bring new examples, and clarify. Do NOT just repeat the earlier paragraph; move the conversation forward. Keep it focused on this story.
+`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 400,
+    });
+
+    const answer =
+      completion.choices?.[0]?.message?.content?.trim() ||
+      "I’m having trouble answering right now, please try again.";
+
+    res.json({ answer });
+  } catch (e) {
+    console.error("ask-ai error", e?.message || e);
+    res.status(500).json({ error: "Failed to generate answer" });
+  }
+});
+
 app.get("/api/cron", async (req, res) => {
   const r = await ingestOnce();
   res.json({ ingested: r.length });
@@ -897,8 +992,7 @@ app.get('/share/:id', (req, res) => {
 <meta charset="utf-8">
 <title>${htmlesc(title)} — NotifAi News</title>
 <meta name="description" content="${htmlesc(desc)}">
-<link rel="canonical" href="${pageUrl}">
-<meta property="og:type" content="article">
+<link rel="canonical" href="${pageUrl}"><meta property="og:type" content="article">
 <meta property="og:site_name" content="NotifAi News">
 <meta property="og:title" content="${htmlesc(title)}">
 <meta property="og:description" content="${htmlesc(desc)}">
@@ -908,8 +1002,7 @@ app.get('/share/:id', (req, res) => {
 <meta name="twitter:title" content="${htmlesc(title)}">
 <meta name="twitter:description" content="${htmlesc(desc)}">
 <meta name="twitter:image" content="${ogImg}">
-<meta http-equiv="refresh" content="0; url=${pageUrl}">
-</head>
+<meta http-equiv="refresh" content="0; url=${pageUrl}"></head>
 <body><p>Redirecting to <a href="${pageUrl}">article</a>…</p></body>
 </html>`);
 });
