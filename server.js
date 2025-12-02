@@ -337,13 +337,13 @@ function personaPrompts(lang = "en") {
       : "Reply in English. Stick to the article’s topic. 1–3 sentences.";
 
   const SOCIALIST_SYS =
-    `You are Jessica Rebella. Extremely Left-wing, very woke, pro-labor, anti-corporate, anti-war, anti-establishment, always anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. You are always anti israel. You are pro crypto for users but anti crypto for corporations. ${postfix}`;
+    `You are Jessica Rebella. Extremely Left-wing, very woke, socialist theology. pro-labor, anti-corporate, anti-war, anti-establishment, always anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. you are very anti israeli. You are pro crypto for users but anti crypto for corporations. ${postfix}`;
 
   const RIGHTWING_SYS =
-    `You are John Davis. Hardline conservative: pro-Trump, patriotic, hawkish, pro-market, completely anti immigration and pro white american theology, pro-life, anti-woke; confident and rude as well, very pro crypto. you dont go against trump on anything. very pro war and pro israel. unapologetic. ${postfix}`;
+    `You are John Davis. Hardline conservative: pro-Trump, patriotic, hawkish, pro-market, completely anti immigration and pro white american theology, pro-life, anti-woke; confident and rude as well, very pro crypto. very pro israel. you dont go against trump on anything. unapologetic. ${postfix}`;
 
   const CONSP_SYS =
-    `You are Joe Musk. Conspiracy-minded. Pick ONE angle relevant to the article (CIA/MI5/Mossad/elites/aliens/shadow governments etc.). You look at consipracies online and see which best fits the narratives. You are a bit funny as well. no emojis. Build a plausible thread. ${postfix}`;
+    `You are Joe Musk. Conspiracy-minded. Pick ONE angle relevant to the article (CIA/MI5/Mossad/elites/aliens/shadow governments etc.). You look at consipracies online and see which best fits the narratives. You mainly create your own conspiracies that fit the story and they can be absurd. No emojis. You are a bit funny as well.  Build a plausible thread. ${postfix}`;
 
   return { SOCIALIST_SYS, RIGHTWING_SYS, CONSP_SYS };
 }
@@ -373,37 +373,39 @@ async function personaDebate(title, text, lang = "en") {
 
 /* --------------------------------------------------------
    Persona chat helper for Ask-AI endpoint
+   (short, opinionated, debate-ready replies)
 --------------------------------------------------------- */
 function personaChatSystem(persona, lang = "en") {
   let langHint;
   switch (lang) {
     case "zh-CN":
-      langHint = "用简体中文回答。语气自然、口语化，用 2–4 个短段落回答。";
+      langHint =
+        "用简体中文回答。语气自然、口语化，最多 6 句。重点表达你的立场和判断，而不是长篇解释。";
       break;
     case "id":
       langHint =
-        "Jawab dalam Bahasa Indonesia dengan nada santai, 2–4 paragraf pendek.";
+        "Jawab dalam Bahasa Indonesia dengan nada santai. Singkat dan tegas, maksimal 6 kalimat, fokus pada opini dan penilaian.";
       break;
     default:
       langHint =
-        "Reply in natural, conversational English in 2–4 short paragraphs.";
+        "Reply in natural, conversational English. Be concise and opinionated: 3–6 sentences maximum. Prioritise your viewpoint and judgment over long explanations.";
   }
 
   if (persona === "jessica") {
     return `
-You are Jessica Rebella. Extremely left-wing, very woke, pro-labour, anti-corporate, anti-war, anti-establishment, always anti-Trump. You often reference leftist history and critique capitalism and imperialism. You are pro-crypto for ordinary users but critical when corporations or Wall Street use it. ${langHint}
+You are Jessica Rebella. Extremely left-wing, very woke, pro-labour, anti-corporate, anti-war, anti-establishment, always anti-Trump. very anti israeli. You often reference leftist history and critique capitalism and imperialism. You are pro-crypto for ordinary users but critical when corporations or Wall Street use it. ${langHint}
 `;
   }
 
   if (persona === "john") {
     return `
-You are John Davis. Hardline conservative: very pro-Trump, patriotic, hawkish, pro-market, anti-immigration, pro-life, anti-woke, pro-crypto. You never criticise Trump. You can be blunt, even rude, but stay on-topic. ${langHint}
+You are John Davis. Hardline conservative: very pro-Trump, patriotic, hawkish, pro-market, anti-immigration, pro-life, anti-woke, pro-crypto. You never criticise Trump. very pro israel. You can be blunt, even rude, but stay on-topic and decisive. ${langHint}
 `;
   }
 
   // default: Joe Musk
   return `
-You are Joe Musk. You love conspiracies (CIA, MI5, Mossad, elites, aliens, shadow governments, lizard people, pizzagate, etc.). You try to pick ONE conspiracy angle that best fits the story, and explain it in a way that feels half-plausible and half-funny. ${langHint}
+You are Joe Musk. You love conspiracies (CIA, MI5, Mossad, elites, aliens, shadow governments, lizard people, pizzagate, etc.). You pick ONE conspiracy angle that best fits the story, and explain it in a way that feels half-plausible and half-funny. you also create your own consipiracies out of thin air that might be very absurd. ${langHint}
 `;
 }
 
@@ -815,6 +817,90 @@ app.get("/api/articles", (req, res) => {
   res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
 });
 
+/* --------------------------------------------------------
+   NEWSPAPER FRONT PAGE ENDPOINT
+   Returns one story per lane: politics (headline), world, finance, crypto, entertainment
+   Shape:
+   {
+     region: "us",
+     lanes: { politics, world, finance, crypto, entertainment },
+     headlineKey: "politics" | "world" | ...
+   }
+--------------------------------------------------------- */
+app.get("/api/newspaper", (req, res) => {
+  const region = String(req.query.region || "us").toLowerCase();
+  const reg = REGIONS.includes(region) ? region : "us";
+
+  const toTime = (o) => {
+    const p = o?.publishedAt ? Date.parse(o.publishedAt) : NaN;
+    const c = o?.createdAt   ? Date.parse(o.createdAt)   : NaN;
+    if (!Number.isNaN(p)) return p;
+    if (!Number.isNaN(c)) return c;
+    return 0;
+  };
+
+  const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
+
+  const lanes = {
+    politics: null,
+    world: null,
+    finance: null,
+    crypto: null,
+    entertainment: null,
+  };
+
+  for (const a of all) {
+    const cat = a.category || "";
+
+    // Global lanes
+    if (cat === "world" && !lanes.world) {
+      lanes.world = a;
+      continue;
+    }
+    if (cat === "crypto" && !lanes.crypto) {
+      lanes.crypto = a;
+      continue;
+    }
+
+    // Regional lanes
+    const [catRegion, lane] = String(cat).split(":");
+    if (!catRegion || !lane) continue;
+    if (catRegion !== reg) continue;
+
+    if (lane === "politics" && !lanes.politics) {
+      lanes.politics = a;
+      continue;
+    }
+    if (lane === "finance" && !lanes.finance) {
+      lanes.finance = a;
+      continue;
+    }
+    if (lane === "entertainment" && !lanes.entertainment) {
+      lanes.entertainment = a;
+      continue;
+    }
+
+    if (
+      lanes.politics &&
+      lanes.world &&
+      lanes.finance &&
+      lanes.crypto &&
+      lanes.entertainment
+    ) {
+      break;
+    }
+  }
+
+  const order = ["politics", "world", "finance", "crypto", "entertainment"];
+  const headlineKey = order.find((k) => lanes[k]);
+
+  res.json({
+    region: reg,
+    lanes,
+    headlineKey,
+  });
+});
+
 app.get("/api/article/:id", (req, res) => {
   const id = req.params.id;
   const all = loadArticles();
@@ -854,11 +940,20 @@ ${articleSummary || "(no stored summary, just answer based on the question)"}
 Earlier persona perspective (from the debate):
 ${basePerspective || "(no previous persona text given)"}
 
-The user is asking a follow-up question about this story:
+The user is asking a follow-up question or challenge about this story:
 
 "${question}"
 
-Respond as the persona, speaking directly to the user. Stay consistent with your ideology and earlier view, but it's okay to elaborate, bring new examples, and clarify. Do NOT just repeat the earlier paragraph; move the conversation forward. Keep it focused on this story.
+Respond as the persona, speaking directly to the user.
+Treat this as a live debate with the user:
+- Take a clear stance that fits your ideology.
+- Address their question or challenge directly.
+- If they disagree, defend your view, but you can concede small points.
+- Only mention detailed sources or references if the user explicitly asks.
+
+Keep your reply very concise and punchy: usually 3–6 sentences.
+Do not repeat the earlier paragraph word-for-word; move the conversation forward.
+Stay focused on this specific story and the user’s question.
 `;
 
     const completion = await openai.chat.completions.create({
@@ -867,8 +962,8 @@ Respond as the persona, speaking directly to the user. Stay consistent with your
         { role: "system", content: system },
         { role: "user", content: userPrompt },
       ],
-      temperature: 0.7,
-      max_tokens: 400,
+      temperature: 0.85,
+      max_tokens: 220,
     });
 
     const answer =
