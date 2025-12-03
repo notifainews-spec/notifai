@@ -409,6 +409,169 @@ You are Joe Musk. You love conspiracies (CIA, MI5, Mossad, elites, aliens, shado
 `;
 }
 
+// ---------------------- AI BLOG HELPERS ----------------------
+
+// The three AI personas that will write blogs
+const BLOG_PERSONAS = [
+  {
+    key: "jessica",
+    displayName: "Jessica Rebella",
+  },
+  {
+    key: "john",
+    displayName: "John Davis",
+  },
+  {
+    key: "joe",
+    displayName: "Joe Musk",
+  },
+];
+
+// Daily in-memory cache so we only generate once per day
+let blogsCache = {
+  date: null,
+  items: [],
+};
+
+function personaBlogSystem(personaKey) {
+  if (personaKey === "jessica") {
+    return `
+You are Jessica Rebella, a left-leaning, progressive commentator. 
+You care about social justice, workers’ rights, climate, culture and everyday life.
+You write in a conversational, slightly witty, but down-to-earth tone.
+You sometimes mention snippets of your "life" – like living in a small apartment,
+juggling deadlines, watching indie films, cooking cheap but creative meals, etc.
+
+Write an informal blog post as Jessica. Use "I" voice. 
+Avoid sounding like a formal newspaper article.
+`;
+  }
+  if (personaKey === "john") {
+    return `
+You are John Davis, a centre-right, business-minded commentator.
+You care about markets, stability, personal responsibility, faith, and family life.
+You write in a calm, practical tone with occasional dad-style humour.
+You sometimes mention your "life" – like balancing work and family, weekend barbecues,
+church on Sundays, and keeping an eye on the stock market.
+
+Write an informal blog post as John. Use "I" voice.
+Avoid sounding like a formal newspaper article.
+`;
+  }
+  // joe
+  return `
+You are Joe Musk, the contrarian / skeptic.
+You are curious, playful, a bit paranoid but self-aware and funny.
+You like connecting dots between technology, politics, crypto, memes and daily life.
+You sometimes mention your "life" – late-night rabbit holes, weird forums,
+obsession with charts and open data, and a messy apartment full of gadgets.
+
+Write an informal blog post as Joe. Use "I" voice.
+Avoid sounding like a formal newspaper article.
+`;
+}
+
+// Generate a single blog for one persona
+async function generateBlogForPersona(personaKey, dateStr) {
+  const meta = BLOG_PERSONAS.find((p) => p.key === personaKey);
+  if (!meta) throw new Error("Unknown blog persona: " + personaKey);
+
+  const systemPrompt = personaBlogSystem(personaKey);
+
+  const userPrompt = `
+Today is ${dateStr}.
+Pick ONE specific topic from this loose list (do NOT list them, just choose one):
+politics, culture, entertainment, food, travel, startup ideas, lifestyle,
+parenting, technology, or a personal reflection.
+
+Write an informal blog post as ${meta.displayName}, in first person "I",
+up to about 700 words.
+
+You may casually reference your "life" and backstory consistent with your persona.
+You may loosely reference "today's news" in general, but do NOT reference NotifAi as an app or this server.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "title": "short catchy blog headline",
+  "body": "full blog content as markdown or plain text"
+}
+`;
+
+  const chat = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.9,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+  });
+
+  let title = "";
+  let body = "";
+
+  try {
+    const raw = chat.choices?.[0]?.message?.content || "{}";
+    const parsed = JSON.parse(raw);
+    title = (parsed.title || "").trim();
+    body = (parsed.body || "").trim();
+  } catch (e) {
+    console.error("Blog JSON parse error for", personaKey, e);
+    const fallback = chat.choices?.[0]?.message?.content || "";
+    title = `${meta.displayName} Blog`;
+    body = fallback.trim();
+  }
+
+  // Generate a random illustration using OpenAI images
+  let imageUrl = null;
+  try {
+    const img = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt: `Illustration for a personal blog post titled "${title}" written by ${meta.displayName}. Modern editorial illustration, clean, no text.`,
+      size: "1024x1024",
+    });
+    imageUrl = img.data?.[0]?.url || null;
+  } catch (e) {
+    console.error("Blog image error for", personaKey, e);
+  }
+
+  return {
+    id: `${dateStr}-${personaKey}`,
+    persona: personaKey,
+    personaName: meta.displayName,
+    title,
+    body,
+    image: imageUrl,
+  };
+}
+
+// Generate (or reuse) today's blogs
+async function getBlogsForToday() {
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD in UTC
+
+  if (blogsCache.date === today && blogsCache.items?.length === 3) {
+    return blogsCache.items;
+  }
+
+  const blogs = [];
+  for (const p of BLOG_PERSONAS) {
+    try {
+      const blog = await generateBlogForPersona(p.key, today);
+      blogs.push(blog);
+    } catch (e) {
+      console.error("Failed generating blog for", p.key, e);
+    }
+  }
+
+  blogsCache = {
+    date: today,
+    items: blogs,
+  };
+
+  return blogs;
+}
+// -------------------- END AI BLOG HELPERS --------------------
+
+
 /* --------------------------------------------------------
    HTML extraction
 --------------------------------------------------------- */
@@ -900,6 +1063,24 @@ app.get("/api/newspaper", (req, res) => {
     headlineKey,
   });
 });
+
+// ---------------------- AI BLOGS ENDPOINT ----------------------
+// Returns one blog per persona (Jessica, John, Joe) for today.
+app.get("/api/blogs", async (req, res) => {
+  try {
+    const blogs = await getBlogsForToday();
+    const today = new Date().toISOString().slice(0, 10);
+
+    res.json({
+      date: today,
+      blogs,
+    });
+  } catch (e) {
+    console.error("Error in /api/blogs", e);
+    res.status(500).json({ error: "Failed to generate blogs" });
+  }
+});
+// -------------------- END AI BLOGS ENDPOINT --------------------
 
 app.get("/api/article/:id", (req, res) => {
   const id = req.params.id;
