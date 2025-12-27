@@ -8,6 +8,7 @@ import Parser from "rss-parser";
 import { nanoid } from "nanoid";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
+import admin from "firebase-admin";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +40,39 @@ const parser = new Parser({
     timeout: 15000
   }
 });
+
+/* --------------------------------------------------------
+   FIREBASE ADMIN / FIRESTORE (REWARDS + REFERRALS)
+--------------------------------------------------------- */
+
+if (!admin.apps.length) {
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
+  if (!projectId || !clientEmail || !privateKey) {
+    console.warn(
+      "[FIREBASE] Missing FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY env. " +
+        "Rewards & referrals API will NOT work until these are set."
+    );
+  } else {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId,
+        clientEmail,
+        privateKey,
+      }),
+    });
+    console.log("[FIREBASE] Admin initialized");
+  }
+}
+
+const db = admin.apps.length ? admin.firestore() : null;
+const USERS_COL = db ? db.collection("notifaiUsers") : null;
+const REFERRALS_COL = db ? db.collection("notifaiReferralProgress") : null;
+
+// 30 minutes = 1800 seconds for referral completion
+const REFERRAL_REQUIRED_SECONDS = 30 * 60;
 
 /* --------------------------------------------------------
    FEEDS
@@ -303,6 +337,162 @@ function langForRegion(region) {
     case "id": return "id";    // Bahasa Indonesia
     default:   return "en";
   }
+}
+
+/* --------------------------------------------------------
+   REWARDS / REFERRALS HELPERS
+--------------------------------------------------------- */
+
+function getWeekKey(d = new Date()) {
+  // Monday–Monday week key, in UTC
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = date.getUTCDay(); // 0=Sun..6
+  const diff = day === 0 ? -6 : 1 - day; // move to Monday
+  date.setUTCDate(date.getUTCDate() + diff);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const da = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${da}`; // e.g. 2025-12-22
+}
+
+async function getOrCreateUser(userId) {
+  if (!db || !USERS_COL) throw new Error("Firestore not initialized");
+  if (!userId) throw new Error("Missing userId");
+
+  const docRef = USERS_COL.doc(userId);
+  const snap = await docRef.get();
+
+  if (snap.exists) {
+    return { ref: docRef, data: snap.data() };
+  }
+
+  // New user
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const weekKey = getWeekKey();
+  const referralCode = nanoid(7); // 7-char code
+
+  const data = {
+    userId,
+    createdAt: now,
+    updatedAt: now,
+    walletAddress: null,
+    referralCode,
+    referredByCode: null,
+    referredByUserId: null,
+    totalSeconds: 0,
+    weeklySeconds: 0,
+    weekKey,
+    tokensTotal: 0,
+    tokensThisWeek: 0,
+    invitesCompleted: 0,
+    invitesStarted: 0,
+  };
+
+  await docRef.set(data);
+  return { ref: docRef, data };
+}
+
+async function ensureWeek(docRef, data) {
+  const currentWeekKey = getWeekKey();
+  if (data.weekKey === currentWeekKey) {
+    return data;
+  }
+  // reset weekly counters when week changes
+  const updated = {
+    ...data,
+    weekKey: currentWeekKey,
+    weeklySeconds: 0,
+    tokensThisWeek: 0,
+  };
+  await docRef.update({
+    weekKey: currentWeekKey,
+    weeklySeconds: 0,
+    tokensThisWeek: 0,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return updated;
+}
+
+async function trackUsageForUser(userId, seconds, { region, screen }) {
+  if (!db || !USERS_COL) return;
+
+  const docRef = USERS_COL.doc(userId);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+    let data;
+    if (!snap.exists) {
+      // create if missing
+      const base = (await getOrCreateUser(userId));
+      data = base.data;
+    } else {
+      data = snap.data();
+    }
+
+    data = await ensureWeek(docRef, data);
+
+    const increment = Number(seconds) || 0;
+    if (increment <= 0) return;
+
+    const totalSeconds = (data.totalSeconds || 0) + increment;
+    const weeklySeconds = (data.weeklySeconds || 0) + increment;
+
+    tx.update(docRef, {
+      totalSeconds,
+      weeklySeconds,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastRegion: region || data.lastRegion || null,
+      lastScreen: screen || data.lastScreen || null,
+    });
+
+    // Also update referral progress if this user was referred
+    if (data.referredByUserId && REFERRALS_COL) {
+      const refDoc = REFERRALS_COL.doc(userId);
+
+      const refSnap = await tx.get(refDoc);
+      let refData = refSnap.exists ? refSnap.data() : null;
+
+      if (!refData) {
+        refData = {
+          userId,
+          inviterUserId: data.referredByUserId,
+          inviterReferralCode: data.referredByCode || null,
+          totalSeconds: 0,
+          completed: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+      }
+
+      const newTotal = (refData.totalSeconds || 0) + increment;
+      refData.totalSeconds = newTotal;
+
+      if (!refData.completed && newTotal >= REFERRAL_REQUIRED_SECONDS) {
+        refData.completed = true;
+        refData.completedAt = admin.firestore.FieldValue.serverTimestamp();
+
+        // credit inviter
+        const inviterRef = USERS_COL.doc(data.referredByUserId);
+        const inviterSnap = await tx.get(inviterRef);
+        if (inviterSnap.exists) {
+          const inviter = inviterSnap.data() || {};
+          const weekAdjustedInviter = await ensureWeek(inviterRef, inviter);
+
+          const newTokensTotal = (weekAdjustedInviter.tokensTotal || 0) + 1;
+          const newTokensThisWeek = (weekAdjustedInviter.tokensThisWeek || 0) + 1;
+          const newCompleted = (weekAdjustedInviter.invitesCompleted || 0) + 1;
+
+          tx.update(inviterRef, {
+            tokensTotal: newTokensTotal,
+            tokensThisWeek: newTokensThisWeek,
+            invitesCompleted: newCompleted,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
+      tx.set(refDoc, refData, { merge: true });
+    }
+  });
 }
 
 /* --------------------------------------------------------
@@ -1281,6 +1471,182 @@ app.get('/share/:id', (req, res) => {
 <meta http-equiv="refresh" content="0; url=${pageUrl}"></head>
 <body><p>Redirecting to <a href="${pageUrl}">article</a>…</p></body>
 </html>`);
+});
+
+/* --------------------------------------------------------
+   REWARDS / REFERRALS API
+--------------------------------------------------------- */
+
+// 1) Register / update user profile
+app.post("/api/rewards/register", async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: "Firestore not configured" });
+    }
+
+    const { userId, walletAddress, invitedByCode } = req.body || {};
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: "Missing userId" });
+    }
+
+    const { ref, data } = await getOrCreateUser(userId);
+    const updates = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Wallet update (no validation beyond "starts with 0x")
+    if (walletAddress && walletAddress !== data.walletAddress) {
+      // archive old stats into walletHistory array
+      const historyEntry = {
+        wallet: data.walletAddress || null,
+        tokensTotal: data.tokensTotal || 0,
+        invitesCompleted: data.invitesCompleted || 0,
+        totalSeconds: data.totalSeconds || 0,
+        at: admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      updates.walletAddress = walletAddress;
+      updates.tokensTotal = 0;
+      updates.tokensThisWeek = 0;
+      updates.invitesCompleted = 0;
+      updates.weeklySeconds = 0;
+      updates.walletHistory = admin.firestore.FieldValue.arrayUnion(historyEntry);
+    }
+
+    // If new user enters "invitedByCode" and they don't already have one
+    if (invitedByCode && !data.referredByCode) {
+      const inviterSnap = await USERS_COL.where("referralCode", "==", invitedByCode)
+        .limit(1)
+        .get();
+      if (!inviterSnap.empty) {
+        const inviterDoc = inviterSnap.docs[0];
+        const inviterUserId = inviterDoc.id;
+        updates.referredByCode = invitedByCode;
+        updates.referredByUserId = inviterUserId;
+
+        // increment invitesStarted for inviter
+        const inviterRef = USERS_COL.doc(inviterUserId);
+        await inviterRef.update({
+          invitesStarted: admin.firestore.FieldValue.increment(1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    await ref.set(updates, { merge: true });
+    const updatedSnap = await ref.get();
+    const updated = updatedSnap.data();
+
+    return res.json({
+      ok: true,
+      user: {
+        userId: updated.userId,
+        walletAddress: updated.walletAddress || null,
+        referralCode: updated.referralCode,
+        referredByCode: updated.referredByCode || null,
+        totalSeconds: updated.totalSeconds || 0,
+        weeklySeconds: updated.weeklySeconds || 0,
+        tokensTotal: updated.tokensTotal || 0,
+        tokensThisWeek: updated.tokensThisWeek || 0,
+        invitesCompleted: updated.invitesCompleted || 0,
+        invitesStarted: updated.invitesStarted || 0,
+      },
+    });
+  } catch (err) {
+    console.error("POST /api/rewards/register error", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// 2) Track usage seconds (home + article)
+app.post("/api/rewards/track-usage", async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: "Firestore not configured" });
+    }
+
+    const { userId, seconds, region, screen } = req.body || {};
+    if (!userId || !seconds) {
+      return res.status(400).json({ ok: false, error: "Missing userId or seconds" });
+    }
+
+    const delta = Number(seconds);
+    if (!Number.isFinite(delta) || delta <= 0) {
+      return res.status(400).json({ ok: false, error: "Invalid seconds" });
+    }
+
+    await trackUsageForUser(userId, delta, { region, screen });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/rewards/track-usage error", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// 3) Get current user's rewards dashboard
+app.get("/api/rewards/me", async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: "Firestore not configured" });
+    }
+
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: "Missing userId" });
+    }
+
+    const { ref, data } = await getOrCreateUser(userId);
+    const ensured = await ensureWeek(ref, data);
+
+    return res.json({
+      ok: true,
+      user: {
+        userId: ensured.userId,
+        walletAddress: ensured.walletAddress || null,
+        referralCode: ensured.referralCode,
+        referredByCode: ensured.referredByCode || null,
+        totalSeconds: ensured.totalSeconds || 0,
+        weeklySeconds: ensured.weeklySeconds || 0,
+        tokensTotal: ensured.tokensTotal || 0,
+        tokensThisWeek: ensured.tokensThisWeek || 0,
+        invitesCompleted: ensured.invitesCompleted || 0,
+        invitesStarted: ensured.invitesStarted || 0,
+      },
+    });
+  } catch (err) {
+    console.error("GET /api/rewards/me error", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// 4) Simple leaderboard (top by tokensTotal)
+app.get("/api/rewards/leaderboard", async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: "Firestore not configured" });
+    }
+
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+    const snap = await USERS_COL.orderBy("tokensTotal", "desc")
+      .limit(limit)
+      .get();
+
+    const items = snap.docs.map((doc) => {
+      const d = doc.data();
+      return {
+        userId: d.userId,
+        referralCode: d.referralCode,
+        tokensTotal: d.tokensTotal || 0,
+        invitesCompleted: d.invitesCompleted || 0,
+      };
+    });
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    console.error("GET /api/rewards/leaderboard error", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
 });
 
 /* --------------------------------------------------------
