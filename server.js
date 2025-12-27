@@ -156,10 +156,12 @@ const FEEDS_REGIONAL = {
     ],
 
     finance: [
-      "https://www.brecorder.com/rss",                // Business Recorder
-      "https://profit.pakistantoday.com.pk/feed/",    // Profit (Pakistan Today) – business
-      "https://www.thenews.com.pk/rss/4/1",           // The News – Business
-    ],
+    "https://feeds.feedburner.com/business-recorder",
+    "https://profit.pakistantoday.com.pk/feed/",
+    "https://www.thenews.com.pk/rss/1/6",
+    "https://www.dawn.com/business/rss",
+    "https://tribune.com.pk/business/rss"
+  ],
 
     // Beefed up entertainment so it always feels fresh
     entertainment: [
@@ -976,7 +978,7 @@ function filterByRegionLane(region, lane, items) {
 }
 
 /* --------------------------------------------------------
-   FETCH FROM FEED
+   FETCH FROM FEED  (fixed + image fallback)
 --------------------------------------------------------- */
 async function fetchItemsFromFeed(feedUrl, takeN) {
   try {
@@ -987,23 +989,43 @@ async function fetchItemsFromFeed(feedUrl, takeN) {
       .slice(0, takeN);
 
     const out = [];
+
     for (let i = 0; i < items.length; i += FETCH_CONCURRENCY) {
       const batch = items.slice(i, i + FETCH_CONCURRENCY);
+
       const settled = await Promise.allSettled(
         batch.map(async it => {
           const url = new URL(it.link).toString();
+
+          // RSS-level fallback image if the article page doesn't give us one
+          const enclosureUrl =
+            (it.enclosure && (it.enclosure.url || (Array.isArray(it.enclosure) ? it.enclosure[0]?.url : undefined))) ||
+            (it["media:content"] && (it["media:content"].url || (it["media:content"]["$"] && it["media:content"]["$"].url))) ||
+            (it["media:thumbnail"] && (it["media:thumbnail"].url || (it["media:thumbnail"]["$"] && it["media:thumbnail"]["$"].url)));
+
           const page = await fetchArticlePage(url);
+
+          // Prefer page image, fall back to RSS enclosure if needed
+          const image = page.image || enclosureUrl || "";
+
           return {
             url,
             title: String(it.title || "").trim(),
             source: new URL(feedUrl).hostname,
-            publishedAt: it.isoDate ? new Date(it.isoDate).toISOString() : new Date().toISOString(),
-            ...page
+            publishedAt: it.isoDate
+              ? new Date(it.isoDate).toISOString()
+              : new Date().toISOString(),
+            text: page.text || "",
+            image
           };
         })
       );
-      settled.forEach(s => { if (s.status === "fulfilled" && s.value) out.push(s.value); });
+
+      settled.forEach(s => {
+        if (s.status === "fulfilled" && s.value) out.push(s.value);
+      });
     }
+
     return out;
   } catch (e) {
     console.error("Feed error", feedUrl, e.message || e);
@@ -1025,8 +1047,25 @@ async function ingestRegionalLane(region, lane, feeds) {
     collected = collected.concat(list);
     if (collected.length >= INGEST_MAX_PER_CAT) break;
   }
+
   const filtered = filterByRegionLane(region, lane, uniqBy(collected, x => x.url));
-  return filtered.slice(0, INGEST_MAX_PER_CAT)
+
+  // Fallback for China finance/entertainment:
+  // if nothing came back from CN feeds, pull from global "world" lane
+  if (
+    region === "cn" &&
+    (lane === "finance" || lane === "entertainment") &&
+    filtered.length === 0
+  ) {
+    console.warn(`No CN ${lane} items found – falling back to world lane`);
+    const worldItems = await ingestGlobalLane("world", FEEDS_GLOBAL.world);
+    return worldItems
+      .slice(0, INGEST_MAX_PER_CAT)
+      .map(x => ({ ...x, category: `${region}:${lane}` }));
+  }
+
+  return filtered
+    .slice(0, INGEST_MAX_PER_CAT)
     .map(x => ({ ...x, category: `${region}:${lane}` }));
 }
 async function ingestGlobalLane(lane, feeds) {
