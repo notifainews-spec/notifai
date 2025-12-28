@@ -1653,7 +1653,7 @@ app.get("/api/rewards/me", async (req, res) => {
         invitesStarted: ensured.invitesStarted || 0,
       },
     });
-    } catch (err) {
+  } catch (err) {
     console.error("GET /api/rewards/me error", err);
     return res.status(500).json({
       ok: false,
@@ -1661,6 +1661,7 @@ app.get("/api/rewards/me", async (req, res) => {
     });
   }
 });
+
 
 app.get("/api/debug/firestore", async (req, res) => {
   try {
