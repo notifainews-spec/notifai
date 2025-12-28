@@ -1662,6 +1662,26 @@ app.get("/api/rewards/me", async (req, res) => {
   }
 });
 
+app.get("/api/debug/firestore", async (req, res) => {
+  try {
+    if (!db) {
+      return res.json({ ok: false, error: "db is null (admin not initialized)" });
+    }
+    const collections = await db.listCollections();
+    return res.json({
+      ok: true,
+      collections: collections.map((c) => c.id),
+    });
+  } catch (err) {
+    console.error("DEBUG /api/debug/firestore error", err);
+    return res.status(500).json({
+      ok: false,
+      error: err && err.message ? err.message : "Unknown error",
+    });
+  }
+});
+
+
 // 4) Simple leaderboard (top by tokensTotal)
 app.get("/api/rewards/leaderboard", async (req, res) => {
   try {
