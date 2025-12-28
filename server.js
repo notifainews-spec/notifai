@@ -1653,9 +1653,12 @@ app.get("/api/rewards/me", async (req, res) => {
         invitesStarted: ensured.invitesStarted || 0,
       },
     });
-  } catch (err) {
+    } catch (err) {
     console.error("GET /api/rewards/me error", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
+    return res.status(500).json({
+      ok: false,
+      error: err && err.message ? err.message : "Server error",
+    });
   }
 });
 
