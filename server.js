@@ -88,12 +88,12 @@ const FEEDS_GLOBAL = {
   world: [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
     "https://www.theguardian.com/world/rss",
-    "https://rss.cnn.com/rss/edition_world.rss",
+    "https://www.aljazeera.com/xml/rss/all.xml",
   ],
   crypto: [
     "https://cointelegraph.com/rss",
-    "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml",
     "https://decrypt.co/feed",
+    "https://www.coindesk.com/arc/outboundfeeds/rss/"
   ],
 };
 
@@ -118,31 +118,26 @@ const FEEDS_REGIONAL = {
   },
 
   /* -------- China (Chinese language) -------- */
-   cn: {
-    politics: [
-      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
-      "https://rss.dw.com/rdf/rss-chi-all",
-      "https://www.ifeng.com/rss/hotnews.xml",
-    ],
+   /* -------- China (Chinese + English) -------- */
+cn: {
+  politics: [
+    "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+    "https://rss.dw.com/rdf/rss-chi-all",
+    "https://www.scmp.com/rss/4/feed",     // SCMP – China (English)
+  ],
 
-    finance: [
-      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
-      "https://rss.dw.com/rdf/rss-chi-all",
-      "https://www.jiemian.com/rss/fintech.xml",
-      // English-language China / Asia business coverage
-      "https://www.scmp.com/rss/91/feed",              // SCMP – China
-      "https://www.reuters.com/rssFeed/chinaNews"     // Reuters – China news
-    ],
+  finance: [
+    "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+    "https://rss.dw.com/rdf/rss-chi-all",
+    "https://www.scmp.com/rss/92/feed",   // SCMP – Business (English)
+  ],
 
-    entertainment: [
-      "https://rss.dw.com/rdf/rss-chi-all",
-      "https://rsshub.app/163/ent/hot",
-      "https://rsshub.app/sohu/news/entertainment",
-      "https://rsshub.app/hk01/zone/11",
-      // English-language entertainment / culture with strong China coverage
-      "https://www.scmp.com/rss/82/feed"              // SCMP – Culture / entertainment
-    ],
-  },
+  entertainment: [
+    "https://rss.dw.com/rdf/rss-chi-all",
+    "https://www.scmp.com/rss/82/feed",   // SCMP – Culture / entertainment
+    "https://www.scmp.com/rss/94/feed",   // SCMP – Lifestyle (lots of entertainment topics)
+  ],
+},
 
   /* -------- Pakistan (English) -------- */
   pk: {
@@ -157,25 +152,17 @@ const FEEDS_REGIONAL = {
     ],
 
     finance: [
-    "https://feeds.feedburner.com/business-recorder",
-    "https://profit.pakistantoday.com.pk/feed/",
-    "https://www.thenews.com.pk/rss/1/6",
-    "https://www.dawn.com/business/rss",
-    "https://tribune.com.pk/business/rss"
+    "https://www.brecorder.com/rss",                // Business Recorder – main RSS
+    "https://profit.pakistantoday.com.pk/feed/",    // Profit – works and has images
+    "https://www.thenews.com.pk/rss/1/6",           // The News – Business
+    "http://feeds.feedburner.com/dawn-news-business"// Dawn Business (feedburner)
   ],
 
-    // Beefed up entertainment so it always feels fresh
-    entertainment: [
-      "https://images.dawn.com/feeds/entertainment",  // Dawn Images – entertainment
-      "https://www.thenews.com.pk/rss/6/entertainment", // The News – Entertainment
-      "https://tribune.com.pk/entertainment/rss",     // Express Tribune – Entertainment
-      "https://tribune.com.pk/life-style/rss",        // Tribune Life & Style
-      "https://arynews.tv/category/entertainment/feed/", // ARY – Entertainment
-      "https://www.samaa.tv/entertainment/feed/",     // SAMAA – Entertainment
-      "https://www.pakshowbiz.com/feed",              // PakShowbiz – pure showbiz/gossip
-      "https://thecurrent.pk/feed"                    // The Current – lots of celeb / pop culture
-    ],
-  },
+  entertainment: [
+    "https://arynews.tv/category/entertainment/feed/", // ARY – Entertainment
+    "https://www.pakshowbiz.com/feed",                 // PakShowbiz – pure showbiz
+    // You can re-add more once you confirm their XML is valid.
+  ],
 
   /* -------- Nigeria (English) -------- */
   ng: {
