@@ -351,9 +351,18 @@ function getWeekKey(d = new Date()) {
   return `${y}-${m}-${da}`; // e.g. 2025-12-22
 }
 
+// How many seconds of invitee usage to count an invite as "completed"
+const REFERRAL_REQUIRED_SECONDS = 30 * 60;     // 30 minutes
+const REFERRAL_INVITE_TOKENS    = 1;          // 1 token when invitee hits 30 minutes
+const REFERRAL_COMMISSION_RATE  = 0.1;        // 10% of invitee usage tokens
+
+// getWeekKey() should already exist above; we keep using it.
+
+/**
+ * Create or load a user document in notifaiUsers.
+ */
 async function getOrCreateUser(userId) {
-  if (!db || !USERS_COL) throw new Error("Firestore not initialized");
-  if (!userId) throw new Error("Missing userId");
+  if (!db || !USERS_COL) throw new Error("Firestore not configured");
 
   const docRef = USERS_COL.doc(userId);
   const snap = await docRef.get();
@@ -380,6 +389,7 @@ async function getOrCreateUser(userId) {
     weekKey,
     tokensTotal: 0,
     tokensThisWeek: 0,
+    tokensLastWeek: 0,   // NEW: previous week's tokens
     invitesCompleted: 0,
     invitesStarted: 0,
   };
@@ -388,33 +398,54 @@ async function getOrCreateUser(userId) {
   return { ref: docRef, data };
 }
 
+/**
+ * Ensure the user doc is on the current "week".
+ * If week has changed, move tokensThisWeek → tokensLastWeek and reset weekly counters.
+ */
 async function ensureWeek(docRef, data) {
   const currentWeekKey = getWeekKey();
   if (data.weekKey === currentWeekKey) {
     return data;
   }
-  // reset weekly counters when week changes
+
+  // When a new week starts, roll current week into tokensLastWeek
+  const lastWeekTokens = data.tokensThisWeek || 0;
+
   const updated = {
-    ...data,
+    ...data,                  // IMPORTANT: spread, not ".data"
     weekKey: currentWeekKey,
     weeklySeconds: 0,
     tokensThisWeek: 0,
+    tokensLastWeek: lastWeekTokens,
   };
+
   await docRef.update({
     weekKey: currentWeekKey,
     weeklySeconds: 0,
     tokensThisWeek: 0,
+    tokensLastWeek: lastWeekTokens,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+
   return updated;
 }
 
+/**
+ * Track usage seconds for a user:
+ * - 1 token per full 3600 lifetime seconds (self usage).
+ * - Weekly + total seconds.
+ * - Weekly + total tokens.
+ * - Weekly rollover with tokensLastWeek.
+ * - Referral system:
+ *   - When an invitee hits 30 minutes, inviter gets 1 token.
+ *   - Inviter also gets 10% of invitee's *usage* tokens (commission).
+ */
 async function trackUsageForUser(userId, seconds, { region, screen }) {
   if (!db || !USERS_COL) return;
 
   const docRef = USERS_COL.doc(userId);
 
-  // 1) Load or create the user document
+  // 1) Load or create user
   const snap = await docRef.get();
   let data;
   if (!snap.exists) {
@@ -424,25 +455,47 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
     data = snap.data();
   }
 
-  // 2) Ensure week is up to date (this may reset weekly counters)
+  // 2) Ensure week is up to date (may reset weekly counters + move tokensThisWeek -> tokensLastWeek)
   data = await ensureWeek(docRef, data);
 
-  // 3) Apply the seconds increment
+  // 3) Apply time increment
   const increment = Number(seconds) || 0;
   if (increment <= 0) return;
 
-  const totalSeconds = (data.totalSeconds || 0) + increment;
+  const prevTotalSeconds = data.totalSeconds || 0;
+  const totalSeconds = prevTotalSeconds + increment;
   const weeklySeconds = (data.weeklySeconds || 0) + increment;
 
-  await docRef.update({
+  // ---- Self usage tokens: 1 token per full 3600 seconds of lifetime usage ----
+  const tokensFromUsageBefore = Math.floor(prevTotalSeconds / 3600);
+  const tokensFromUsageAfter  = Math.floor(totalSeconds / 3600);
+  const deltaUsageTokens      = tokensFromUsageAfter - tokensFromUsageBefore;
+
+  let tokensTotal     = data.tokensTotal     || 0;
+  let tokensThisWeek  = data.tokensThisWeek  || 0;
+
+  if (deltaUsageTokens > 0) {
+    tokensTotal    += deltaUsageTokens;
+    tokensThisWeek += deltaUsageTokens;
+  }
+
+  // 4) Update user document with new seconds + tokens
+  const updatePayload = {
     totalSeconds,
     weeklySeconds,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     lastRegion: region || data.lastRegion || null,
     lastScreen: screen || data.lastScreen || null,
-  });
+  };
 
-  // 4) If user was referred, update referral progress + inviter
+  if (deltaUsageTokens > 0) {
+    updatePayload.tokensTotal    = tokensTotal;
+    updatePayload.tokensThisWeek = tokensThisWeek;
+  }
+
+  await docRef.update(updatePayload);
+
+  // 5) Referral logic: if user was referred, track their invite progress + credit inviter
   if (data.referredByUserId && REFERRALS_COL) {
     const refDoc = REFERRALS_COL.doc(userId);
     const refSnap = await refDoc.get();
@@ -462,31 +515,55 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
     const newTotal = (refData.totalSeconds || 0) + increment;
     refData.totalSeconds = newTotal;
 
+    let referralUpdate = {
+      totalSeconds: newTotal,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    let completedThisCall = false;
     if (!refData.completed && newTotal >= REFERRAL_REQUIRED_SECONDS) {
       refData.completed = true;
-      refData.completedAt = admin.firestore.FieldValue.serverTimestamp();
+      completedThisCall = true;
+      referralUpdate.completed = true;
+      referralUpdate.completedAt = admin.firestore.FieldValue.serverTimestamp();
+    }
 
-      // credit inviter (non-transactional, fine for this use case)
-      const inviterRef = USERS_COL.doc(data.referredByUserId);
+    await refDoc.set(refData, { merge: true });
+
+    // 6) If completed, credit inviter with base invite tokens + commission
+    if (completedThisCall) {
+      const inviterRef  = USERS_COL.doc(data.referredByUserId);
       const inviterSnap = await inviterRef.get();
       if (inviterSnap.exists) {
-        const inviter = inviterSnap.data() || {};
-        const weekAdjustedInviter = await ensureWeek(inviterRef, inviter);
+        const inviterData          = inviterSnap.data() || {};
+        const weekAdjustedInviter  = await ensureWeek(inviterRef, inviterData);
 
-        const newTokensTotal = (weekAdjustedInviter.tokensTotal || 0) + 1;
-        const newTokensThisWeek = (weekAdjustedInviter.tokensThisWeek || 0) + 1;
-        const newCompleted = (weekAdjustedInviter.invitesCompleted || 0) + 1;
+        let inviterTokensTotal    = weekAdjustedInviter.tokensTotal    || 0;
+        let inviterTokensThisWeek = weekAdjustedInviter.tokensThisWeek || 0;
+        let inviterInvites        = weekAdjustedInviter.invitesCompleted || 0;
+
+        // Base: 1 token per completed invite
+        inviterTokensTotal    += REFERRAL_INVITE_TOKENS;
+        inviterTokensThisWeek += REFERRAL_INVITE_TOKENS;
+        inviterInvites        += 1;
+
+        // Commission: 10% of invitee's usage tokens
+        if (deltaUsageTokens > 0) {
+          const commission = Math.floor(deltaUsageTokens * REFERRAL_COMMISSION_RATE);
+          if (commission > 0) {
+            inviterTokensTotal    += commission;
+            inviterTokensThisWeek += commission;
+          }
+        }
 
         await inviterRef.update({
-          tokensTotal: newTokensTotal,
-          tokensThisWeek: newTokensThisWeek,
-          invitesCompleted: newCompleted,
+          tokensTotal: inviterTokensTotal,
+          tokensThisWeek: inviterTokensThisWeek,
+          invitesCompleted: inviterInvites,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       }
     }
-
-    await refDoc.set(refData, { merge: true });
   }
 }
 
@@ -1545,20 +1622,22 @@ app.post("/api/rewards/register", async (req, res) => {
 if (walletAddress && walletAddress !== data.walletAddress) {
   // archive old stats into walletHistory array
   const historyEntry = {
-    wallet: data.walletAddress || null,
-    tokensTotal: data.tokensTotal || 0,
-    invitesCompleted: data.invitesCompleted || 0,
-    totalSeconds: data.totalSeconds || 0,
-    // Use a plain JS Date here (Firestore will store it as a timestamp)
-    at: new Date(),
-  };
+  wallet: data.walletAddress || null,
+  tokensTotal: data.tokensTotal || 0,
+  tokensThisWeek: data.tokensThisWeek || 0,
+  tokensLastWeek: data.tokensLastWeek || 0,
+  invitesCompleted: data.invitesCompleted || 0,
+  totalSeconds: data.totalSeconds || 0,
+  at: new Date(),
+};
 
-  updates.walletAddress = walletAddress;
-  updates.tokensTotal = 0;
-  updates.tokensThisWeek = 0;
-  updates.invitesCompleted = 0;
-  updates.weeklySeconds = 0;
-  updates.walletHistory = admin.firestore.FieldValue.arrayUnion(historyEntry);
+updates.walletAddress = walletAddress;
+updates.tokensTotal = 0;
+updates.tokensThisWeek = 0;
+updates.tokensLastWeek = 0;
+updates.invitesCompleted = 0;
+updates.weeklySeconds = 0;
+updates.walletHistory = admin.firestore.FieldValue.arrayUnion(historyEntry);
 }
 
     // If new user enters "invitedByCode" and they don't already have one
@@ -1585,21 +1664,24 @@ if (walletAddress && walletAddress !== data.walletAddress) {
     const updatedSnap = await ref.get();
     const updated = updatedSnap.data();
 
-    return res.json({
-      ok: true,
-      user: {
-        userId: updated.userId,
-        walletAddress: updated.walletAddress || null,
-        referralCode: updated.referralCode,
-        referredByCode: updated.referredByCode || null,
-        totalSeconds: updated.totalSeconds || 0,
-        weeklySeconds: updated.weeklySeconds || 0,
-        tokensTotal: updated.tokensTotal || 0,
-        tokensThisWeek: updated.tokensThisWeek || 0,
-        invitesCompleted: updated.invitesCompleted || 0,
-        invitesStarted: updated.invitesStarted || 0,
-      },
-    });
+    // Return updated user properly
+const fresh = (await ref.get()).data();
+return res.json({
+  ok: true,
+  user: {
+    userId: fresh.userId,
+    walletAddress: fresh.walletAddress || null,
+    referralCode: fresh.referralCode,
+    referredByCode: fresh.referredByCode || null,
+    totalSeconds: fresh.totalSeconds || 0,
+    weeklySeconds: fresh.weeklySeconds || 0,
+    tokensTotal: fresh.tokensTotal || 0,
+    tokensThisWeek: fresh.tokensThisWeek || 0,
+    tokensLastWeek: fresh.tokensLastWeek || 0,   // You wanted this – now valid
+    invitesCompleted: fresh.invitesCompleted || 0,
+    invitesStarted: fresh.invitesStarted || 0,
+  }
+});
   } catch (err) {
     console.error("POST /api/rewards/register error", err);
     return res.status(500).json({ ok: false, error: "Server error" });
@@ -1662,6 +1744,7 @@ app.get("/api/rewards/me", async (req, res) => {
         weeklySeconds: ensured.weeklySeconds || 0,
         tokensTotal: ensured.tokensTotal || 0,
         tokensThisWeek: ensured.tokensThisWeek || 0,
+        tokensLastWeek: ensured.tokensLastWeek || 0,
         invitesCompleted: ensured.invitesCompleted || 0,
         invitesStarted: ensured.invitesStarted || 0,
       },
