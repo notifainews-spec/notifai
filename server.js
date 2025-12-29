@@ -117,27 +117,26 @@ const FEEDS_REGIONAL = {
     ],
   },
 
-  /* -------- China (Chinese language) -------- */
-   /* -------- China (Chinese + English) -------- */
-cn: {
-  politics: [
-    "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
-    "https://rss.dw.com/rdf/rss-chi-all",
-    "https://www.scmp.com/rss/4/feed",     // SCMP – China (English)
-  ],
+  /* -------- China (Chinese + English) -------- */
+  cn: {
+    politics: [
+      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+      "https://rss.dw.com/rdf/rss-chi-all",
+      "https://www.scmp.com/rss/4/feed",     // SCMP – China (English)
+    ],
 
-  finance: [
-    "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
-    "https://rss.dw.com/rdf/rss-chi-all",
-    "https://www.scmp.com/rss/92/feed",   // SCMP – Business (English)
-  ],
+    finance: [
+      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+      "https://rss.dw.com/rdf/rss-chi-all",
+      "https://www.scmp.com/rss/92/feed",   // SCMP – Business (English)
+    ],
 
-  entertainment: [
-    "https://rss.dw.com/rdf/rss-chi-all",
-    "https://www.scmp.com/rss/82/feed",   // SCMP – Culture / entertainment
-    "https://www.scmp.com/rss/94/feed",   // SCMP – Lifestyle (lots of entertainment topics)
-  ],
-},
+    entertainment: [
+      "https://rss.dw.com/rdf/rss-chi-all",
+      "https://www.scmp.com/rss/82/feed",   // SCMP – Culture / entertainment
+      "https://www.scmp.com/rss/94/feed",   // SCMP – Lifestyle (lots of entertainment topics)
+    ],
+  },
 
   /* -------- Pakistan (English) -------- */
   pk: {
@@ -148,21 +147,22 @@ cn: {
       "https://www.thenews.com.pk/rss/1/1",           // The News – Top News (politics heavy)
       "https://arynews.tv/feed",                      // ARY News – full English feed
       "https://www.pakistantoday.com.pk/feed",        // Pakistan Today – national & politics
-      "https://thecurrent.pk/feed"                    // The Current – young, English, mix of news
+      "https://thecurrent.pk/feed",                   // The Current – young, English, mix of news
     ],
 
     finance: [
-    "https://www.brecorder.com/rss",                // Business Recorder – main RSS
-    "https://profit.pakistantoday.com.pk/feed/",    // Profit – works and has images
-    "https://www.thenews.com.pk/rss/1/6",           // The News – Business
-    "http://feeds.feedburner.com/dawn-news-business"// Dawn Business (feedburner)
-  ],
+      "https://www.brecorder.com/rss",                // Business Recorder – main RSS
+      "https://profit.pakistantoday.com.pk/feed/",    // Profit – works and has images
+      "https://www.thenews.com.pk/rss/1/6",           // The News – Business
+      "http://feeds.feedburner.com/dawn-news-business"// Dawn Business (feedburner)
+    ],
 
-  entertainment: [
-    "https://arynews.tv/category/entertainment/feed/", // ARY – Entertainment
-    "https://www.pakshowbiz.com/feed",                 // PakShowbiz – pure showbiz
-    // You can re-add more once you confirm their XML is valid.
-  ],
+    entertainment: [
+      "https://arynews.tv/category/entertainment/feed/", // ARY – Entertainment
+      "https://www.pakshowbiz.com/feed",                 // PakShowbiz – pure showbiz
+      // You can re-add more once you confirm their XML is valid.
+    ],
+  },
 
   /* -------- Nigeria (English) -------- */
   ng: {
@@ -171,14 +171,14 @@ cn: {
       "https://guardian.ng/feed/",
       "https://www.premiumtimesng.com/feed",
       "https://dailypost.ng/feed",
-      "https://thenationonlineng.net/feed/"
+      "https://thenationonlineng.net/feed/",
     ],
 
     // Business / finance-focused Nigeria feeds
     finance: [
       "https://businessday.ng/feed/",
       "https://nairametrics.com/feed",
-      "https://www.premiumtimesng.com/feed"
+      "https://www.premiumtimesng.com/feed",
     ],
 
     // Entertainment / celebrity / lifestyle
@@ -187,7 +187,7 @@ cn: {
       "https://independent.ng/feed",                   // Independent Nigeria – general but strong showbiz/life coverage
       "https://informationng.com/feed",                // Information Nigeria – heavy on entertainment & celebrity gossip
       "https://www.legit.ng/rss/all.rss",              // Legit.ng – big mix incl. entertainment & Nollywood
-      "https://www.yohaig.ng/author/gistlover/feed"    // Gistlover via Yohaig – Naija entertainment & celebrity gist
+      "https://www.yohaig.ng/author/gistlover/feed",   // Gistlover via Yohaig – Naija entertainment & celebrity gist
     ],
   },
 
