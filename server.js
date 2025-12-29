@@ -982,7 +982,7 @@ async function fetchItemsFromFeed(feedUrl, takeN) {
     const xml  = await fetchRssText(feedUrl, { retries: 2 });
     const feed = await parseRssFromText(xml);
     const items = (feed.items || [])
-      .filter(i => i.link && i.title)
+      .filter((i) => i.link && i.title)
       .slice(0, takeN);
 
     const out = [];
@@ -991,11 +991,21 @@ async function fetchItemsFromFeed(feedUrl, takeN) {
       const batch = items.slice(i, i + FETCH_CONCURRENCY);
 
       const settled = await Promise.allSettled(
-        batch.map(async it => {
-                    let enclosureUrl =
-            (it.enclosure && (it.enclosure.url || (Array.isArray(it.enclosure) ? it.enclosure[0]?.url : undefined))) ||
-            (it["media:content"] && (it["media:content"].url || (it["media:content"]["$"] && it["media:content"]["$"].url))) ||
-            (it["media:thumbnail"] && (it["media:thumbnail"].url || (it["media:thumbnail"]["$"] && it["media:thumbnail"]["$"].url)));
+        batch.map(async (it) => {
+          // Canonical URL for this item
+          const url = new URL(it.link, feedUrl).toString();
+
+          // Try to extract an image from RSS enclosure / media tags
+          let enclosureUrl =
+            (it.enclosure &&
+              (it.enclosure.url ||
+                (Array.isArray(it.enclosure) ? it.enclosure[0]?.url : undefined))) ||
+            (it["media:content"] &&
+              (it["media:content"].url ||
+                (it["media:content"]["$"] && it["media:content"]["$"].url))) ||
+            (it["media:thumbnail"] &&
+              (it["media:thumbnail"].url ||
+                (it["media:thumbnail"]["$"] && it["media:thumbnail"]["$"].url)));
 
           if (enclosureUrl) {
             enclosureUrl = absoluteUrlMaybe(enclosureUrl, url);
@@ -1004,7 +1014,7 @@ async function fetchItemsFromFeed(feedUrl, takeN) {
 
           const page = await fetchArticlePage(url);
 
-          // Prefer page image, fall back to RSS enclosure if needed
+          // Prefer article-page image, fall back to RSS enclosure if needed
           const image = page.image || enclosureUrl || "";
 
           return {
@@ -1015,12 +1025,12 @@ async function fetchItemsFromFeed(feedUrl, takeN) {
               ? new Date(it.isoDate).toISOString()
               : new Date().toISOString(),
             text: page.text || "",
-            image
+            image,
           };
         })
       );
 
-      settled.forEach(s => {
+      settled.forEach((s) => {
         if (s.status === "fulfilled" && s.value) out.push(s.value);
       });
     }
@@ -1533,23 +1543,24 @@ app.post("/api/rewards/register", async (req, res) => {
     };
 
     // Wallet update (no validation beyond "starts with 0x")
-    if (walletAddress && walletAddress !== data.walletAddress) {
-      // archive old stats into walletHistory array
-      const historyEntry = {
-        wallet: data.walletAddress || null,
-        tokensTotal: data.tokensTotal || 0,
-        invitesCompleted: data.invitesCompleted || 0,
-        totalSeconds: data.totalSeconds || 0,
-        at: admin.firestore.FieldValue.serverTimestamp(),
-      };
+if (walletAddress && walletAddress !== data.walletAddress) {
+  // archive old stats into walletHistory array
+  const historyEntry = {
+    wallet: data.walletAddress || null,
+    tokensTotal: data.tokensTotal || 0,
+    invitesCompleted: data.invitesCompleted || 0,
+    totalSeconds: data.totalSeconds || 0,
+    // Use a plain JS Date here (Firestore will store it as a timestamp)
+    at: new Date(),
+  };
 
-      updates.walletAddress = walletAddress;
-      updates.tokensTotal = 0;
-      updates.tokensThisWeek = 0;
-      updates.invitesCompleted = 0;
-      updates.weeklySeconds = 0;
-      updates.walletHistory = admin.firestore.FieldValue.arrayUnion(historyEntry);
-    }
+  updates.walletAddress = walletAddress;
+  updates.tokensTotal = 0;
+  updates.tokensThisWeek = 0;
+  updates.invitesCompleted = 0;
+  updates.weeklySeconds = 0;
+  updates.walletHistory = admin.firestore.FieldValue.arrayUnion(historyEntry);
+}
 
     // If new user enters "invitedByCode" and they don't already have one
     if (invitedByCode && !data.referredByCode) {
