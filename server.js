@@ -71,9 +71,6 @@ const db = admin.apps.length ? admin.firestore() : null;
 const USERS_COL = db ? db.collection("notifaiUsers") : null;
 const REFERRALS_COL = db ? db.collection("notifaiReferralProgress") : null;
 
-// 30 minutes = 1800 seconds for referral completion
-const REFERRAL_REQUIRED_SECONDS = 30 * 60;
-
 /* --------------------------------------------------------
    FEEDS
    - World & Crypto are global for everyone (English)
