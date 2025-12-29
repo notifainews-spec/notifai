@@ -1735,21 +1735,41 @@ app.get("/api/rewards/leaderboard", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`▶ NotifAi News on http://localhost:${PORT}`);
 });
+
+// Optional: control first ingest with an env flag
+const RUN_FIRST_INGEST = process.env.RUN_FIRST_INGEST === "true";
+
 (async () => {
   try {
-    console.time("first-ingest");
-    console.log("Kicking off first ingest…");
-    await ingestOnce();
-    console.timeEnd("first-ingest");
+    if (RUN_FIRST_INGEST) {
+      console.log("Scheduling first ingest in background…");
+      // run AFTER startup, and don't block boot
+      setTimeout(() => {
+        console.time("first-ingest");
+        console.log("Background first ingest…");
+        ingestOnce()
+          .then(() => console.timeEnd("first-ingest"))
+          .catch((e) =>
+            console.error("First ingest failed:", e?.message || e)
+          );
+      }, 5000); // 5 seconds after boot
+    } else {
+      console.log("Skipping first ingest at startup (RUN_FIRST_INGEST != 'true').");
+    }
+
+    console.log(`Auto-ingest interval set to ${INGEST_MINUTES} minute(s).`);
+    if (INGEST_MINUTES > 0) {
+      setInterval(() => {
+        console.time("auto-ingest");
+        console.log("Auto-ingest tick…");
+        ingestOnce()
+          .then(() => console.timeEnd("auto-ingest"))
+          .catch((err) =>
+            console.error("Auto-ingest failed:", err?.message || err)
+          );
+      }, INGEST_MINUTES * 60 * 1000);
+    }
   } catch (e) {
-    console.error("First ingest failed:", e?.message || e);
+    console.error("Ingest scheduler init failed:", e?.message || e);
   }
-  console.log(`Auto-ingest interval set to ${INGEST_MINUTES} minute(s).`);
-  setInterval(() => {
-    console.time("auto-ingest");
-    console.log("Auto-ingest tick…");
-    ingestOnce()
-      .then(() => console.timeEnd("auto-ingest"))
-      .catch(err => console.error("Auto-ingest failed:", err?.message || err));
-  }, INGEST_MINUTES * 60 * 1000);
 })();
