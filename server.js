@@ -118,28 +118,29 @@ const FEEDS_REGIONAL = {
   },
 
   /* -------- China (Chinese language) -------- */
-  cn: {
-    // Politics: Chinese-language international & local
+   cn: {
     politics: [
-      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", // BBC 中文
-      "https://rss.dw.com/rdf/rss-chi-all",            // DW 中文综合
-      "https://www.ifeng.com/rss/hotnews.xml",         // 凤凰新闻热点
+      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+      "https://rss.dw.com/rdf/rss-chi-all",
+      "https://www.ifeng.com/rss/hotnews.xml",
     ],
 
-    // Finance: economy / business stories (still in Chinese)
     finance: [
-      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", // BBC 中文 (includes economy)
-      "https://rss.dw.com/rdf/rss-chi-all",            // DW 中文综合 (includes economy)
-      // Optional: Chinese business/finance via Jiemian
+      "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+      "https://rss.dw.com/rdf/rss-chi-all",
       "https://www.jiemian.com/rss/fintech.xml",
+      // English-language China / Asia business coverage
+      "https://www.scmp.com/rss/91/feed",              // SCMP – China
+      "https://www.reuters.com/rssFeed/chinaNews"     // Reuters – China news
     ],
 
-    // Entertainment: Chinese entertainment via DW + HK01/NetEase/Sohu (via RSSHub)
     entertainment: [
-      "https://rss.dw.com/rdf/rss-chi-all",                 // DW 中文 soft news / culture
-      "https://rsshub.app/163/ent/hot",                     // 网易娱乐热点
-      "https://rsshub.app/sohu/news/entertainment",         // 搜狐娱乐
-      "https://rsshub.app/hk01/zone/11"                     // 香港01 娱乐
+      "https://rss.dw.com/rdf/rss-chi-all",
+      "https://rsshub.app/163/ent/hot",
+      "https://rsshub.app/sohu/news/entertainment",
+      "https://rsshub.app/hk01/zone/11",
+      // English-language entertainment / culture with strong China coverage
+      "https://www.scmp.com/rss/82/feed"              // SCMP – Culture / entertainment
     ],
   },
 
@@ -298,6 +299,12 @@ function getImageReferer(u) {
       host.endsWith("brecorder.com")
     ) {
       return "https://www.dawn.com/";
+    }
+    if (
+      host.endsWith("pakistantoday.com.pk") ||
+      host.endsWith("profit.pakistantoday.com.pk")
+    ) {
+      return "https://profit.pakistantoday.com.pk/";
     }
 
     // 2) RFI (Chinese + others)
@@ -927,17 +934,20 @@ function filterByRegionLane(region, lane, items) {
     return items.filter(it => keepHost(it.url, idHosts));
   }
 
-  if (region === "cn") {
-    // For CN politics + finance we keep only trusted Chinese-language sources
+    if (region === "cn") {
+    // For CN politics + finance we keep only trusted sources
     const cnHosts = [
       "bbc.com",
       "bbc.co.uk",
       "dw.com",
       "ifeng.com",
-      "jiemian.com"
+      "jiemian.com",
+      // English-language China coverage
+      "scmp.com",
+      "reuters.com"
     ];
 
-    // Entertainment uses RSSHub + various Chinese sites; don't over-filter
+    // Entertainment: allow both Chinese + English feeds
     if (lane === "entertainment") {
       return items; // keep all entertainment items for CN
     }
@@ -995,13 +1005,15 @@ async function fetchItemsFromFeed(feedUrl, takeN) {
 
       const settled = await Promise.allSettled(
         batch.map(async it => {
-          const url = new URL(it.link).toString();
-
-          // RSS-level fallback image if the article page doesn't give us one
-          const enclosureUrl =
+                    let enclosureUrl =
             (it.enclosure && (it.enclosure.url || (Array.isArray(it.enclosure) ? it.enclosure[0]?.url : undefined))) ||
             (it["media:content"] && (it["media:content"].url || (it["media:content"]["$"] && it["media:content"]["$"].url))) ||
             (it["media:thumbnail"] && (it["media:thumbnail"].url || (it["media:thumbnail"]["$"] && it["media:thumbnail"]["$"].url)));
+
+          if (enclosureUrl) {
+            enclosureUrl = absoluteUrlMaybe(enclosureUrl, url);
+            enclosureUrl = upgradeHttps(enclosureUrl);
+          }
 
           const page = await fetchArticlePage(url);
 
@@ -1627,12 +1639,16 @@ app.post("/api/rewards/track-usage", async (req, res) => {
 app.get("/api/rewards/me", async (req, res) => {
   try {
     if (!db || !USERS_COL) {
-      return res.status(500).json({ ok: false, error: "Firestore not configured" });
+      return res
+        .status(500)
+        .json({ ok: false, error: "Firestore not configured" });
     }
 
     const userId = req.query.userId;
     if (!userId) {
-      return res.status(400).json({ ok: false, error: "Missing userId" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing userId" });
     }
 
     const { ref, data } = await getOrCreateUser(userId);
@@ -1662,11 +1678,13 @@ app.get("/api/rewards/me", async (req, res) => {
   }
 });
 
-
 app.get("/api/debug/firestore", async (req, res) => {
   try {
     if (!db) {
-      return res.json({ ok: false, error: "db is null (admin not initialized)" });
+      return res.json({
+        ok: false,
+        error: "db is null (admin not initialized)",
+      });
     }
     const collections = await db.listCollections();
     return res.json({
@@ -1681,7 +1699,6 @@ app.get("/api/debug/firestore", async (req, res) => {
     });
   }
 });
-
 
 // 4) Simple leaderboard (top by tokensTotal)
 app.get("/api/rewards/leaderboard", async (req, res) => {
