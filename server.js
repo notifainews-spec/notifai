@@ -414,81 +414,80 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
 
   const docRef = USERS_COL.doc(userId);
 
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(docRef);
-    let data;
-    if (!snap.exists) {
-      // create if missing
-      const base = (await getOrCreateUser(userId));
-      data = base.data;
-    } else {
-      data = snap.data();
-    }
+  // 1) Load or create the user document
+  const snap = await docRef.get();
+  let data;
+  if (!snap.exists) {
+    const base = await getOrCreateUser(userId);
+    data = base.data;
+  } else {
+    data = snap.data();
+  }
 
-    data = await ensureWeek(docRef, data);
+  // 2) Ensure week is up to date (this may reset weekly counters)
+  data = await ensureWeek(docRef, data);
 
-    const increment = Number(seconds) || 0;
-    if (increment <= 0) return;
+  // 3) Apply the seconds increment
+  const increment = Number(seconds) || 0;
+  if (increment <= 0) return;
 
-    const totalSeconds = (data.totalSeconds || 0) + increment;
-    const weeklySeconds = (data.weeklySeconds || 0) + increment;
+  const totalSeconds = (data.totalSeconds || 0) + increment;
+  const weeklySeconds = (data.weeklySeconds || 0) + increment;
 
-    tx.update(docRef, {
-      totalSeconds,
-      weeklySeconds,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastRegion: region || data.lastRegion || null,
-      lastScreen: screen || data.lastScreen || null,
-    });
-
-    // Also update referral progress if this user was referred
-    if (data.referredByUserId && REFERRALS_COL) {
-      const refDoc = REFERRALS_COL.doc(userId);
-
-      const refSnap = await tx.get(refDoc);
-      let refData = refSnap.exists ? refSnap.data() : null;
-
-      if (!refData) {
-        refData = {
-          userId,
-          inviterUserId: data.referredByUserId,
-          inviterReferralCode: data.referredByCode || null,
-          totalSeconds: 0,
-          completed: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-      }
-
-      const newTotal = (refData.totalSeconds || 0) + increment;
-      refData.totalSeconds = newTotal;
-
-      if (!refData.completed && newTotal >= REFERRAL_REQUIRED_SECONDS) {
-        refData.completed = true;
-        refData.completedAt = admin.firestore.FieldValue.serverTimestamp();
-
-        // credit inviter
-        const inviterRef = USERS_COL.doc(data.referredByUserId);
-        const inviterSnap = await tx.get(inviterRef);
-        if (inviterSnap.exists) {
-          const inviter = inviterSnap.data() || {};
-          const weekAdjustedInviter = await ensureWeek(inviterRef, inviter);
-
-          const newTokensTotal = (weekAdjustedInviter.tokensTotal || 0) + 1;
-          const newTokensThisWeek = (weekAdjustedInviter.tokensThisWeek || 0) + 1;
-          const newCompleted = (weekAdjustedInviter.invitesCompleted || 0) + 1;
-
-          tx.update(inviterRef, {
-            tokensTotal: newTokensTotal,
-            tokensThisWeek: newTokensThisWeek,
-            invitesCompleted: newCompleted,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        }
-      }
-
-      tx.set(refDoc, refData, { merge: true });
-    }
+  await docRef.update({
+    totalSeconds,
+    weeklySeconds,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastRegion: region || data.lastRegion || null,
+    lastScreen: screen || data.lastScreen || null,
   });
+
+  // 4) If user was referred, update referral progress + inviter
+  if (data.referredByUserId && REFERRALS_COL) {
+    const refDoc = REFERRALS_COL.doc(userId);
+    const refSnap = await refDoc.get();
+    let refData = refSnap.exists ? refSnap.data() : null;
+
+    if (!refData) {
+      refData = {
+        userId,
+        inviterUserId: data.referredByUserId,
+        inviterReferralCode: data.referredByCode || null,
+        totalSeconds: 0,
+        completed: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+    }
+
+    const newTotal = (refData.totalSeconds || 0) + increment;
+    refData.totalSeconds = newTotal;
+
+    if (!refData.completed && newTotal >= REFERRAL_REQUIRED_SECONDS) {
+      refData.completed = true;
+      refData.completedAt = admin.firestore.FieldValue.serverTimestamp();
+
+      // credit inviter (non-transactional, fine for this use case)
+      const inviterRef = USERS_COL.doc(data.referredByUserId);
+      const inviterSnap = await inviterRef.get();
+      if (inviterSnap.exists) {
+        const inviter = inviterSnap.data() || {};
+        const weekAdjustedInviter = await ensureWeek(inviterRef, inviter);
+
+        const newTokensTotal = (weekAdjustedInviter.tokensTotal || 0) + 1;
+        const newTokensThisWeek = (weekAdjustedInviter.tokensThisWeek || 0) + 1;
+        const newCompleted = (weekAdjustedInviter.invitesCompleted || 0) + 1;
+
+        await inviterRef.update({
+          tokensTotal: newTokensTotal,
+          tokensThisWeek: newTokensThisWeek,
+          invitesCompleted: newCompleted,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    await refDoc.set(refData, { merge: true });
+  }
 }
 
 /* --------------------------------------------------------
