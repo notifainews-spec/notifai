@@ -493,74 +493,73 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
   await docRef.update(updatePayload);
 
   // 5) Referral logic: if user was referred, track their invite progress + credit inviter
-  if (data.referredByUserId && REFERRALS_COL) {
-    const refDoc = REFERRALS_COL.doc(userId);
-    const refSnap = await refDoc.get();
-    let refData = refSnap.exists ? refSnap.data() : null;
+if (data.referredByUserId && REFERRALS_COL) {
+  const refDoc = REFERRALS_COL.doc(userId);
+  const refSnap = await refDoc.get();
+  let refData = refSnap.exists ? refSnap.data() : null;
 
-    if (!refData) {
-      refData = {
-        userId,
-        inviterUserId: data.referredByUserId,
-        inviterReferralCode: data.referredByCode || null,
-        totalSeconds: 0,
-        completed: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-    }
-
-    const newTotal = (refData.totalSeconds || 0) + increment;
-    refData.totalSeconds = newTotal;
-
-    let referralUpdate = {
-      totalSeconds: newTotal,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  if (!refData) {
+    refData = {
+      userId,
+      inviterUserId: data.referredByUserId,
+      inviterReferralCode: data.referredByCode || null,
+      totalSeconds: 0,
+      completed: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+  }
 
-    let completedThisCall = false;
-    if (!refData.completed && newTotal >= REFERRAL_REQUIRED_SECONDS) {
-      refData.completed = true;
-      completedThisCall = true;
-      referralUpdate.completed = true;
-      referralUpdate.completedAt = admin.firestore.FieldValue.serverTimestamp();
+  const newTotal = (refData.totalSeconds || 0) + increment;
+  refData.totalSeconds = newTotal;
+
+  // Has this invite now met the 30-minute requirement?
+  const eligibleNow = newTotal >= REFERRAL_REQUIRED_SECONDS;
+  let completedThisCall = false;
+
+  if (!refData.completed && eligibleNow) {
+    refData.completed = true;
+    completedThisCall = true;
+    refData.completedAt = admin.firestore.FieldValue.serverTimestamp();
+  }
+
+  await refDoc.set(refData, { merge: true });
+
+  // Credit inviter:
+  // - 1 token once when the invite completes 30 minutes
+  // - 10% commission on every new usage token the invitee earns, once eligible
+  const inviterRef  = USERS_COL.doc(data.referredByUserId);
+  const inviterSnap = await inviterRef.get();
+  if (inviterSnap.exists) {
+    const inviterData         = inviterSnap.data() || {};
+    const weekAdjustedInviter = await ensureWeek(inviterRef, inviterData);
+
+    let inviterTokensTotal    = weekAdjustedInviter.tokensTotal    || 0;
+    let inviterTokensThisWeek = weekAdjustedInviter.tokensThisWeek || 0;
+    let inviterInvites        = weekAdjustedInviter.invitesCompleted || 0;
+
+    // Base: 1 token the first time an invite completes 30 minutes
+    if (completedThisCall) {
+      inviterTokensTotal    += REFERRAL_INVITE_TOKENS;
+      inviterTokensThisWeek += REFERRAL_INVITE_TOKENS;
+      inviterInvites        += 1;
     }
 
-    await refDoc.set(refData, { merge: true });
-
-    // 6) If completed, credit inviter with base invite tokens + commission
-    if (completedThisCall) {
-      const inviterRef  = USERS_COL.doc(data.referredByUserId);
-      const inviterSnap = await inviterRef.get();
-      if (inviterSnap.exists) {
-        const inviterData          = inviterSnap.data() || {};
-        const weekAdjustedInviter  = await ensureWeek(inviterRef, inviterData);
-
-        let inviterTokensTotal    = weekAdjustedInviter.tokensTotal    || 0;
-        let inviterTokensThisWeek = weekAdjustedInviter.tokensThisWeek || 0;
-        let inviterInvites        = weekAdjustedInviter.invitesCompleted || 0;
-
-        // Base: 1 token per completed invite
-        inviterTokensTotal    += REFERRAL_INVITE_TOKENS;
-        inviterTokensThisWeek += REFERRAL_INVITE_TOKENS;
-        inviterInvites        += 1;
-
-        // Commission: 10% of invitee's usage tokens
-        if (deltaUsageTokens > 0) {
-          const commission = Math.floor(deltaUsageTokens * REFERRAL_COMMISSION_RATE);
-          if (commission > 0) {
-            inviterTokensTotal    += commission;
-            inviterTokensThisWeek += commission;
-          }
-        }
-
-        await inviterRef.update({
-          tokensTotal: inviterTokensTotal,
-          tokensThisWeek: inviterTokensThisWeek,
-          invitesCompleted: inviterInvites,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+    // Commission: 10% of invitee's usage tokens, on every call
+    // after they are eligible (>= 30 minutes total usage)
+    if (eligibleNow && deltaUsageTokens > 0) {
+      const commission = Math.floor(deltaUsageTokens * REFERRAL_COMMISSION_RATE);
+      if (commission > 0) {
+        inviterTokensTotal    += commission;
+        inviterTokensThisWeek += commission;
       }
     }
+
+    await inviterRef.update({
+      tokensTotal: inviterTokensTotal,
+      tokensThisWeek: inviterTokensThisWeek,
+      invitesCompleted: inviterInvites,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
   }
 }
 
