@@ -562,6 +562,7 @@ if (data.referredByUserId && REFERRALS_COL) {
     });
   }
 }
+}
 
 /* --------------------------------------------------------
    OpenAI (localized)
