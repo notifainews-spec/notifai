@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import admin from "firebase-admin";
+import rateLimit from "express-rate-limit";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +32,24 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
+// If you are behind Render/Proxy/CDN, enable this for correct IP
+app.set("trust proxy", 1);
+
+// Temporary abuse controls (no app update required)
+const rewardsLimiter = rateLimit({
+  windowMs: 60 * 1000,      // 1 minute
+  max: 120,                 // 120 requests/min/IP
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const rewardsWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,                  // 60 writes/min/IP
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -355,6 +374,16 @@ const REFERRAL_COMMISSION_RATE  = 0.1;        // 10% of invitee usage tokens
 
 // getWeekKey() should already exist above; we keep using it.
 
+/* --------------------------------------------------------
+   TEMPORARY WEEKLY GUARDRAILS
+--------------------------------------------------------- */
+const MAX_INVITES_PER_WEEK = 200;
+const MAX_TOKENS_PER_WEEK  = 300;
+
+// sanity: clamp each usage event and block high-frequency spam per user
+const MAX_SECONDS_PER_CALL = 60;       // never accept more than 60 seconds per hit
+const MIN_MS_BETWEEN_CALLS = 5000;     // ignore hits within 5 seconds for same user
+
 /**
  * Create or load a user document in notifaiUsers.
  */
@@ -409,20 +438,28 @@ async function ensureWeek(docRef, data) {
   const lastWeekTokens = data.tokensThisWeek || 0;
 
   const updated = {
-    ...data,                  // IMPORTANT: spread, not ".data"
-    weekKey: currentWeekKey,
-    weeklySeconds: 0,
-    tokensThisWeek: 0,
-    tokensLastWeek: lastWeekTokens,
-  };
+  ...data,
+  weekKey: currentWeekKey,
+  weeklySeconds: 0,
+  tokensThisWeek: 0,
+  tokensLastWeek: lastWeekTokens,
+
+  // weekly referral counters must reset too
+  invitesCompleted: 0,
+  invitesStarted: 0,
+};
 
   await docRef.update({
-    weekKey: currentWeekKey,
-    weeklySeconds: 0,
-    tokensThisWeek: 0,
-    tokensLastWeek: lastWeekTokens,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  weekKey: currentWeekKey,
+  weeklySeconds: 0,
+  tokensThisWeek: 0,
+  tokensLastWeek: lastWeekTokens,
+
+  invitesCompleted: 0,
+  invitesStarted: 0,
+
+  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+});
 
   return updated;
 }
@@ -455,31 +492,45 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
   // 2) Ensure week is up to date (may reset weekly counters + move tokensThisWeek -> tokensLastWeek)
   data = await ensureWeek(docRef, data);
 
+// per-user throttle (temporary)
+const nowMs = Date.now();
+const lastMs = Number(data.lastUsageAtMs || 0);
+if (nowMs - lastMs < MIN_MS_BETWEEN_CALLS) return;
+
   // 3) Apply time increment
-  const increment = Number(seconds) || 0;
-  if (increment <= 0) return;
+  const rawInc = Number(seconds) || 0;
+if (rawInc <= 0) return;
+const increment = Math.min(rawInc, MAX_SECONDS_PER_CALL);
 
   const prevTotalSeconds = data.totalSeconds || 0;
-  const totalSeconds = prevTotalSeconds + increment;
-  const weeklySeconds = (data.weeklySeconds || 0) + increment;
+const totalSeconds = prevTotalSeconds + increment;
 
-  // ---- Self usage tokens: 1 token per full 3600 seconds of lifetime usage ----
-  const tokensFromUsageBefore = Math.floor(prevTotalSeconds / 3600);
-  const tokensFromUsageAfter  = Math.floor(totalSeconds / 3600);
-  const deltaUsageTokens      = tokensFromUsageAfter - tokensFromUsageBefore;
+const prevWeeklySeconds = data.weeklySeconds || 0;
+const weeklySeconds = prevWeeklySeconds + increment;
 
-  let tokensTotal     = data.tokensTotal     || 0;
-  let tokensThisWeek  = data.tokensThisWeek  || 0;
+// 1 token per full 3600 seconds of WEEKLY usage
+const weeklyTokensBefore = Math.floor(prevWeeklySeconds / 3600);
+const weeklyTokensAfter  = Math.floor(weeklySeconds / 3600);
+const deltaUsageTokens   = Math.max(0, weeklyTokensAfter - weeklyTokensBefore);
 
-  if (deltaUsageTokens > 0) {
-    tokensTotal    += deltaUsageTokens;
-    tokensThisWeek += deltaUsageTokens;
+  let tokensTotal    = data.tokensTotal    || 0;
+let tokensThisWeek = data.tokensThisWeek || 0;
+
+if (deltaUsageTokens > 0) {
+  const remaining = Math.max(0, MAX_TOKENS_PER_WEEK - tokensThisWeek);
+  const mint = Math.min(deltaUsageTokens, remaining);
+
+  if (mint > 0) {
+    tokensTotal += mint;        // lifetime total (history)
+    tokensThisWeek += mint;     // weekly capped
   }
+}
 
   // 4) Update user document with new seconds + tokens
   const updatePayload = {
     totalSeconds,
     weeklySeconds,
+    lastUsageAtMs: nowMs,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     lastRegion: region || data.lastRegion || null,
     lastScreen: screen || data.lastScreen || null,
@@ -539,20 +590,31 @@ if (data.referredByUserId && REFERRALS_COL) {
 
     // Base: 1 token the first time an invite completes 30 minutes
     if (completedThisCall) {
-      inviterTokensTotal    += REFERRAL_INVITE_TOKENS;
-      inviterTokensThisWeek += REFERRAL_INVITE_TOKENS;
-      inviterInvites        += 1;
+  // cap invites per week
+  if (inviterInvites < MAX_INVITES_PER_WEEK) {
+    inviterInvites += 1;
+
+    // cap weekly tokens at 300
+    if (inviterTokensThisWeek < MAX_TOKENS_PER_WEEK) {
+      inviterTokensTotal += REFERRAL_INVITE_TOKENS;
+      inviterTokensThisWeek = Math.min(MAX_TOKENS_PER_WEEK, inviterTokensThisWeek + REFERRAL_INVITE_TOKENS);
     }
+  }
+}
 
     // Commission: 10% of invitee's usage tokens, on every call
     // after they are eligible (>= 30 minutes total usage)
     if (eligibleNow && deltaUsageTokens > 0) {
-      const commission = Math.floor(deltaUsageTokens * REFERRAL_COMMISSION_RATE);
-      if (commission > 0) {
-        inviterTokensTotal    += commission;
-        inviterTokensThisWeek += commission;
-      }
+  const commission = Math.floor(deltaUsageTokens * REFERRAL_COMMISSION_RATE);
+  if (commission > 0) {
+    const remaining = Math.max(0, MAX_TOKENS_PER_WEEK - inviterTokensThisWeek);
+    const mint = Math.min(commission, remaining);
+    if (mint > 0) {
+      inviterTokensTotal += mint;
+      inviterTokensThisWeek += mint;
     }
+  }
+}
 
     await inviterRef.update({
       tokensTotal: inviterTokensTotal,
@@ -562,7 +624,7 @@ if (data.referredByUserId && REFERRALS_COL) {
     });
   }
 }
-}
+} 
 
 /* --------------------------------------------------------
    OpenAI (localized)
@@ -1599,7 +1661,7 @@ app.get('/share/:id', (req, res) => {
 --------------------------------------------------------- */
 
 // 1) Register / update user profile
-app.post("/api/rewards/register", async (req, res) => {
+app.post("/api/rewards/register", rewardsWriteLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
@@ -1629,12 +1691,8 @@ if (walletAddress && walletAddress !== data.walletAddress) {
 };
 
 updates.walletAddress = walletAddress;
-updates.tokensTotal = 0;
-updates.tokensThisWeek = 0;
-updates.tokensLastWeek = 0;
-updates.invitesCompleted = 0;
-updates.weeklySeconds = 0;
 updates.walletHistory = admin.firestore.FieldValue.arrayUnion(historyEntry);
+// temporary: do not reset reward counters on wallet change
 }
 
     // If new user enters "invitedByCode" and they don't already have one
@@ -1686,23 +1744,26 @@ return res.json({
 });
 
 // 2) Track usage seconds (home + article)
-app.post("/api/rewards/track-usage", async (req, res) => {
+app.post("/api/rewards/track-usage", rewardsWriteLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
     }
 
     const { userId, seconds, region, screen } = req.body || {};
-    if (!userId || !seconds) {
-      return res.status(400).json({ ok: false, error: "Missing userId or seconds" });
-    }
+if (!userId || seconds === undefined || seconds === null) {
+  return res.status(400).json({ ok: false, error: "Missing userId or seconds" });
+}
 
-    const delta = Number(seconds);
-    if (!Number.isFinite(delta) || delta <= 0) {
-      return res.status(400).json({ ok: false, error: "Invalid seconds" });
-    }
+const delta = Number(seconds);
+if (!Number.isFinite(delta) || delta <= 0) {
+  return res.status(400).json({ ok: false, error: "Invalid seconds" });
+}
 
-    await trackUsageForUser(userId, delta, { region, screen });
+// edge clamp too (matches internal clamp)
+const clamped = Math.min(delta, MAX_SECONDS_PER_CALL);
+
+await trackUsageForUser(userId, clamped, { region, screen });
 
     return res.json({ ok: true });
   } catch (err) {
@@ -1712,7 +1773,7 @@ app.post("/api/rewards/track-usage", async (req, res) => {
 });
 
 // 3) Get current user's rewards dashboard
-app.get("/api/rewards/me", async (req, res) => {
+app.get("/api/rewards/me", rewardsLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res
@@ -1778,7 +1839,7 @@ app.get("/api/debug/firestore", async (req, res) => {
 });
 
 // 4) Simple leaderboard (top by tokensTotal)
-app.get("/api/rewards/leaderboard", async (req, res) => {
+app.get("/api/rewards/leaderboard", rewardsLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
