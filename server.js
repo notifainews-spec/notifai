@@ -380,9 +380,12 @@ const REFERRAL_COMMISSION_RATE  = 0.1;        // 10% of invitee usage tokens
 const MAX_INVITES_PER_WEEK = 200;
 const MAX_TOKENS_PER_WEEK  = 300;
 
-// sanity: clamp each usage event and block high-frequency spam per user
-const MAX_SECONDS_PER_CALL = 60;       // never accept more than 60 seconds per hit
-const MIN_MS_BETWEEN_CALLS = 5000;     // ignore hits within 5 seconds for same user
+// Weekly seconds cap (7 days)
+const MAX_SECONDS_PER_WEEK = 7 * 24 * 60 * 60; // 604,800
+
+// Allow bigger reports, but we'll cap by elapsed time anyway
+const MAX_SECONDS_PER_CALL = 6 * 60 * 60; // up to 6 hours per hit (safe for background/offline)
+const MIN_MS_BETWEEN_CALLS = 0;         // less aggressive; elapsed-time cap is the real protection
 
 /**
  * Create or load a user document in notifaiUsers.
@@ -492,21 +495,46 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
   // 2) Ensure week is up to date (may reset weekly counters + move tokensThisWeek -> tokensLastWeek)
   data = await ensureWeek(docRef, data);
 
-// per-user throttle (temporary)
-const nowMs = Date.now();
-const lastMs = Number(data.lastUsageAtMs || 0);
-if (nowMs - lastMs < MIN_MS_BETWEEN_CALLS) return;
+  // per-user throttle (temporary)
+  const nowMs = Date.now();
+  const lastMs = Number(data.lastUsageAtMs || 0);
+
+  // If calls are extremely frequent, ignore this hit
+  if (lastMs && (nowMs - lastMs < MIN_MS_BETWEEN_CALLS)) return;
 
   // 3) Apply time increment
   const rawInc = Number(seconds) || 0;
-if (rawInc <= 0) return;
-const increment = Math.min(rawInc, MAX_SECONDS_PER_CALL);
+  if (!Number.isFinite(rawInc) || rawInc <= 0) return;
+
+  // Cap by real elapsed time since last accepted report
+  let elapsedSec = lastMs ? Math.floor((nowMs - lastMs) / 1000) : rawInc;
+  if (!Number.isFinite(elapsedSec) || elapsedSec < 0) elapsedSec = 0;
+
+  // Small grace for timer jitter/background delays
+  const allowedByElapsed = elapsedSec + 3;
+
+  // Final increment is limited by: client claim, elapsed time, and max per call
+  let increment = Math.min(rawInc, allowedByElapsed, MAX_SECONDS_PER_CALL);
+  if (increment <= 0) return;
+
+  // Enforce weekly seconds cap (604,800)
+  const prevWeeklySeconds = data.weeklySeconds || 0;
+  const roomThisWeek = Math.max(0, MAX_SECONDS_PER_WEEK - prevWeeklySeconds);
+  increment = Math.min(increment, roomThisWeek);
+
+  // Even if capped, still advance lastUsageAtMs to avoid "elapsed" ballooning
+  if (increment <= 0) {
+    await docRef.update({
+      lastUsageAtMs: nowMs,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return;
+  }
 
   const prevTotalSeconds = data.totalSeconds || 0;
-const totalSeconds = prevTotalSeconds + increment;
+  const totalSeconds = prevTotalSeconds + increment;
 
-const prevWeeklySeconds = data.weeklySeconds || 0;
-const weeklySeconds = prevWeeklySeconds + increment;
+  const weeklySeconds = prevWeeklySeconds + increment;
 
 // 1 token per full 3600 seconds of WEEKLY usage
 const weeklyTokensBefore = Math.floor(prevWeeklySeconds / 3600);
@@ -1760,10 +1788,7 @@ if (!Number.isFinite(delta) || delta <= 0) {
   return res.status(400).json({ ok: false, error: "Invalid seconds" });
 }
 
-// edge clamp too (matches internal clamp)
-const clamped = Math.min(delta, MAX_SECONDS_PER_CALL);
-
-await trackUsageForUser(userId, clamped, { region, screen });
+await trackUsageForUser(userId, delta, { region, screen });
 
     return res.json({ ok: true });
   } catch (err) {
