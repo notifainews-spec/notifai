@@ -255,6 +255,120 @@ function saveArticles(list) {
   fs.writeFileSync(STORE, JSON.stringify(list, null, 2), "utf8");
 }
 
+import crypto from "crypto";
+
+// -------------------- TRANSLATION CACHE --------------------
+const TRANSLATION_MEM = new Map(); // key -> { text, ts }
+const TRANSLATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function sha1(s) {
+  return crypto.createHash("sha1").update(String(s || ""), "utf8").digest("hex");
+}
+
+function normLang(lang) {
+  const x = String(lang || "en").toLowerCase();
+  // Google translate uses "zh-CN"/"zh-TW" sometimes; you use "zh". Keep simple:
+  if (x === "cn") return "zh";
+  return x;
+}
+
+async function firestoreGetTranslation(db, key) {
+  try {
+    if (!db) return null;
+    const ref = db.collection("translations_v1").doc(key);
+    const snap = await ref.get();
+    if (!snap.exists) return null;
+    const data = snap.data();
+    if (!data?.text) return null;
+    if (data.ts && Date.now() - data.ts > TRANSLATION_TTL_MS) return null;
+    return data.text;
+  } catch {
+    return null;
+  }
+}
+
+async function firestoreSetTranslation(db, key, text) {
+  try {
+    if (!db) return;
+    await db.collection("translations_v1").doc(key).set({
+      text,
+      ts: Date.now(),
+    }, { merge: true });
+  } catch {
+    // ignore
+  }
+}
+
+async function googleTranslateText(text, target) {
+  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
+  if (!apiKey) throw new Error("Missing GOOGLE_TRANSLATE_API_KEY");
+
+  const body = {
+    q: [String(text || "")],
+    target: normLang(target),
+    format: "text",
+  };
+
+  const res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Translate HTTP ${res.status}: ${t.slice(0, 250)}`);
+  }
+
+  const json = await res.json();
+  const translated = json?.data?.translations?.[0]?.translatedText || "";
+  return translated;
+}
+
+async function translateTextCached(db, targetLang, text) {
+  const target = normLang(targetLang);
+  const raw = String(text || "").trim();
+
+  if (!raw) return raw;
+  if (!target || target === "en") return raw;
+
+  const key = `${target}:${sha1(raw)}`;
+
+  // memory cache
+  const m = TRANSLATION_MEM.get(key);
+  if (m && Date.now() - m.ts < TRANSLATION_TTL_MS) return m.text;
+
+  // firestore cache
+  const fromFs = await firestoreGetTranslation(db, key);
+  if (fromFs) {
+    TRANSLATION_MEM.set(key, { text: fromFs, ts: Date.now() });
+    return fromFs;
+  }
+
+  // translate
+  const translated = await googleTranslateText(raw, target);
+
+  TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
+  await firestoreSetTranslation(db, key, translated);
+
+  return translated;
+}
+
+async function translateArticleForLang(db, lang, article) {
+  if (!article || !lang || lang === "en") return article;
+
+  // Only translate the fields your UI actually displays in lists and article view:
+  const title = await translateTextCached(db, lang, article.title || "");
+  const summary = await translateTextCached(db, lang, article.summary || "");
+
+  return {
+    ...article,
+    title,
+    summary,
+    // keep url/image/category/publishedAt etc unchanged
+  };
+}
+
 /* --------------------------------------------------------
    HELPERS
 --------------------------------------------------------- */
@@ -340,6 +454,45 @@ function uniqBy(arr, keyFn) {
     if (!seen.has(k)) { seen.add(k); out.push(it); }
   }
   return out;
+}
+
+// --- LANGUAGE: requested lang support ---
+const SUPPORTED_LANGS = new Set([
+  "en",
+  "zh", "zh-CN",
+  "ur",
+  "ar",
+  "es",
+  "de",
+  "nl",
+  "fr",
+  "hi",
+  "id",
+]);
+
+function normalizeLang(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return "en";
+
+  // normalize common variants
+  const lower = raw.toLowerCase();
+  if (lower === "cn" || lower === "zh-hans" || lower === "zh") return "zh-CN";
+  if (lower === "id-id") return "id";
+  if (lower === "ar-sa") return "ar";
+  if (lower === "ur-pk") return "ur";
+
+  // keep case for zh-CN; otherwise use lowercase
+  const normalized = raw === "zh-CN" ? "zh-CN" : lower;
+
+  return SUPPORTED_LANGS.has(normalized) ? normalized : "en";
+}
+
+function getRequestedLang(req, fallback = "en") {
+  // priority: explicit request > fallback
+  const q = req?.query?.lang;
+  const b = req?.body?.lang;
+  const picked = normalizeLang(q || b || fallback);
+  return picked;
 }
 
 // Language per region (for OpenAI prompts)
@@ -1346,39 +1499,71 @@ app.get("/api/selftest", (req, res) => {
   });
 });
 
-// region query: ?region=us|cn|pk|id|uk
-app.get("/api/articles", (req, res) => {
-  const region = (String(req.query.region || "us").toLowerCase());
-  const reg = REGIONS.includes(region) ? region : "us";
-  const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY || 12), 10);
+// region query: ?region=us|cn|pk|id|uk&lang=en|ur|ar|...
+app.get("/api/articles", async (req, res) => {
+  try {
+    const region = String(req.query.region || "us").toLowerCase();
+    const category = String(req.query.category || "all").toLowerCase();
+    const lang = String(req.query.lang || "en").toLowerCase();
 
-  const toTime = (o) => {
-    const p = o?.publishedAt ? Date.parse(o.publishedAt) : NaN;
-    const c = o?.createdAt   ? Date.parse(o.createdAt)   : NaN;
-    if (!Number.isNaN(p)) return p;
-    if (!Number.isNaN(c)) return c;
-    return 0;
-  };
+    let ref = db.collection("articles");
+    if (region) ref = ref.where("region", "==", region);
+    if (category && category !== "all") ref = ref.where("category", "==", category);
 
-  const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
+    const snap = await ref.orderBy("createdAt", "desc").limit(60).get();
 
-  // Map stored categories into the 5 lanes the UI expects
-  const out = { us: [], entertainment: [], finance: [], world: [], crypto: [] };
+    const out = [];
+    for (const doc of snap.docs) {
+      const a = doc.data();
+      const base = {
+        id: doc.id,
+        title: a.title || "",
+        summary: a.summary || "",
+        category: a.category || "",
+        source: a.source || "",
+        url: a.url || "",
+        imageUrl: a.imageUrl || "",
+        createdAt: a.createdAt || null,
+        region: a.region || region,
+      };
 
-  for (const a of all) {
-    if (a.category === "world")  { if (out.world.length  < limit) out.world.push(a);  continue; }
-    if (a.category === "crypto") { if (out.crypto.length < limit) out.crypto.push(a); continue; }
+      // IMPORTANT: translate only if not English; server-side caching should be used
+      if (lang && lang !== "en") {
+        const translated = await translateArticleForLang(base, lang);
+        out.push(translated);
+      } else {
+        out.push(base);
+      }
+    }
 
-    const [catRegion, lane] = String(a.category || "").split(":");
-    if (!catRegion || !lane) continue;
-    if (catRegion !== reg) continue;
-
-    if (lane === "politics"      && out.us.length           < limit) out.us.push(a);
-    if (lane === "finance"       && out.finance.length      < limit) out.finance.push(a);
-    if (lane === "entertainment" && out.entertainment.length< limit) out.entertainment.push(a);
+    res.json({ ok: true, articles: out });
+  } catch (e) {
+    console.error("GET /api/articles error", e);
+    res.status(500).json({ ok: false, error: "Failed to load articles" });
   }
+});
 
-  res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
+app.post("/api/translate-ui", async (req, res) => {
+  try {
+    const { lang, items } = req.body || {};
+    const target = normLang(lang);
+    if (!target || target === "en") return res.json({ ok: true, map: {} });
+
+    const inItems = Array.isArray(items) ? items : [];
+    const out = {};
+
+    for (const it of inItems) {
+      const k = String(it?.key || "").trim();
+      const v = String(it?.text || "").trim();
+      if (!k || !v) continue;
+      out[k] = await translateTextCached(db, target, v);
+    }
+
+    return res.json({ ok: true, map: out });
+  } catch (e) {
+    console.error("/api/translate-ui error", e?.message || e);
+    return res.status(500).json({ ok: false, error: "Translate failed" });
+  }
 });
 
 /* --------------------------------------------------------
@@ -1483,12 +1668,24 @@ app.get("/api/blogs", async (req, res) => {
 });
 // -------------------- END AI BLOGS ENDPOINT --------------------
 
-app.get("/api/article/:id", (req, res) => {
-  const id = req.params.id;
-  const all = loadArticles();
-  const found = all.find(x => x.id === id);
-  if (!found) return res.status(404).json({ error: "not found" });
-  res.json(found);
+app.get("/api/article/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const all = loadArticles();
+    const found = all.find((x) => x.id === id);
+    if (!found) return res.status(404).json({ error: "not found" });
+
+    const cat = found?.category || "";
+    const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
+    const fallbackLang = langForRegion(regionCode || "us");
+    const lang = getRequestedLang(req, fallbackLang);
+
+    const out = lang === "en" ? found : await translateArticleForLang(db, lang, found);
+    return res.json(out);
+  } catch (e) {
+    console.error("GET /api/article/:id error", e?.message || e);
+    return res.status(500).json({ error: "Failed to load article" });
+  }
 });
 
 // Chat-style follow-up questions for a specific persona about one article
@@ -1508,10 +1705,13 @@ app.post("/api/ask-ai", async (req, res) => {
       title || article?.title || "Untitled story from NotifAi News";
     const articleSummary = article?.summary || "";
     const cat = article?.category || "";
-    const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
-    const lang = langForRegion(regionCode || "us");
+const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
+const fallbackLang = langForRegion(regionCode || "us");
 
-    const system = personaChatSystem(persona, lang);
+// IMPORTANT: user-selected language overrides region language
+const lang = getRequestedLang(req, fallbackLang);
+
+const system = personaChatSystem(persona, lang);
 
     const userPrompt = `
 Story title: ${articleTitle}
