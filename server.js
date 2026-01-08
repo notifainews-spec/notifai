@@ -1499,48 +1499,45 @@ app.get("/api/selftest", (req, res) => {
   });
 });
 
-// region query: ?region=us|cn|pk|id|uk&lang=en|ur|ar|...
-app.get("/api/articles", async (req, res) => {
-  try {
-    const region = String(req.query.region || "us").toLowerCase();
-    const category = String(req.query.category || "all").toLowerCase();
-    const lang = String(req.query.lang || "en").toLowerCase();
+// region query: ?region=us|cn|pk|id|uk|ng
+app.get("/api/articles", (req, res) => {
+  const region = String(req.query.region || "us").toLowerCase();
+  const reg = REGIONS.includes(region) ? region : "us";
+  const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY || 12), 10);
 
-    let ref = db.collection("articles");
-    if (region) ref = ref.where("region", "==", region);
-    if (category && category !== "all") ref = ref.where("category", "==", category);
+  const toTime = (o) => {
+    const p = o?.publishedAt ? Date.parse(o.publishedAt) : NaN;
+    const c = o?.createdAt ? Date.parse(o.createdAt) : NaN;
+    if (!Number.isNaN(p)) return p;
+    if (!Number.isNaN(c)) return c;
+    return 0;
+  };
 
-    const snap = await ref.orderBy("createdAt", "desc").limit(60).get();
+  const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
 
-    const out = [];
-    for (const doc of snap.docs) {
-      const a = doc.data();
-      const base = {
-        id: doc.id,
-        title: a.title || "",
-        summary: a.summary || "",
-        category: a.category || "",
-        source: a.source || "",
-        url: a.url || "",
-        imageUrl: a.imageUrl || "",
-        createdAt: a.createdAt || null,
-        region: a.region || region,
-      };
+  // Map stored categories into the 5 lanes the UI expects
+  const out = { us: [], entertainment: [], finance: [], world: [], crypto: [] };
 
-      // IMPORTANT: translate only if not English; server-side caching should be used
-      if (lang && lang !== "en") {
-        const translated = await translateArticleForLang(db, lang, base);
-        out.push(translated);
-      } else {
-        out.push(base);
-      }
+  for (const a of all) {
+    if (a.category === "world") {
+      if (out.world.length < limit) out.world.push(a);
+      continue;
+    }
+    if (a.category === "crypto") {
+      if (out.crypto.length < limit) out.crypto.push(a);
+      continue;
     }
 
-    res.json({ ok: true, articles: out });
-  } catch (e) {
-    console.error("GET /api/articles error", e);
-    res.status(500).json({ ok: false, error: "Failed to load articles" });
+    const [catRegion, lane] = String(a.category || "").split(":");
+    if (!catRegion || !lane) continue;
+    if (catRegion !== reg) continue;
+
+    if (lane === "politics" && out.us.length < limit) out.us.push(a);
+    if (lane === "finance" && out.finance.length < limit) out.finance.push(a);
+    if (lane === "entertainment" && out.entertainment.length < limit) out.entertainment.push(a);
   }
+
+  res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
 });
 
 app.post("/api/translate-ui", async (req, res) => {
