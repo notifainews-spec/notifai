@@ -7,9 +7,12 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@google-cloud/translate": "^9.3.0",
     "cheerio": "^1.1.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
+    "expo-localization": "^17.0.8",
+    "expo-updates": "^29.0.15",
     "express": "^4.19.2",
     "express-rate-limit": "^8.2.1",
     "firebase-admin": "^12.7.0",
