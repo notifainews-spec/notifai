@@ -1529,7 +1529,7 @@ app.get("/api/articles", async (req, res) => {
 
       // IMPORTANT: translate only if not English; server-side caching should be used
       if (lang && lang !== "en") {
-        const translated = await translateArticleForLang(base, lang);
+        const translated = await translateArticleForLang(db, lang, base);
         out.push(translated);
       } else {
         out.push(base);
