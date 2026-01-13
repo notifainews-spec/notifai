@@ -1,24 +1,38 @@
 {
-  "name": "notifai-news-openai",
-  "version": "1.0.0",
+  "name": "notifai-news-server",
+  "version": "2.0.0",
+  "description": "Secured NotifAi News API Server with authentication and abuse prevention",
   "type": "module",
-  "description": "Notifai — AI summaries with three hardline personas (Jessica Rebella, John Davis, Joe Musk).",
+  "main": "server-fixed.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server-fixed.js",
+    "dev": "nodemon server-fixed.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [
+    "news",
+    "api",
+    "rewards",
+    "ai"
+  ],
+  "author": "NotifAi Team",
+  "license": "MIT",
   "dependencies": {
-    "@google-cloud/translate": "^9.3.0",
-    "cheerio": "^1.1.2",
+    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "expo-localization": "^17.0.8",
-    "expo-updates": "^29.0.15",
-    "express": "^4.19.2",
-    "express-rate-limit": "^8.2.1",
-    "firebase-admin": "^12.7.0",
-    "nanoid": "^5.1.6",
-    "node-fetch": "^3.3.2",
-    "openai": "^4.58.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "firebase-admin": "^12.0.0",
+    "helmet": "^7.2.0",
+    "nanoid": "^5.0.4",
+    "openai": "^4.20.1",
     "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
