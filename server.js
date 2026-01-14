@@ -238,10 +238,18 @@ async function optionalAuth(req, res, next) {
 }
 
 /**
- * TEMPORARY BACKWARD COMPATIBILITY MIDDLEWARE
- * Allows userId from request body ONLY if authentication is not provided
- * This is a temporary solution while the app is being updated
- * 
+ *     // TEMPORARY: Allow userId from body (POST) OR query params (GET)
+    if (allowLegacy) {
+      // Check body first (POST/PUT requests)
+      let legacyUserId = req.body && req.body.userId ? sanitizeUserId(req.body.userId) : null;
+      
+      // If not in body, check query params (GET requests)
+      if (!legacyUserId && req.query && req.query.userId) {
+        legacyUserId = sanitizeUserId(req.query.userId);
+      }
+      
+      const legacyUserId = legacyUserId;
+
  * ⚠️ WARNING: This reduces security! Remove after app is updated!
  * Set ALLOW_LEGACY_AUTH=false in environment to disable
  */
@@ -262,22 +270,26 @@ async function backwardCompatibleAuth(req, res, next) {
       return next();
     }
     
-    // TEMPORARY: Allow userId from body if legacy mode is enabled
-    if (allowLegacy && req.body && req.body.userId) {
-      const legacyUserId = sanitizeUserId(req.body.userId);
+    // TEMPORARY: Allow userId from body (POST) OR query params (GET)
+    if (allowLegacy) {
+      let legacyUserId = req.body && req.body.userId ? sanitizeUserId(req.body.userId) : null;
+      
+      if (!legacyUserId && req.query && req.query.userId) {
+        legacyUserId = sanitizeUserId(req.query.userId);
+      }
+      
       if (legacyUserId) {
         req.userId = legacyUserId;
         req.isAuthenticatedUser = false;
-        console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication (no token)`);
+        console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication`);
         return next();
       }
     }
     
-    // If no auth and no legacy userId, reject
     return res.status(401).json({ 
       ok: false, 
       error: 'Authentication required',
-      hint: 'Please update your app or include userId in request body (legacy mode)'
+      hint: 'Include userId in body (POST) or query (GET)'
     });
   } catch (error) {
     console.error('Auth error:', error.message);
