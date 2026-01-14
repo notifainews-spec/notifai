@@ -270,21 +270,43 @@ async function backwardCompatibleAuth(req, res, next) {
       return next();
     }
     
-    // TEMPORARY: Allow userId from body (POST) OR query params (GET)
-    if (allowLegacy) {
-      let legacyUserId = req.body && req.body.userId ? sanitizeUserId(req.body.userId) : null;
-      
-      if (!legacyUserId && req.query && req.query.userId) {
-        legacyUserId = sanitizeUserId(req.query.userId);
-      }
-      
-      if (legacyUserId) {
-        req.userId = legacyUserId;
-        req.isAuthenticatedUser = false;
-        console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication`);
-        return next();
-      }
-    }
+    // If Firebase Admin isn't initialized, token verification will always fail.
+// Allow legacy auth only (or return a clear error).
+if (!admin.apps.length) {
+  if (!allowLegacy) {
+    return res.status(503).json({ ok: false, error: "Auth not configured (Firebase Admin not initialized)" });
+  }
+  const legacyCandidate =
+    req.body?.userId ||
+    req.query?.userId ||
+    req.headers["x-user-id"];
+
+  const legacyUserId = sanitizeUserId(String(legacyCandidate || ""));
+  if (legacyUserId) {
+    req.userId = legacyUserId;
+    req.isAuthenticatedUser = false;
+    console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication (no Firebase Admin)`);
+    return next();
+  }
+
+  return res.status(401).json({ ok: false, error: "Authentication required", hint: "Provide x-user-id (legacy) or enable Firebase Admin" });
+}
+
+// TEMPORARY: Allow userId from body/query/header (legacy)
+if (allowLegacy) {
+  const legacyCandidate =
+    req.body?.userId ||
+    req.query?.userId ||
+    req.headers["x-user-id"];
+
+  const legacyUserId = sanitizeUserId(String(legacyCandidate || ""));
+  if (legacyUserId) {
+    req.userId = legacyUserId;
+    req.isAuthenticatedUser = false;
+    console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication`);
+    return next();
+  }
+}
     
     return res.status(401).json({ 
       ok: false, 
@@ -562,7 +584,15 @@ async function translateTextCached(db, targetLang, text) {
     return fromFs;
   }
 
-  const translated = await googleTranslateText(raw, target);
+  let translated = raw;
+try {
+  translated = await googleTranslateText(raw, target);
+} catch (e) {
+  // Fail-open: if translation is unavailable (missing key / quota / network),
+  // return original text so stories still load.
+  console.warn("[Translate] Fallback to original text:", e?.message || e);
+  translated = raw;
+}
 
   TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
   await firestoreSetTranslation(db, key, translated);
