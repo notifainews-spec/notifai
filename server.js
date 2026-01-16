@@ -12,7 +12,10 @@ import admin from "firebase-admin";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import crypto from "crypto";
-import compression from "compression";
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
+
+const gzipAsync = promisify(gzip);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,14 +76,41 @@ app.use(helmet({
 app.use(express.json({ limit: '1mb' })); // Limit request body size
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Response compression to reduce bandwidth usage
-app.use(compression({
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) return false;
-    return compression.filter(req, res);
-  },
-  level: 6 // Balance between compression ratio and CPU usage
-}));
+// Custom gzip compression middleware (no external dependencies needed)
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  const originalJson = res.json;
+  
+  // Check if client accepts gzip
+  const acceptsGzip = req.headers['accept-encoding']?.includes('gzip');
+  
+  if (!acceptsGzip || req.headers['x-no-compression']) {
+    return next();
+  }
+  
+  // Override res.json to compress
+  res.json = async function(body) {
+    const jsonStr = JSON.stringify(body);
+    
+    // Only compress if response is larger than 1KB
+    if (jsonStr.length > 1024) {
+      try {
+        const compressed = await gzipAsync(Buffer.from(jsonStr));
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Vary', 'Accept-Encoding');
+        return originalSend.call(res, compressed);
+      } catch (err) {
+        // If compression fails, send uncompressed
+        return originalJson.call(res, body);
+      }
+    }
+    
+    return originalJson.call(res, body);
+  };
+  
+  next();
+});
 
 // Trust proxy for correct IP detection (Render, Cloudflare, etc.)
 app.set("trust proxy", 1);
