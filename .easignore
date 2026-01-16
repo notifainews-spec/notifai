@@ -1,102 +1,25 @@
-# .easignore - Exclude unnecessary files from EAS builds
-# This should reduce your 410 MB archive significantly
+# .easignore - CONSERVATIVE version (only excludes 100% safe items)
+# This version is extremely safe and only excludes files that are 
+# GUARANTEED to be regenerated during the build process
 
-# Node modules (will be reinstalled during build)
+# Node modules - Always reinstalled from package.json
 node_modules/
 
-# iOS build artifacts
+# iOS Pods - Always reinstalled from Podfile
 ios/Pods/
-ios/build/
-ios/*.xcworkspace/xcuserdata/
-ios/*.xcodeproj/xcuserdata/
-ios/*.xcodeproj/project.xcworkspace/xcuserdata/
-ios/Podfile.lock
 
-# Android build artifacts
-android/.gradle/
+# Expo cache - Always regenerated
+.expo/
+
+# Build output directories - Always regenerated
 android/app/build/
 android/build/
-android/.idea/
-android/local.properties
-android/*.iml
-android/*.hprof
+ios/build/
 
-# Build outputs
-dist/
-build/
+# Log files - Never needed for builds
 *.log
-*.logs
-
-# Cache directories
-.expo/
-.expo-shared/
-*.expo/
-**/.expo/
-
-# Git
-.git/
-.gitignore
-
-# Development files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Testing
-coverage/
-.nyc_output/
-__tests__/
-**/__tests__/
-*.test.js
-*.spec.js
-
-# Documentation (not needed in build)
-*.md
-docs/
-README.md
-CHANGELOG.md
-LICENSE
-
-# Environment examples (keep .env but ignore examples)
-.env.example
-.env.local
-.env.development
-.env.test
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-
-# Editor files
-.prettierrc
-.eslintrc*
-.babelrc
-tsconfig.json
-
-# Yarn/npm
-yarn-error.log
 npm-debug.log*
-package-lock.json
-yarn.lock
+yarn-debug.log*
+yarn-error.log*
 
-# Expo web
-web-build/
-
-# Source maps (huge files, not needed)
-*.map
-
-# Assets that might be duplicates or unused
-# (Be careful with this - only add if you're sure)
-# assets/unused/
-
-# Scripts not needed for build
-scripts/
-
-# Any backup files
-*.backup
-*.bak
-*.orig
+# That's it! Only the absolute safest exclusions.
