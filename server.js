@@ -293,13 +293,19 @@ async function backwardCompatibleAuth(req, res, next) {
     
     // Try to use auth token first (preferred method)
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split('Bearer ')[1];
-      const decodedToken = await admin.auth().verifyIdToken(token);
-      req.userId = decodedToken.uid;
-      req.userEmail = decodedToken.email || null;
-      req.isAuthenticatedUser = true;
-      console.log(`[AUTH] User authenticated with token: ${req.userId}`);
-      return next();
+      try {
+        const token = authHeader.split('Bearer ')[1];
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        req.userId = decodedToken.uid;
+        req.userEmail = decodedToken.email || null;
+        req.isAuthenticatedUser = true;
+        console.log(`[AUTH] User authenticated with token: ${req.userId}`);
+        return next();
+      } catch (tokenError) {
+        // Firebase token verification failed (could be China blocking Firebase)
+        // Fall through to legacy auth method instead of rejecting
+        console.log(`[AUTH] Token verification failed: ${tokenError.code || tokenError.message}. Trying legacy auth...`);
+      }
     }
     
     // TEMPORARY: Allow userId from body if legacy mode is enabled
@@ -309,6 +315,17 @@ async function backwardCompatibleAuth(req, res, next) {
         req.userId = legacyUserId;
         req.isAuthenticatedUser = false;
         console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication (no token)`);
+        return next();
+      }
+    }
+    
+    // Also check query params for userId (for GET requests like /api/rewards/me?userId=xxx)
+    if (allowLegacy && req.query && req.query.userId) {
+      const legacyUserId = sanitizeUserId(req.query.userId);
+      if (legacyUserId) {
+        req.userId = legacyUserId;
+        req.isAuthenticatedUser = false;
+        console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication from query (no token)`);
         return next();
       }
     }
@@ -799,8 +816,8 @@ async function ensureWeek(docRef, data) {
     updates.weeklySeconds = 0;
     updates.tokensThisWeek = 0;
     updates.tokensLastWeek = lastWeekTokens;
-    updates.invitesCompleted = 0;
-    updates.invitesStarted = 0;
+    // REMOVED: Do NOT reset invites - they should persist permanently
+    // invitesCompleted and invitesStarted stay as-is
   }
 
   // Check if day has changed
