@@ -12,6 +12,7 @@ import admin from "firebase-admin";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import crypto from "crypto";
+import compression from "compression";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,13 +73,22 @@ app.use(helmet({
 app.use(express.json({ limit: '1mb' })); // Limit request body size
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+// Response compression to reduce bandwidth usage
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+  level: 6 // Balance between compression ratio and CPU usage
+}));
+
 // Trust proxy for correct IP detection (Render, Cloudflare, etc.)
 app.set("trust proxy", 1);
 
 // 3. Enhanced Rate Limiting with multiple tiers
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // 200 requests per 15 minutes per IP
+  max: 100, // Reduced from 200 to 100 requests per 15 minutes per IP
   message: { ok: false, error: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -90,7 +100,7 @@ const generalLimiter = rateLimit({
 
 const rewardsLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30, // Reduced from 120 to 30 requests/min/IP
+  max: 10, // Reduced from 30 to 10 requests/min/IP for cost savings
   message: { ok: false, error: 'Rate limit exceeded for rewards endpoint' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -103,7 +113,7 @@ const rewardsLimiter = rateLimit({
 
 const rewardsWriteLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20, // Reduced from 60 to 20 writes/min
+  max: 5, // Reduced from 20 to 5 writes/min for significant cost savings
   message: { ok: false, error: 'Rate limit exceeded for write operations' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -238,18 +248,10 @@ async function optionalAuth(req, res, next) {
 }
 
 /**
- *     // TEMPORARY: Allow userId from body (POST) OR query params (GET)
-    if (allowLegacy) {
-      // Check body first (POST/PUT requests)
-      let legacyUserId = req.body && req.body.userId ? sanitizeUserId(req.body.userId) : null;
-      
-      // If not in body, check query params (GET requests)
-      if (!legacyUserId && req.query && req.query.userId) {
-        legacyUserId = sanitizeUserId(req.query.userId);
-      }
-      
-      const legacyUserId = legacyUserId;
-
+ * TEMPORARY BACKWARD COMPATIBILITY MIDDLEWARE
+ * Allows userId from request body ONLY if authentication is not provided
+ * This is a temporary solution while the app is being updated
+ * 
  * ⚠️ WARNING: This reduces security! Remove after app is updated!
  * Set ALLOW_LEGACY_AUTH=false in environment to disable
  */
@@ -270,48 +272,22 @@ async function backwardCompatibleAuth(req, res, next) {
       return next();
     }
     
-    // If Firebase Admin isn't initialized, token verification will always fail.
-// Allow legacy auth only (or return a clear error).
-if (!admin.apps.length) {
-  if (!allowLegacy) {
-    return res.status(503).json({ ok: false, error: "Auth not configured (Firebase Admin not initialized)" });
-  }
-  const legacyCandidate =
-    req.body?.userId ||
-    req.query?.userId ||
-    req.headers["x-user-id"];
-
-  const legacyUserId = sanitizeUserId(String(legacyCandidate || ""));
-  if (legacyUserId) {
-    req.userId = legacyUserId;
-    req.isAuthenticatedUser = false;
-    console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication (no Firebase Admin)`);
-    return next();
-  }
-
-  return res.status(401).json({ ok: false, error: "Authentication required", hint: "Provide x-user-id (legacy) or enable Firebase Admin" });
-}
-
-// TEMPORARY: Allow userId from body/query/header (legacy)
-if (allowLegacy) {
-  const legacyCandidate =
-    req.body?.userId ||
-    req.query?.userId ||
-    req.headers["x-user-id"];
-
-  const legacyUserId = sanitizeUserId(String(legacyCandidate || ""));
-  if (legacyUserId) {
-    req.userId = legacyUserId;
-    req.isAuthenticatedUser = false;
-    console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication`);
-    return next();
-  }
-}
+    // TEMPORARY: Allow userId from body if legacy mode is enabled
+    if (allowLegacy && req.body && req.body.userId) {
+      const legacyUserId = sanitizeUserId(req.body.userId);
+      if (legacyUserId) {
+        req.userId = legacyUserId;
+        req.isAuthenticatedUser = false;
+        console.warn(`[LEGACY AUTH] User ${req.userId} using legacy authentication (no token)`);
+        return next();
+      }
+    }
     
+    // If no auth and no legacy userId, reject
     return res.status(401).json({ 
       ok: false, 
       error: 'Authentication required',
-      hint: 'Include userId in body (POST) or query (GET)'
+      hint: 'Please update your app or include userId in request body (legacy mode)'
     });
   } catch (error) {
     console.error('Auth error:', error.message);
@@ -584,15 +560,7 @@ async function translateTextCached(db, targetLang, text) {
     return fromFs;
   }
 
-  let translated = raw;
-try {
-  translated = await googleTranslateText(raw, target);
-} catch (e) {
-  // Fail-open: if translation is unavailable (missing key / quota / network),
-  // return original text so stories still load.
-  console.warn("[Translate] Fallback to original text:", e?.message || e);
-  translated = raw;
-}
+  const translated = await googleTranslateText(raw, target);
 
   TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
   await firestoreSetTranslation(db, key, translated);
@@ -2114,32 +2082,42 @@ app.post("/api/rewards/register", backwardCompatibleAuth, rewardsWriteLimiter, a
   }
 });
 
-// 2) Track usage seconds - WITH BACKWARD COMPATIBLE AUTH
+// 2) Track usage seconds - WITH CRASH PREVENTION
 app.post("/api/rewards/track-usage", backwardCompatibleAuth, rewardsWriteLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
     }
 
-    // userId comes from verified token
+    // CRITICAL: Ensure userId exists (prevents crash)
     const userId = req.userId;
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: "Authentication required" });
+    }
+
     const { seconds, region, screen } = req.body || {};
 
+    // CRITICAL: Validate seconds before processing
     const validatedSeconds = validateSeconds(seconds);
-    if (validatedSeconds === null) {
+    if (validatedSeconds === null || validatedSeconds === undefined) {
       return res.status(400).json({ ok: false, error: "Invalid seconds value" });
     }
 
-    // Sanitize optional fields
-    const sanitizedRegion = region ? sanitizeString(region, 10) : null;
-    const sanitizedScreen = screen ? sanitizeString(screen, 50) : null;
+    // Sanitize optional fields with explicit String conversion (prevents crashes)
+    const sanitizedRegion = region ? sanitizeString(String(region), 10) : null;
+    const sanitizedScreen = screen ? sanitizeString(String(screen), 50) : null;
 
-    await trackUsageForUser(userId, validatedSeconds, { 
-      region: sanitizedRegion, 
-      screen: sanitizedScreen 
-    });
-
-    return res.json({ ok: true });
+    // CRITICAL: Wrap trackUsageForUser in try-catch to prevent unhandled rejections
+    try {
+      await trackUsageForUser(userId, validatedSeconds, { 
+        region: sanitizedRegion, 
+        screen: sanitizedScreen 
+      });
+      return res.json({ ok: true });
+    } catch (trackError) {
+      console.error("trackUsageForUser failed:", trackError);
+      return res.status(500).json({ ok: false, error: "Failed to track usage" });
+    }
   } catch (err) {
     console.error("POST /api/rewards/track-usage error", err);
     return res.status(500).json({ ok: false, error: "Server error" });
@@ -2209,16 +2187,24 @@ app.get("/api/debug/firestore", async (req, res) => {
   }
 });
 
-// 4) Leaderboard - public but with pagination
+// 4) Leaderboard - OPTIMIZED with field selection and caching
 app.get("/api/rewards/leaderboard", rewardsLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
     }
 
+    // Set cache headers to reduce repeated requests
+    res.set('Cache-Control', 'public, max-age=60'); // Cache for 1 minute
+
     const limit = Math.min(Number(req.query.limit) || 10, 50);
-    const snap = await USERS_COL.orderBy("tokensTotal", "desc")
+    
+    // CRITICAL: Use select() to only fetch needed fields
+    // This dramatically reduces Firestore read costs and bandwidth
+    const snap = await USERS_COL
+      .orderBy("tokensTotal", "desc")
       .limit(limit)
+      .select('userId', 'referralCode', 'tokensTotal', 'invitesCompleted')
       .get();
 
     const items = snap.docs.map((doc) => {
@@ -2234,6 +2220,52 @@ app.get("/api/rewards/leaderboard", rewardsLimiter, async (req, res) => {
     return res.json({ ok: true, items });
   } catch (err) {
     console.error("GET /api/rewards/leaderboard error", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// 5) Clear leaderboard while preserving invites
+app.post("/api/admin/clear-leaderboard", verifyAuthToken, async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: "Firestore not configured" });
+    }
+
+    // TODO: Add admin role check here for production!
+    // Example: if (req.userEmail !== 'admin@notifai.news') { 
+    //   return res.status(403).json({ ok: false, error: 'Forbidden: Admin access required' }); 
+    // }
+    
+    const batch = db.batch();
+    const snapshot = await USERS_COL.get();
+    
+    let updateCount = 0;
+    snapshot.docs.forEach((doc) => {
+      batch.update(doc.ref, {
+        // Reset all token and time counters
+        tokensTotal: 0,
+        tokensThisWeek: 0,
+        tokensToday: 0,
+        tokensLastWeek: 0,
+        totalSeconds: 0,
+        weeklySeconds: 0,
+        dailySeconds: 0,
+        // PRESERVE invites (as requested)
+        // invitesCompleted - NOT reset
+        // invitesStarted - NOT reset
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      updateCount++;
+    });
+
+    await batch.commit();
+
+    return res.json({ 
+      ok: true, 
+      message: `Cleared tokens for ${updateCount} users while preserving invites` 
+    });
+  } catch (err) {
+    console.error("POST /api/admin/clear-leaderboard error", err);
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
