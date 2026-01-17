@@ -2034,15 +2034,24 @@ app.get('/share/:id', (req, res) => {
 --------------------------------------------------------- */
 
 // 1) Register / update user profile - WITH BACKWARD COMPATIBLE AUTH
-app.post("/api/rewards/register", backwardCompatibleAuth, rewardsWriteLimiter, async (req, res) => {
+app.post("/api/rewards/register", rewardsWriteLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
     }
 
-    // userId comes from verified token, not from request body
-    const userId = req.userId;
-    const { walletAddress, invitedByCode } = req.body || {};
+    // Get userId directly from request body
+    const { userId, walletAddress, invitedByCode } = req.body || {};
+    
+    // Validate userId
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: "Missing userId" });
+    }
+    
+    const sanitizedUserId = sanitizeUserId(userId);
+    if (!sanitizedUserId) {
+      return res.status(400).json({ ok: false, error: "Invalid userId format" });
+    }
 
     // Validate wallet if provided
     const sanitizedWallet = walletAddress ? sanitizeWalletAddress(walletAddress) : null;
@@ -2050,7 +2059,7 @@ app.post("/api/rewards/register", backwardCompatibleAuth, rewardsWriteLimiter, a
       return res.status(400).json({ ok: false, error: "Invalid wallet address format" });
     }
 
-    const { ref, data } = await getOrCreateUser(userId);
+    const { ref, data } = await getOrCreateUser(sanitizedUserId);
     const ensured = await ensureWeek(ref, data);
 
     const updates = {
@@ -2086,7 +2095,7 @@ app.post("/api/rewards/register", backwardCompatibleAuth, rewardsWriteLimiter, a
           const inviterUserId = inviterDoc.id;
           
           // Prevent self-referral
-          if (inviterUserId === userId) {
+          if (inviterUserId === sanitizedUserId) {
             return res.status(400).json({ ok: false, error: "Cannot refer yourself" });
           }
 
