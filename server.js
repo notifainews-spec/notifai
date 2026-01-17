@@ -2129,20 +2129,25 @@ app.post("/api/rewards/register", backwardCompatibleAuth, rewardsWriteLimiter, a
   }
 });
 
-// 2) Track usage seconds - WITH CRASH PREVENTION
-app.post("/api/rewards/track-usage", backwardCompatibleAuth, rewardsWriteLimiter, async (req, res) => {
+// 2) Track usage seconds - NO AUTH (works in China like old server)
+app.post("/api/rewards/track-usage", rewardsWriteLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
     }
 
-    // CRITICAL: Ensure userId exists (prevents crash)
-    const userId = req.userId;
+    // Get userId from request body (like old server)
+    const { userId, seconds, region, screen } = req.body || {};
+    
     if (!userId) {
-      return res.status(401).json({ ok: false, error: "Authentication required" });
+      return res.status(400).json({ ok: false, error: "Missing userId" });
     }
 
-    const { seconds, region, screen } = req.body || {};
+    // Sanitize userId to prevent injection
+    const sanitizedUserId = sanitizeUserId(userId);
+    if (!sanitizedUserId) {
+      return res.status(400).json({ ok: false, error: "Invalid userId format" });
+    }
 
     // CRITICAL: Validate seconds before processing
     const validatedSeconds = validateSeconds(seconds);
@@ -2156,7 +2161,7 @@ app.post("/api/rewards/track-usage", backwardCompatibleAuth, rewardsWriteLimiter
 
     // CRITICAL: Wrap trackUsageForUser in try-catch to prevent unhandled rejections
     try {
-      await trackUsageForUser(userId, validatedSeconds, { 
+      await trackUsageForUser(sanitizedUserId, validatedSeconds, { 
         region: sanitizedRegion, 
         screen: sanitizedScreen 
       });
@@ -2171,17 +2176,26 @@ app.post("/api/rewards/track-usage", backwardCompatibleAuth, rewardsWriteLimiter
   }
 });
 
-// 3) Get current user's rewards dashboard - WITH BACKWARD COMPATIBLE AUTH
-app.get("/api/rewards/me", backwardCompatibleAuth, rewardsLimiter, async (req, res) => {
+// 3) Get current user's rewards dashboard - NO AUTH (works in China like old server)
+app.get("/api/rewards/me", rewardsLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
     }
 
-    // userId comes from either verified token OR legacy request (see backwardCompatibleAuth)
-    const userId = req.userId;
+    // Get userId from query params (like old server)
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: "Missing userId" });
+    }
 
-    const { ref, data } = await getOrCreateUser(userId);
+    // Sanitize userId
+    const sanitizedUserId = sanitizeUserId(userId);
+    if (!sanitizedUserId) {
+      return res.status(400).json({ ok: false, error: "Invalid userId format" });
+    }
+
+    const { ref, data } = await getOrCreateUser(sanitizedUserId);
     const ensured = await ensureWeek(ref, data);
 
     return res.json({
