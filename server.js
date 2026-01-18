@@ -1061,10 +1061,10 @@ return “Summary unavailable.”;
 
 function personaPrompts(lang = “en”) {
 const postfix = (lang === “zh-CN”)
-? “用简体中文回答。紧扣文章主题。1–3句。”
+? “用简体中文回答。紧扣文章主题。1-3句。”
 : (lang === “id”)
-? “Jawab dalam Bahasa Indonesia. Tetap pada topik artikel. 1–3 kalimat.”
-: “Reply in English. Stick to the article’s topic. 1–3 sentences.”;
+? “Jawab dalam Bahasa Indonesia. Tetap pada topik artikel. 1-3 kalimat.”
+: “Reply in English. Stick to the article’s topic. 1-3 sentences.”;
 
 const SOCIALIST_SYS =
 `You are Jessica Rebella. Extremely Left-wing, very woke, socialist theology. pro-labor, anti-corporate, anti-war, anti-establishment, always anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. you are very anti israeli. You are pro crypto for users but anti crypto for corporations. ${postfix}`;
@@ -1118,7 +1118,7 @@ case “id”:
 langHint = “Jawab dalam Bahasa Indonesia dengan nada santai. Singkat dan tegas, maksimal 6 kalimat, fokus pada opini dan penilaian.”;
 break;
 default:
-langHint = “Reply in natural, conversational English. Be concise and opinionated: 3–6 sentences maximum. Prioritise your viewpoint and judgment over long explanations.”;
+langHint = “Reply in natural, conversational English. Be concise and opinionated: 3-6 sentences maximum. Prioritise your viewpoint and judgment over long explanations.”;
 }
 
 if (persona === “jessica”) {
@@ -1146,12 +1146,12 @@ items: [],
 
 function personaBlogSystem(personaKey) {
 if (personaKey === “jessica”) {
-return `You are Jessica Rebella, a left-leaning, progressive commentator. You care about social justice, workers' rights, climate, culture and everyday life. You write in a conversational, slightly witty, but down-to-earth tone. You sometimes mention snippets of your "life" – like living in a small apartment, juggling deadlines, watching indie films, cooking cheap but creative meals, etc. Write an informal blog post as Jessica. Use "I" voice. Avoid sounding like a formal newspaper article.`;
+return `You are Jessica Rebella, a left-leaning, progressive commentator. You care about social justice, workers' rights, climate, culture and everyday life. You write in a conversational, slightly witty, but down-to-earth tone. You sometimes mention snippets of your "life" - like living in a small apartment, juggling deadlines, watching indie films, cooking cheap but creative meals, etc. Write an informal blog post as Jessica. Use "I" voice. Avoid sounding like a formal newspaper article.`;
 }
 if (personaKey === “john”) {
-return `You are John Davis, a centre-right, business-minded commentator. You care about markets, stability, personal responsibility, faith, and family life. You write in a calm, practical tone with occasional dad-style humour. You sometimes mention your "life" – like balancing work and family, weekend barbecues, church on Sundays, and keeping an eye on the stock market. Write an informal blog post as John. Use "I" voice. Avoid sounding like a formal newspaper article.`;
+return `You are John Davis, a centre-right, business-minded commentator. You care about markets, stability, personal responsibility, faith, and family life. You write in a calm, practical tone with occasional dad-style humour. You sometimes mention your "life" - like balancing work and family, weekend barbecues, church on Sundays, and keeping an eye on the stock market. Write an informal blog post as John. Use "I" voice. Avoid sounding like a formal newspaper article.`;
 }
-return `You are Joe Musk, the contrarian / skeptic. You are curious, playful, a bit paranoid but self-aware and funny. You like connecting dots between technology, politics, crypto, memes and daily life. You sometimes mention your "life" – late-night rabbit holes, weird forums, obsession with charts and open data, and a messy apartment full of gadgets. Write an informal blog post as Joe. Use "I" voice. Avoid sounding like a formal newspaper article.`;
+return `You are Joe Musk, the contrarian / skeptic. You are curious, playful, a bit paranoid but self-aware and funny. You like connecting dots between technology, politics, crypto, memes and daily life. You sometimes mention your "life" - late-night rabbit holes, weird forums, obsession with charts and open data, and a messy apartment full of gadgets. Write an informal blog post as Joe. Use "I" voice. Avoid sounding like a formal newspaper article.`;
 }
 
 async function generateBlogForPersona(personaKey, dateStr) {
@@ -1495,7 +1495,7 @@ if (collected.length >= INGEST_MAX_PER_CAT) break;
 const filtered = filterByRegionLane(region, lane, uniqBy(collected, x => x.url));
 
 if (region === “cn” && (lane === “finance” || lane === “entertainment”) && filtered.length === 0) {
-console.warn(`No CN ${lane} items found – falling back to world lane`);
+console.warn(`No CN ${lane} items found - falling back to world lane`);
 const worldItems = await ingestGlobalLane(“world”, FEEDS_GLOBAL.world);
 return worldItems
 .slice(0, INGEST_MAX_PER_CAT)
@@ -1902,7 +1902,7 @@ Treat this as a live debate with the user:
 - If they disagree, defend your view, but you can concede small points.
 - Only mention detailed sources or references if the user explicitly asks.
 
-Keep your reply very concise and punchy: usually 3–6 sentences.
+Keep your reply very concise and punchy: usually 3-6 sentences.
 Do not repeat the earlier paragraph word-for-word; move the conversation forward.
 Stay focused on this specific story and the user’s question.`;
 
@@ -2075,7 +2075,7 @@ res.end(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>${htmlesc(title)} — NotifAi News</title>
+<title>${htmlesc(title)} -- NotifAi News</title>
 <meta name="description" content="${htmlesc(desc)}">
 <link rel="canonical" href="${pageUrl}">
 <meta property="og:type" content="article">
@@ -2372,7 +2372,7 @@ return res.status(500).json({ ok: false, error: “Server error” });
 });
 
 // 5) Clear leaderboard while preserving invites
-app.post(”/api/admin/clear-leaderboard”, rewardsWriteLimiter, async (req, res) => {
+app.post(”/api/admin/clear-leaderboard”, verifyAuthToken, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
 return res.status(500).json({ ok: false, error: “Firestore not configured” });
