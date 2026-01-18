@@ -2090,7 +2090,7 @@ res.end(`<!doctype html>
 <meta name="twitter:image" content="${ogImg}">
 <meta http-equiv="refresh" content="0; url=${pageUrl}">
 </head>
-<body><p>Redirecting to <a href="${pageUrl}">article</a>…</p></body>
+<body><p>Redirecting to <a href="${pageUrl}">article</a>...</p></body>
 </html>`);
 });
 
@@ -2475,7 +2475,7 @@ console.log(`Auto-ingest interval set to ${INGEST_MINUTES} minute(s).`);
 if (INGEST_MINUTES > 0) {
   setInterval(() => {
     console.time("auto-ingest");
-    console.log("Auto-ingest tick…");
+    console.log("Auto-ingest tick...");
     ingestOnce()
       .then(() => console.timeEnd("auto-ingest"))
       .catch((err) =>
