@@ -309,20 +309,53 @@ async function googleTranslateText(text, target) {
     format: "text",
   };
 
-  const res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const maxRetries = 3;
+  let lastError;
 
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`Translate HTTP ${res.status}: ${t.slice(0, 250)}`);
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const res = await fetch(
+        `https://translation.googleapis.com/language/translate/v2?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        
+        // If rate limited, wait and retry
+        if (res.status === 403 && (t.includes("Rate Limit") || t.includes("userRateLimitExceeded"))) {
+          const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000); // 1s, 2s, 4s, max 8s
+          console.warn(`[TRANSLATE] Rate limited, waiting ${waitMs}ms before retry ${attempt + 1}/${maxRetries}`);
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          lastError = new Error(`Translate HTTP ${res.status}: Rate limit exceeded`);
+          continue; // Retry
+        }
+        
+        // Other errors, throw immediately
+        throw new Error(`Translate HTTP ${res.status}: ${t.slice(0, 250)}`);
+      }
+
+      const json = await res.json();
+      const translated = json?.data?.translations?.[0]?.translatedText || "";
+      return translated;
+      
+    } catch (err) {
+      lastError = err;
+      if (err.message && err.message.includes("Rate Limit") && attempt < maxRetries - 1) {
+        const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+        console.warn(`[TRANSLATE] Error, waiting ${waitMs}ms before retry ${attempt + 1}/${maxRetries}:`, err.message);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        continue;
+      }
+      throw err;
+    }
   }
 
-  const json = await res.json();
-  const translated = json?.data?.translations?.[0]?.translatedText || "";
-  return translated;
+  throw lastError;
 }
 
 async function translateTextCached(db, targetLang, text) {
@@ -345,26 +378,55 @@ async function translateTextCached(db, targetLang, text) {
     return fromFs;
   }
 
-  // translate
-  const translated = await googleTranslateText(raw, target);
-
-  TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
-  await firestoreSetTranslation(db, key, translated);
-
-  return translated;
+  // translate with error handling - never crash the server
+  try {
+    const translated = await googleTranslateText(raw, target);
+    TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
+    await firestoreSetTranslation(db, key, translated);
+    return translated;
+  } catch (err) {
+    console.error(`[TRANSLATE] Failed for "${raw.slice(0, 50)}..." to ${target}:`, err.message);
+    // CRITICAL: Return original English text as fallback - don't crash the server
+    return raw;
+  }
 }
 
 async function translateArticleForLang(db, lang, article) {
   if (!article || !lang || lang === "en") return article;
 
-  // Only translate the fields your UI actually displays in lists and article view:
+  // Translate the fields your UI actually displays in lists and article view:
   const title = await translateTextCached(db, lang, article.title || "");
   const summary = await translateTextCached(db, lang, article.summary || "");
+
+  // Translate debate JSON (AI perspectives) if it exists
+  let debateJson = article.debateJson;
+  if (article.debateJson) {
+    try {
+      const debate = JSON.parse(article.debateJson);
+      
+      // Translate each persona's perspective
+      if (debate.socialist?.open) {
+        debate.socialist.open = await translateTextCached(db, lang, debate.socialist.open);
+      }
+      if (debate.rightwing?.open) {
+        debate.rightwing.open = await translateTextCached(db, lang, debate.rightwing.open);
+      }
+      if (debate.conspiracy?.open) {
+        debate.conspiracy.open = await translateTextCached(db, lang, debate.conspiracy.open);
+      }
+      
+      debateJson = JSON.stringify(debate);
+    } catch (e) {
+      console.error("Error translating debate:", e);
+      // Keep original if translation fails
+    }
+  }
 
   return {
     ...article,
     title,
     summary,
+    debateJson,
     // keep url/image/category/publishedAt etc unchanged
   };
 }
@@ -1586,8 +1648,19 @@ app.get("/api/articles", async (req, res) => {
   const out = { us: [], entertainment: [], finance: [], world: [], crypto: [] };
 
   for (const a of all) {
-    // Translate article before adding to feed
-    const translated = lang === "en" ? a : await translateArticleForLang(db, lang, a);
+    // OPTIMIZATION: Only translate title & summary for feed view (not AI perspectives)
+    // AI perspectives will be translated on-demand when user opens the article
+    let translated;
+    if (lang === "en") {
+      translated = a;
+    } else {
+      translated = {
+        ...a,
+        title: await translateTextCached(db, lang, a.title || ""),
+        summary: await translateTextCached(db, lang, a.summary || ""),
+        // debateJson stays in English for now - will translate in /api/article/:id
+      };
+    }
     
     if (translated.category === "world") {
       if (out.world.length < limit) out.world.push(translated);
