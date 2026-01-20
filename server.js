@@ -672,8 +672,6 @@ async function ensureWeek(docRef, data) {
   tokensLastWeek: lastWeekTokens,
 
   // weekly referral counters must reset too
-  invitesCompleted: 0,
-  invitesStarted: 0,
 };
 
   await docRef.update({
@@ -681,9 +679,6 @@ async function ensureWeek(docRef, data) {
   weeklySeconds: 0,
   tokensThisWeek: 0,
   tokensLastWeek: lastWeekTokens,
-
-  invitesCompleted: 0,
-  invitesStarted: 0,
 
   updatedAt: admin.firestore.FieldValue.serverTimestamp(),
 });
@@ -1571,10 +1566,11 @@ app.get("/api/selftest", (req, res) => {
 });
 
 // region query: ?region=us|cn|pk|id|uk|ng
-app.get("/api/articles", (req, res) => {
+app.get("/api/articles", async (req, res) => {
   const region = String(req.query.region || "us").toLowerCase();
   const reg = REGIONS.includes(region) ? region : "us";
   const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY || 12), 10);
+  const lang = normLang(req.query.lang || "en"); // Get language parameter
 
   const toTime = (o) => {
     const p = o?.publishedAt ? Date.parse(o.publishedAt) : NaN;
@@ -1590,22 +1586,25 @@ app.get("/api/articles", (req, res) => {
   const out = { us: [], entertainment: [], finance: [], world: [], crypto: [] };
 
   for (const a of all) {
-    if (a.category === "world") {
-      if (out.world.length < limit) out.world.push(a);
+    // Translate article before adding to feed
+    const translated = lang === "en" ? a : await translateArticleForLang(db, lang, a);
+    
+    if (translated.category === "world") {
+      if (out.world.length < limit) out.world.push(translated);
       continue;
     }
-    if (a.category === "crypto") {
-      if (out.crypto.length < limit) out.crypto.push(a);
+    if (translated.category === "crypto") {
+      if (out.crypto.length < limit) out.crypto.push(translated);
       continue;
     }
 
-    const [catRegion, lane] = String(a.category || "").split(":");
+    const [catRegion, lane] = String(translated.category || "").split(":");
     if (!catRegion || !lane) continue;
     if (catRegion !== reg) continue;
 
-    if (lane === "politics" && out.us.length < limit) out.us.push(a);
-    if (lane === "finance" && out.finance.length < limit) out.finance.push(a);
-    if (lane === "entertainment" && out.entertainment.length < limit) out.entertainment.push(a);
+    if (lane === "politics" && out.us.length < limit) out.us.push(translated);
+    if (lane === "finance" && out.finance.length < limit) out.finance.push(translated);
+    if (lane === "entertainment" && out.entertainment.length < limit) out.entertainment.push(translated);
   }
 
   res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
