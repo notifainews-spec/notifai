@@ -261,6 +261,18 @@ import crypto from "crypto";
 const TRANSLATION_MEM = new Map(); // key -> { text, ts }
 const TRANSLATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+// -------------------- REWARDS CACHE --------------------
+const USER_CACHE = new Map(); // userId -> { data, ts }
+const USER_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
+const REFERRAL_CACHE = new Map(); // userId -> { data, ts }
+const REFERRAL_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
+let leaderboardCache = null;
+let leaderboardCacheTime = 0;
+const LEADERBOARD_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// -------------------- END REWARDS CACHE --------------------
+
 function sha1(s) {
   return crypto.createHash("sha1").update(String(s || ""), "utf8").digest("hex");
 }
@@ -428,6 +440,16 @@ async function translateArticleForLang(db, lang, article) {
     summary,
     debateJson,
     // keep url/image/category/publishedAt etc unchanged
+  };
+}
+
+async function translateBlogForLang(db, lang, blog) {
+  if (!blog || !lang || lang === "en") return blog;
+
+  return {
+    ...blog,
+    title: await translateTextCached(db, lang, blog.title || ""),
+    body: await translateTextCached(db, lang, blog.body || ""),
   };
 }
 
@@ -671,7 +693,7 @@ const MAX_SECONDS_PER_WEEK = 7 * 24 * 60 * 60; // 604,800
 
 // Allow bigger reports, but we'll cap by elapsed time anyway
 const MAX_SECONDS_PER_CALL = 6 * 60 * 60; // up to 6 hours per hit (safe for background/offline)
-const MIN_MS_BETWEEN_CALLS = 30000; // instead of 0
+const MIN_MS_BETWEEN_CALLS = 120000; // 2 minutes (reduces calls by 75%)
 
 /**
  * Create or load a user document in notifaiUsers.
@@ -745,6 +767,10 @@ async function ensureWeek(docRef, data) {
   updatedAt: admin.firestore.FieldValue.serverTimestamp(),
 });
 
+  // Invalidate cache when week changes
+  USER_CACHE.delete(updated.userId);
+  console.log(`[CACHE] Invalidated cache for user ${updated.userId} (week rollover)`);
+
   return updated;
 }
 
@@ -763,19 +789,30 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
 
   const docRef = USERS_COL.doc(userId);
 
-  // 1) Load or create user
-  const snap = await docRef.get();
+  // 1) Load or create user - CHECK CACHE FIRST!
+  let cached = USER_CACHE.get(userId);
   let data;
-  if (!snap.exists) {
-    const base = await getOrCreateUser(userId);
-    data = base.data;
+
+  if (cached && Date.now() - cached.ts < USER_CACHE_TTL) {
+    // Cache hit!
+    console.log(`[CACHE] User ${userId} from cache`);
+    data = cached.data;
   } else {
-    data = snap.data();
+    // Cache miss - read from Firestore
+    console.log(`[CACHE] User ${userId} MISS - reading Firestore`);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      const base = await getOrCreateUser(userId);
+      data = base.data;
+    } else {
+      data = snap.data();
+    }
+    // Cache it for next time
+    USER_CACHE.set(userId, { data, ts: Date.now() });
   }
 
   // 2) Ensure week is up to date (may reset weekly counters + move tokensThisWeek -> tokensLastWeek)
   data = await ensureWeek(docRef, data);
-
   // per-user throttle (temporary)
   const nowMs = Date.now();
   const lastMs = Number(data.lastUsageAtMs || 0);
@@ -850,13 +887,33 @@ if (deltaUsageTokens > 0) {
     updatePayload.tokensThisWeek = tokensThisWeek;
   }
 
-  await docRef.update(updatePayload);
+  // Only write if tokens changed or this is the first call
+  const shouldWrite = deltaUsageTokens > 0 || !data.lastUsageAtMs;
+  
+  if (shouldWrite) {
+    await docRef.update(updatePayload);
+    // Invalidate cache after write
+    USER_CACHE.delete(userId);
+    console.log(`[CACHE] Invalidated cache for user ${userId}`);
+  }
 
   // 5) Referral logic: if user was referred, track their invite progress + credit inviter
 if (data.referredByUserId && REFERRALS_COL) {
   const refDoc = REFERRALS_COL.doc(userId);
-  const refSnap = await refDoc.get();
-  let refData = refSnap.exists ? refSnap.data() : null;
+  
+  // Check referral cache first
+  let cachedRef = REFERRAL_CACHE.get(userId);
+  let refData;
+  
+  if (cachedRef && Date.now() - cachedRef.ts < REFERRAL_CACHE_TTL) {
+    console.log(`[CACHE] Referral ${userId} from cache`);
+    refData = cachedRef.data;
+  } else {
+    console.log(`[CACHE] Referral ${userId} MISS - reading Firestore`);
+    const refSnap = await refDoc.get();
+    refData = refSnap.exists ? refSnap.data() : null;
+    REFERRAL_CACHE.set(userId, { data: refData, ts: Date.now() });
+  }
 
   if (!refData) {
     refData = {
@@ -883,6 +940,10 @@ if (data.referredByUserId && REFERRALS_COL) {
   }
 
   await refDoc.set(refData, { merge: true });
+  
+  // Invalidate referral cache after write
+  REFERRAL_CACHE.delete(userId);
+  console.log(`[CACHE] Invalidated referral cache for ${userId}`);
 
   // Credit inviter:
   // - 1 token once when the invite completes 30 minutes
@@ -1647,39 +1708,68 @@ app.get("/api/articles", async (req, res) => {
   // Map stored categories into the 5 lanes the UI expects
   const out = { us: [], entertainment: [], finance: [], world: [], crypto: [] };
 
+// STEP 1: Collect articles first (don't translate yet)
   for (const a of all) {
-    // OPTIMIZATION: Only translate title & summary for feed view (not AI perspectives)
-    // AI perspectives will be translated on-demand when user opens the article
-    let translated;
-    if (lang === "en") {
-      translated = a;
-    } else {
-      translated = {
-        ...a,
-        title: await translateTextCached(db, lang, a.title || ""),
-        summary: await translateTextCached(db, lang, a.summary || ""),
-        // debateJson stays in English for now - will translate in /api/article/:id
-      };
-    }
-    
-    if (translated.category === "world") {
-      if (out.world.length < limit) out.world.push(translated);
+    if (a.category === "world") {
+      if (out.world.length < limit) out.world.push(a);
       continue;
     }
-    if (translated.category === "crypto") {
-      if (out.crypto.length < limit) out.crypto.push(translated);
+    if (a.category === "crypto") {
+      if (out.crypto.length < limit) out.crypto.push(a);
       continue;
     }
 
-    const [catRegion, lane] = String(translated.category || "").split(":");
+    const [catRegion, lane] = String(a.category || "").split(":");
     if (!catRegion || !lane) continue;
     if (catRegion !== reg) continue;
 
-    if (lane === "politics" && out.us.length < limit) out.us.push(translated);
-    if (lane === "finance" && out.finance.length < limit) out.finance.push(translated);
-    if (lane === "entertainment" && out.entertainment.length < limit) out.entertainment.push(translated);
+    if (lane === "politics" && out.us.length < limit) out.us.push(a);
+    if (lane === "finance" && out.finance.length < limit) out.finance.push(a);
+    if (lane === "entertainment" && out.entertainment.length < limit) out.entertainment.push(a);
   }
 
+  // STEP 2: Now translate ONLY what we're sending (if not English)
+  if (lang !== "en") {
+    console.log(`[API] Starting translation to ${lang}...`);
+    const startTime = Date.now();
+
+    // Collect all texts that need translation
+    const translationTasks = [];
+    const taskMeta = [];
+
+    for (const [category, articles] of Object.entries(out)) {
+      for (let i = 0; i < articles.length; i++) {
+        const article = articles[i];
+        
+        // Add title translation task
+        if (article.title) {
+          translationTasks.push(translateTextCached(db, lang, article.title));
+          taskMeta.push({ category, index: i, field: 'title' });
+        }
+        
+        // Add summary translation task
+        if (article.summary) {
+          translationTasks.push(translateTextCached(db, lang, article.summary));
+          taskMeta.push({ category, index: i, field: 'summary' });
+        }
+      }
+    }
+
+    console.log(`[API] Translating ${translationTasks.length} texts in parallel...`);
+
+    // Execute all translations in parallel
+    const translations = await Promise.all(translationTasks);
+
+    // Apply translations back to articles
+    translations.forEach((translatedText, idx) => {
+      const meta = taskMeta[idx];
+      out[meta.category][meta.index][meta.field] = translatedText;
+    });
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[API] Translation completed in ${elapsed}ms`);
+  }
+  
   res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
 });
 
@@ -1794,12 +1884,19 @@ app.get("/api/newspaper", (req, res) => {
 // Returns one blog per persona (Jessica, John, Joe) for today.
 app.get("/api/blogs", async (req, res) => {
   try {
+    const lang = normLang(req.query.lang || "en");  // ← ADD THIS LINE
+    
     const blogs = await getBlogsForToday();
     const today = new Date().toISOString().slice(0, 10);
 
+    // Translate blogs if not English
+    const translatedBlogs = await Promise.all(
+      blogs.map((b) => translateBlogForLang(db, lang, b))
+    );
+
     res.json({
       date: today,
-      blogs,
+      blogs: translatedBlogs,  // ← CHANGED from 'blogs'
     });
   } catch (e) {
     console.error("Error in /api/blogs", e);
@@ -2228,8 +2325,17 @@ app.get("/api/rewards/leaderboard", rewardsLimiter, async (req, res) => {
     }
 
     const limit = Math.min(Number(req.query.limit) || 10, 50);
+
+    // Check cache first
+    if (leaderboardCache && Date.now() - leaderboardCacheTime < LEADERBOARD_CACHE_TTL) {
+      console.log(`[CACHE] Leaderboard from cache`);
+      return res.json({ ok: true, items: leaderboardCache.slice(0, limit) });
+    }
+
+    // Cache miss - read from Firestore
+    console.log(`[CACHE] Leaderboard MISS - reading Firestore`);
     const snap = await USERS_COL.orderBy("tokensTotal", "desc")
-      .limit(limit)
+      .limit(50) // Always fetch 50, slice as needed
       .get();
 
     const items = snap.docs.map((doc) => {
@@ -2242,7 +2348,12 @@ app.get("/api/rewards/leaderboard", rewardsLimiter, async (req, res) => {
       };
     });
 
-    return res.json({ ok: true, items });
+    // Cache the results
+    leaderboardCache = items;
+    leaderboardCacheTime = Date.now();
+    console.log(`[CACHE] Leaderboard cached with ${items.length} items`);
+
+    return res.json({ ok: true, items: items.slice(0, limit) });
   } catch (err) {
     console.error("GET /api/rewards/leaderboard error", err);
     return res.status(500).json({ ok: false, error: "Server error" });
