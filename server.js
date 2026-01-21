@@ -10,6 +10,8 @@ import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import admin from "firebase-admin";
 import rateLimit from "express-rate-limit";
+import bcrypt from 'bcryptjs';  // ADD THIS
+import jwt from 'jsonwebtoken';  // ADD THIS
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,6 +54,8 @@ const rewardsWriteLimiter = rateLimit({
 
 app.use(express.static(path.join(__dirname, "public")));
 
+const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-production';
+const JWT_EXPIRY = '7d';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const parser = new Parser({
   requestOptions: {
@@ -660,146 +664,85 @@ function getClientIp(req) {
 }
 
 /* --------------------------------------------------------
-   REWARDS / REFERRALS HELPERS
+   REWARDS / REFERRALS HELPERS - PASTE THIS TO REPLACE OLD SECTION
+   Starting around line 665 in your server.js
 --------------------------------------------------------- */
 
 function getWeekKey(d = new Date()) {
-  // Monday–Monday week key, in UTC
   const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  const day = date.getUTCDay(); // 0=Sun..6
-  const diff = day === 0 ? -6 : 1 - day; // move to Monday
+  const day = date.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
   date.setUTCDate(date.getUTCDate() + diff);
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
   const da = String(date.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${da}`; // e.g. 2025-12-22
+  return `${y}-${m}-${da}`;
 }
 
-// How many seconds of invitee usage to count an invite as "completed"
-const REFERRAL_REQUIRED_SECONDS = 30 * 60;     // 30 minutes
-const REFERRAL_INVITE_TOKENS    = 1;          // 1 token when invitee hits 30 minutes
-const REFERRAL_COMMISSION_RATE  = 0.1;        // 10% of invitee usage tokens
+const REFERRAL_REQUIRED_SECONDS = 10 * 60;     // 10 minutes (CHANGED from 30)
+const REFERRAL_INVITE_TOKENS    = 1;
+const REFERRAL_COMMISSION_RATE  = 0.1;        // 10%
 
-// getWeekKey() should already exist above; we keep using it.
-
-/* --------------------------------------------------------
-   TEMPORARY WEEKLY GUARDRAILS
---------------------------------------------------------- */
 const MAX_INVITES_PER_WEEK = 200;
 const MAX_TOKENS_PER_WEEK  = 300;
+const MAX_SECONDS_PER_WEEK = 7 * 24 * 60 * 60;
+const MAX_SECONDS_PER_CALL = 6 * 60 * 60;
+const MIN_MS_BETWEEN_CALLS = 120000;
 
-// Weekly seconds cap (7 days)
-const MAX_SECONDS_PER_WEEK = 7 * 24 * 60 * 60; // 604,800
+const USER_CACHE = new Map();
+const REFERRAL_CACHE = new Map();
+const USER_CACHE_TTL = 30000;
+const REFERRAL_CACHE_TTL = 60000;
 
-// Allow bigger reports, but we'll cap by elapsed time anyway
-const MAX_SECONDS_PER_CALL = 6 * 60 * 60; // up to 6 hours per hit (safe for background/offline)
-const MIN_MS_BETWEEN_CALLS = 120000; // 2 minutes (reduces calls by 75%)
-
-/**
- * Create or load a user document in notifaiUsers.
- */
 async function getOrCreateUser(userId) {
   if (!db || !USERS_COL) throw new Error("Firestore not configured");
-
   const docRef = USERS_COL.doc(userId);
   const snap = await docRef.get();
-
   if (snap.exists) {
     return { ref: docRef, data: snap.data() };
   }
-
-  // New user
   const now = admin.firestore.FieldValue.serverTimestamp();
   const weekKey = getWeekKey();
-  const referralCode = nanoid(7); // 7-char code
-
+  const referralCode = nanoid(7);
   const data = {
-    userId,
-    createdAt: now,
-    updatedAt: now,
-    walletAddress: null,
-    referralCode,
-    referredByCode: null,
-    referredByUserId: null,
-    totalSeconds: 0,
-    weeklySeconds: 0,
-    weekKey,
-    tokensTotal: 0,
-    tokensThisWeek: 0,
-    tokensLastWeek: 0,   // NEW: previous week's tokens
-    invitesCompleted: 0,
-    invitesStarted: 0,
+    userId, createdAt: now, updatedAt: now,
+    email: null, passwordHash: null, walletAddress: null,
+    referralCode, referredByCode: null, referredByUserId: null,
+    totalSeconds: 0, weeklySeconds: 0, weekKey,
+    tokensTotal: 0, tokensThisWeek: 0, tokensLastWeek: 0,
+    tokensFromInvites: 0, tokensFromCommission: 0,
+    invitesCompleted: 0, invitesStarted: 0,
   };
-
   await docRef.set(data);
   return { ref: docRef, data };
 }
 
-/**
- * Ensure the user doc is on the current "week".
- * If week has changed, move tokensThisWeek → tokensLastWeek and reset weekly counters.
- */
 async function ensureWeek(docRef, data) {
   const currentWeekKey = getWeekKey();
-  if (data.weekKey === currentWeekKey) {
-    return data;
-  }
-
-  // When a new week starts, roll current week into tokensLastWeek
+  if (data.weekKey === currentWeekKey) return data;
   const lastWeekTokens = data.tokensThisWeek || 0;
-
   const updated = {
-  ...data,
-  weekKey: currentWeekKey,
-  weeklySeconds: 0,
-  tokensThisWeek: 0,
-  tokensLastWeek: lastWeekTokens,
-
-  // weekly referral counters must reset too
-};
-
+    ...data, weekKey: currentWeekKey,
+    weeklySeconds: 0, tokensThisWeek: 0, tokensLastWeek: lastWeekTokens,
+  };
   await docRef.update({
-  weekKey: currentWeekKey,
-  weeklySeconds: 0,
-  tokensThisWeek: 0,
-  tokensLastWeek: lastWeekTokens,
-
-  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-});
-
-  // Invalidate cache when week changes
+    weekKey: currentWeekKey, weeklySeconds: 0,
+    tokensThisWeek: 0, tokensLastWeek: lastWeekTokens,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
   USER_CACHE.delete(updated.userId);
-  console.log(`[CACHE] Invalidated cache for user ${updated.userId} (week rollover)`);
-
   return updated;
 }
 
-/**
- * Track usage seconds for a user:
- * - 1 token per full 3600 lifetime seconds (self usage).
- * - Weekly + total seconds.
- * - Weekly + total tokens.
- * - Weekly rollover with tokensLastWeek.
- * - Referral system:
- *   - When an invitee hits 30 minutes, inviter gets 1 token.
- *   - Inviter also gets 10% of invitee's *usage* tokens (commission).
- */
 async function trackUsageForUser(userId, seconds, { region, screen }) {
   if (!db || !USERS_COL) return;
-
   const docRef = USERS_COL.doc(userId);
-
-  // 1) Load or create user - CHECK CACHE FIRST!
+  
   let cached = USER_CACHE.get(userId);
   let data;
-
   if (cached && Date.now() - cached.ts < USER_CACHE_TTL) {
-    // Cache hit!
-    console.log(`[CACHE] User ${userId} from cache`);
     data = cached.data;
   } else {
-    // Cache miss - read from Firestore
-    console.log(`[CACHE] User ${userId} MISS - reading Firestore`);
     const snap = await docRef.get();
     if (!snap.exists) {
       const base = await getOrCreateUser(userId);
@@ -807,40 +750,25 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
     } else {
       data = snap.data();
     }
-    // Cache it for next time
     USER_CACHE.set(userId, { data, ts: Date.now() });
   }
-
-  // 2) Ensure week is up to date (may reset weekly counters + move tokensThisWeek -> tokensLastWeek)
+  
   data = await ensureWeek(docRef, data);
-  // per-user throttle (temporary)
   const nowMs = Date.now();
   const lastMs = Number(data.lastUsageAtMs || 0);
-
-  // If calls are extremely frequent, ignore this hit
   if (lastMs && (nowMs - lastMs < MIN_MS_BETWEEN_CALLS)) return;
-
-  // 3) Apply time increment
+  
   const rawInc = Number(seconds) || 0;
   if (!Number.isFinite(rawInc) || rawInc <= 0) return;
-
-  // Cap by real elapsed time since last accepted report
   let elapsedSec = lastMs ? Math.floor((nowMs - lastMs) / 1000) : rawInc;
   if (!Number.isFinite(elapsedSec) || elapsedSec < 0) elapsedSec = 0;
-
-  // Small grace for timer jitter/background delays
   const allowedByElapsed = elapsedSec + 3;
-
-  // Final increment is limited by: client claim, elapsed time, and max per call
   let increment = Math.min(rawInc, allowedByElapsed, MAX_SECONDS_PER_CALL);
   if (increment <= 0) return;
-
-  // Enforce weekly seconds cap (604,800)
+  
   const prevWeeklySeconds = data.weeklySeconds || 0;
   const roomThisWeek = Math.max(0, MAX_SECONDS_PER_WEEK - prevWeeklySeconds);
   increment = Math.min(increment, roomThisWeek);
-
-  // Even if capped, still advance lastUsageAtMs to avoid "elapsed" ballooning
   if (increment <= 0) {
     await docRef.update({
       lastUsageAtMs: nowMs,
@@ -848,153 +776,161 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
     });
     return;
   }
-
+  
   const prevTotalSeconds = data.totalSeconds || 0;
   const totalSeconds = prevTotalSeconds + increment;
-
   const weeklySeconds = prevWeeklySeconds + increment;
-
-// 1 token per full 3600 seconds of WEEKLY usage
-const weeklyTokensBefore = Math.floor(prevWeeklySeconds / 3600);
-const weeklyTokensAfter  = Math.floor(weeklySeconds / 3600);
-const deltaUsageTokens   = Math.max(0, weeklyTokensAfter - weeklyTokensBefore);
-
-  let tokensTotal    = data.tokensTotal    || 0;
-let tokensThisWeek = data.tokensThisWeek || 0;
-
-if (deltaUsageTokens > 0) {
-  const remaining = Math.max(0, MAX_TOKENS_PER_WEEK - tokensThisWeek);
-  const mint = Math.min(deltaUsageTokens, remaining);
-
-  if (mint > 0) {
-    tokensTotal += mint;        // lifetime total (history)
-    tokensThisWeek += mint;     // weekly capped
+  
+  const hoursBefore = Math.floor(prevWeeklySeconds / 3600);
+  const hoursAfter = Math.floor(weeklySeconds / 3600);
+  const deltaUsageTokens = Math.max(0, hoursAfter - hoursBefore);
+  
+  let tokensTotal = data.tokensTotal || 0;
+  let tokensThisWeek = data.tokensThisWeek || 0;
+  let tokensEarnedThisCall = 0;
+  
+  if (deltaUsageTokens > 0) {
+    const remaining = Math.max(0, MAX_TOKENS_PER_WEEK - tokensThisWeek);
+    const mint = Math.min(deltaUsageTokens, remaining);
+    if (mint > 0) {
+      tokensTotal += mint;
+      tokensThisWeek += mint;
+      tokensEarnedThisCall += mint;
+    }
   }
-}
-
-  // 4) Update user document with new seconds + tokens
+  
   const updatePayload = {
-    totalSeconds,
-    weeklySeconds,
-    lastUsageAtMs: nowMs,
+    totalSeconds, weeklySeconds, lastUsageAtMs: nowMs,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     lastRegion: region || data.lastRegion || null,
     lastScreen: screen || data.lastScreen || null,
   };
-
   if (deltaUsageTokens > 0) {
-    updatePayload.tokensTotal    = tokensTotal;
+    updatePayload.tokensTotal = tokensTotal;
     updatePayload.tokensThisWeek = tokensThisWeek;
   }
-
-  // Only write if tokens changed or this is the first call
   const shouldWrite = deltaUsageTokens > 0 || !data.lastUsageAtMs;
-  
   if (shouldWrite) {
     await docRef.update(updatePayload);
-    // Invalidate cache after write
     USER_CACHE.delete(userId);
-    console.log(`[CACHE] Invalidated cache for user ${userId}`);
   }
+  
+  if (data.referredByUserId && REFERRALS_COL) {
+    await handleReferralRewards(
+      userId, data, increment, totalSeconds,
+      tokensEarnedThisCall, USERS_COL, REFERRALS_COL
+    );
+  }
+}
 
-  // 5) Referral logic: if user was referred, track their invite progress + credit inviter
-if (data.referredByUserId && REFERRALS_COL) {
-  const refDoc = REFERRALS_COL.doc(userId);
-  
-  // Check referral cache first
-  let cachedRef = REFERRAL_CACHE.get(userId);
+async function handleReferralRewards(
+  inviteeUserId, inviteeData, secondsIncrement, newTotalSeconds,
+  inviteeTokensEarnedThisCall, USERS_COL, REFERRALS_COL
+) {
+  const refDoc = REFERRALS_COL.doc(inviteeUserId);
+  let cachedRef = REFERRAL_CACHE.get(inviteeUserId);
   let refData;
-  
   if (cachedRef && Date.now() - cachedRef.ts < REFERRAL_CACHE_TTL) {
-    console.log(`[CACHE] Referral ${userId} from cache`);
     refData = cachedRef.data;
   } else {
-    console.log(`[CACHE] Referral ${userId} MISS - reading Firestore`);
     const refSnap = await refDoc.get();
     refData = refSnap.exists ? refSnap.data() : null;
-    REFERRAL_CACHE.set(userId, { data: refData, ts: Date.now() });
+    REFERRAL_CACHE.set(inviteeUserId, { data: refData, ts: Date.now() });
   }
-
   if (!refData) {
     refData = {
-      userId,
-      inviterUserId: data.referredByUserId,
-      inviterReferralCode: data.referredByCode || null,
-      totalSeconds: 0,
-      completed: false,
+      userId: inviteeUserId,
+      inviterUserId: inviteeData.referredByUserId,
+      inviterReferralCode: inviteeData.referredByCode || null,
+      totalSeconds: 0, completed: false,
+      tokensEarnedByInvitee: 0, commissionPaidToInviter: 0,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
   }
-
-  const newTotal = (refData.totalSeconds || 0) + increment;
-  refData.totalSeconds = newTotal;
-
-  // Has this invite now met the 30-minute requirement?
-  const eligibleNow = newTotal >= REFERRAL_REQUIRED_SECONDS;
+  refData.totalSeconds = newTotalSeconds;
+  refData.tokensEarnedByInvitee = (refData.tokensEarnedByInvitee || 0) + inviteeTokensEarnedThisCall;
+  
+  const inviterRef = USERS_COL.doc(inviteeData.referredByUserId);
+  const inviterSnap = await inviterRef.get();
+  if (!inviterSnap.exists) return;
+  const inviterData = inviterSnap.data();
+  const weekAdjustedInviter = await ensureWeek(inviterRef, inviterData);
+  
+  let inviterTokensTotal = weekAdjustedInviter.tokensTotal || 0;
+  let inviterTokensThisWeek = weekAdjustedInviter.tokensThisWeek || 0;
+  let inviterTokensFromInvites = weekAdjustedInviter.tokensFromInvites || 0;
+  let inviterTokensFromCommission = weekAdjustedInviter.tokensFromCommission || 0;
+  let inviterInvitesCompleted = weekAdjustedInviter.invitesCompleted || 0;
+  
+  let tokensToCredit = 0;
+  let inviteTokens = 0;
+  let commissionTokens = 0;
+  
+  const eligibleNow = newTotalSeconds >= REFERRAL_REQUIRED_SECONDS;
   let completedThisCall = false;
-
   if (!refData.completed && eligibleNow) {
     refData.completed = true;
     completedThisCall = true;
     refData.completedAt = admin.firestore.FieldValue.serverTimestamp();
-  }
-
-  await refDoc.set(refData, { merge: true });
-  
-  // Invalidate referral cache after write
-  REFERRAL_CACHE.delete(userId);
-  console.log(`[CACHE] Invalidated referral cache for ${userId}`);
-
-  // Credit inviter:
-  // - 1 token once when the invite completes 30 minutes
-  // - 10% commission on every new usage token the invitee earns, once eligible
-  const inviterRef  = USERS_COL.doc(data.referredByUserId);
-  const inviterSnap = await inviterRef.get();
-  if (inviterSnap.exists) {
-    const inviterData         = inviterSnap.data() || {};
-    const weekAdjustedInviter = await ensureWeek(inviterRef, inviterData);
-
-    let inviterTokensTotal    = weekAdjustedInviter.tokensTotal    || 0;
-    let inviterTokensThisWeek = weekAdjustedInviter.tokensThisWeek || 0;
-    let inviterInvites        = weekAdjustedInviter.invitesCompleted || 0;
-
-    // Base: 1 token the first time an invite completes 30 minutes
-    if (completedThisCall) {
-  // cap invites per week
-  if (inviterInvites < MAX_INVITES_PER_WEEK) {
-    inviterInvites += 1;
-
-    // cap weekly tokens at 300
     if (inviterTokensThisWeek < MAX_TOKENS_PER_WEEK) {
-      inviterTokensTotal += REFERRAL_INVITE_TOKENS;
-      inviterTokensThisWeek = Math.min(MAX_TOKENS_PER_WEEK, inviterTokensThisWeek + REFERRAL_INVITE_TOKENS);
+      tokensToCredit += REFERRAL_INVITE_TOKENS;
+      inviteTokens += REFERRAL_INVITE_TOKENS;
+      inviterInvitesCompleted += 1;
     }
   }
-}
-
-    // Commission: 10% of invitee's usage tokens, on every call
-    // after they are eligible (>= 30 minutes total usage)
-    if (eligibleNow && deltaUsageTokens > 0) {
-  const commission = Math.floor(deltaUsageTokens * REFERRAL_COMMISSION_RATE);
-  if (commission > 0) {
-    const remaining = Math.max(0, MAX_TOKENS_PER_WEEK - inviterTokensThisWeek);
-    const mint = Math.min(commission, remaining);
-    if (mint > 0) {
-      inviterTokensTotal += mint;
-      inviterTokensThisWeek += mint;
+  
+  if (inviteeTokensEarnedThisCall > 0) {
+    const commission = Math.floor(inviteeTokensEarnedThisCall * REFERRAL_COMMISSION_RATE * 10) / 10;
+    if (commission > 0) {
+      const remaining = Math.max(0, MAX_TOKENS_PER_WEEK - (inviterTokensThisWeek + tokensToCredit));
+      const mint = Math.min(commission, remaining);
+      if (mint > 0) {
+        tokensToCredit += mint;
+        commissionTokens += mint;
+        refData.commissionPaidToInviter = (refData.commissionPaidToInviter || 0) + mint;
+      }
     }
   }
-}
-
+  
+  await refDoc.set(refData, { merge: true });
+  REFERRAL_CACHE.delete(inviteeUserId);
+  
+  if (tokensToCredit > 0) {
+    inviterTokensTotal += tokensToCredit;
+    inviterTokensThisWeek += tokensToCredit;
+    inviterTokensFromInvites += inviteTokens;
+    inviterTokensFromCommission += commissionTokens;
     await inviterRef.update({
       tokensTotal: inviterTokensTotal,
       tokensThisWeek: inviterTokensThisWeek,
-      invitesCompleted: inviterInvites,
+      tokensFromInvites: inviterTokensFromInvites,
+      tokensFromCommission: inviterTokensFromCommission,
+      invitesCompleted: inviterInvitesCompleted,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    
+    // Multi-level commission
+    if (weekAdjustedInviter.referredByUserId && tokensToCredit > 0) {
+      const grandInviterRef = USERS_COL.doc(weekAdjustedInviter.referredByUserId);
+      const grandInviterSnap = await grandInviterRef.get();
+      if (grandInviterSnap.exists) {
+        const grandInviterData = grandInviterSnap.data();
+        const weekAdjustedGrandInviter = await ensureWeek(grandInviterRef, grandInviterData);
+        const grandCommission = Math.floor(tokensToCredit * REFERRAL_COMMISSION_RATE * 10) / 10;
+        const grandRemaining = Math.max(0, MAX_TOKENS_PER_WEEK - (weekAdjustedGrandInviter.tokensThisWeek || 0));
+        const grandMint = Math.min(grandCommission, grandRemaining);
+        if (grandMint > 0) {
+          await grandInviterRef.update({
+            tokensTotal: admin.firestore.FieldValue.increment(grandMint),
+            tokensThisWeek: admin.firestore.FieldValue.increment(grandMint),
+            tokensFromCommission: admin.firestore.FieldValue.increment(grandMint),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    }
   }
 }
-} 
 
 /* --------------------------------------------------------
    OpenAI (localized)
@@ -2443,6 +2379,948 @@ app.post("/api/admin/cleanup-ghosts", async (req, res) => {
     console.error('Cleanup error:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+/* --------------------------------------------------------
+   AUTHENTICATION ROUTES - PASTE THIS BEFORE THE "START + AUTO-INGEST" SECTION
+   Around line 2360 in your server.js
+--------------------------------------------------------- */
+
+// Authentication rate limiter
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts
+  message: 'Too many authentication attempts'
+});
+
+// Middleware to verify JWT token
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'No token provided' });
+  }
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+// POST /api/auth/register
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    const { email, password, userId } = req.body;
+    if (!email || !password || !userId) {
+      return res.status(400).json({ ok: false, error: 'Email, password, and userId required' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ ok: false, error: 'Invalid email format' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ ok: false, error: 'Password must be 8+ characters' });
+    }
+    const emailLower = email.toLowerCase().trim();
+    const authCol = db.collection('notifaiUserAuth');
+    const existingAuth = await authCol.doc(emailLower).get();
+    if (existingAuth.exists) {
+      return res.status(400).json({ ok: false, error: 'Email already registered' });
+    }
+    const userDoc = await USERS_COL.doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(400).json({ ok: false, error: 'User ID not found. Use the app first.' });
+    }
+    const userData = userDoc.data();
+    if (userData.email && userData.email !== emailLower) {
+      return res.status(400).json({ ok: false, error: 'User ID linked to another email' });
+    }
+    const passwordHash = await bcrypt.hash(password, 10);
+    await authCol.doc(emailLower).set({
+      email: emailLower, passwordHash, userId,
+      createdAt: new Date(), lastLogin: new Date()
+    });
+    await USERS_COL.doc(userId).update({
+      email: emailLower, passwordHash,
+      updatedAt: new Date()
+    });
+    const token = jwt.sign({ email: emailLower, userId }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    res.json({
+      ok: true, token,
+      user: {
+        email: emailLower, userId,
+        walletAddress: userData.walletAddress,
+        referralCode: userData.referralCode,
+        tokensTotal: userData.tokensTotal || 0
+      }
+    });
+  } catch (error) {
+    console.error('Register error:', error);
+    res.status(500).json({ ok: false, error: 'Registration failed' });
+  }
+});
+
+// POST /api/auth/login
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, error: 'Email and password required' });
+    }
+    const emailLower = email.toLowerCase().trim();
+    const authCol = db.collection('notifaiUserAuth');
+    const authDoc = await authCol.doc(emailLower).get();
+    if (!authDoc.exists) {
+      return res.status(401).json({ ok: false, error: 'Invalid email or password' });
+    }
+    const authData = authDoc.data();
+    const isValid = await bcrypt.compare(password, authData.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ ok: false, error: 'Invalid email or password' });
+    }
+    await authCol.doc(emailLower).update({ lastLogin: new Date() });
+    const userDoc = await USERS_COL.doc(authData.userId).get();
+    const userData = userDoc.data();
+    const token = jwt.sign({ email: emailLower, userId: authData.userId }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    res.json({
+      ok: true, token,
+      user: {
+        email: emailLower, userId: authData.userId,
+        walletAddress: userData.walletAddress,
+        referralCode: userData.referralCode,
+        tokensTotal: userData.tokensTotal || 0
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ ok: false, error: 'Login failed' });
+  }
+});
+
+// POST /api/auth/change-password
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    const { currentPassword, newPassword } = req.body;
+    const { email } = req.user;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ ok: false, error: 'Current and new password required' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ ok: false, error: 'New password must be 8+ characters' });
+    }
+    const authCol = db.collection('notifaiUserAuth');
+    const authDoc = await authCol.doc(email).get();
+    if (!authDoc.exists) {
+      return res.status(404).json({ ok: false, error: 'Account not found' });
+    }
+    const authData = authDoc.data();
+    const isValid = await bcrypt.compare(currentPassword, authData.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ ok: false, error: 'Current password incorrect' });
+    }
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    await authCol.doc(email).update({
+      passwordHash: newPasswordHash,
+      updatedAt: new Date()
+    });
+    await USERS_COL.doc(authData.userId).update({
+      passwordHash: newPasswordHash,
+      updatedAt: new Date()
+    });
+    res.json({ ok: true, message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to change password' });
+  }
+});
+
+/* --------------------------------------------------------
+   DASHBOARD ROUTES - PASTE THIS AFTER AUTHENTICATION SECTION
+   Around line 2360 in your server.js
+--------------------------------------------------------- */
+
+function getPreviousWeekKey() {
+  const date = new Date();
+  date.setDate(date.getDate() - 7);
+  return getWeekKey(date);
+}
+
+/* --------------------------------------------------------
+   PASSWORD RESET ROUTES
+--------------------------------------------------------- */
+
+// Store reset codes in memory (for production, use Redis or Firestore)
+const resetCodes = new Map(); // email -> { code, expiresAt }
+const RESET_CODE_EXPIRY = 15 * 60 * 1000; // 15 minutes
+
+// POST /api/auth/request-reset
+app.post('/api/auth/request-reset', authLimiter, async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ ok: false, error: 'Email required' });
+    }
+    
+    const emailLower = email.toLowerCase().trim();
+    const authCol = db.collection('notifaiUserAuth');
+    const authDoc = await authCol.doc(emailLower).get();
+    
+    // Always return success (don't reveal if email exists)
+    if (!authDoc.exists) {
+      return res.json({
+        ok: true,
+        message: 'If that email exists, a reset code has been sent'
+      });
+    }
+    
+    // Generate 6-digit code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + RESET_CODE_EXPIRY;
+    
+    // Store code
+    resetCodes.set(emailLower, { code, expiresAt });
+    
+    // Log code (in production, send email)
+    console.log(`[PASSWORD RESET] Code for ${emailLower}: ${code}`);
+    console.log(`[PASSWORD RESET] Code expires in 15 minutes`);
+    
+    res.json({
+      ok: true,
+      message: 'If that email exists, a reset code has been sent',
+      // ONLY FOR DEVELOPMENT - remove in production
+      devCode: process.env.NODE_ENV === 'development' ? code : undefined
+    });
+    
+  } catch (error) {
+    console.error('Request reset error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to request reset' });
+  }
+});
+
+// POST /api/auth/verify-reset-code
+app.post('/api/auth/verify-reset-code', authLimiter, async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ ok: false, error: 'Email and code required' });
+    }
+    
+    const emailLower = email.toLowerCase().trim();
+    const resetData = resetCodes.get(emailLower);
+    
+    if (!resetData) {
+      return res.status(400).json({ ok: false, error: 'Invalid or expired code' });
+    }
+    
+    if (Date.now() > resetData.expiresAt) {
+      resetCodes.delete(emailLower);
+      return res.status(400).json({ ok: false, error: 'Code expired' });
+    }
+    
+    if (resetData.code !== code.trim()) {
+      return res.status(400).json({ ok: false, error: 'Invalid code' });
+    }
+    
+    // Code is valid - generate temporary token
+    const resetToken = jwt.sign(
+      { email: emailLower, type: 'password_reset' },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+    
+    res.json({
+      ok: true,
+      resetToken,
+      message: 'Code verified. You can now reset your password.'
+    });
+    
+  } catch (error) {
+    console.error('Verify code error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to verify code' });
+  }
+});
+
+// POST /api/auth/reset-password
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    
+    const { resetToken, newPassword } = req.body;
+    if (!resetToken || !newPassword) {
+      return res.status(400).json({ ok: false, error: 'Reset token and new password required' });
+    }
+    
+    if (newPassword.length < 8) {
+      return res.status(400).json({ ok: false, error: 'Password must be 8+ characters' });
+    }
+    
+    // Verify reset token
+    let decoded;
+    try {
+      decoded = jwt.verify(resetToken, JWT_SECRET);
+      if (decoded.type !== 'password_reset') {
+        throw new Error('Invalid token type');
+      }
+    } catch (err) {
+      return res.status(403).json({ ok: false, error: 'Invalid or expired reset token' });
+    }
+    
+    const emailLower = decoded.email;
+    const authCol = db.collection('notifaiUserAuth');
+    const authDoc = await authCol.doc(emailLower).get();
+    
+    if (!authDoc.exists) {
+      return res.status(404).json({ ok: false, error: 'Account not found' });
+    }
+    
+    const authData = authDoc.data();
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    
+    // Update password
+    await authCol.doc(emailLower).update({
+      passwordHash: newPasswordHash,
+      updatedAt: new Date()
+    });
+    
+    await USERS_COL.doc(authData.userId).update({
+      passwordHash: newPasswordHash,
+      updatedAt: new Date()
+    });
+    
+    // Clear reset code
+    resetCodes.delete(emailLower);
+    
+    res.json({
+      ok: true,
+      message: 'Password reset successfully. You can now login.'
+    });
+    
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to reset password' });
+  }
+});
+
+// GET /api/rewards/dashboard
+app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
+  try {
+    if (!db || !USERS_COL || !REFERRALS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    const { userId } = req.user;
+    const userDoc = await USERS_COL.doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    const userData = userDoc.data();
+    const inviteesSnap = await REFERRALS_COL.where('inviterUserId', '==', userId).get();
+    const invitees = [];
+    let inviteesThisWeek = 0;
+    let inviteesLastWeek = 0;
+    const currentWeekKey = getWeekKey();
+    
+    for (const doc of inviteesSnap.docs) {
+      const refData = doc.data();
+      const inviteeUserDoc = await USERS_COL.doc(refData.userId).get();
+      const inviteeUserData = inviteeUserDoc.exists ? inviteeUserDoc.data() : {};
+      const isActive = refData.totalSeconds >= 600;
+      const status = isActive ? 'active' : 'pending';
+      const inviteCompletionToken = refData.completed ? 1 : 0;
+      const commissionEarned = refData.commissionPaidToInviter || 0;
+      const totalEarnedFromInvitee = inviteCompletionToken + commissionEarned;
+      
+      invitees.push({
+        userId: refData.userId,
+        referralCode: userData.referralCode,
+        joinedAt: refData.createdAt ? refData.createdAt.toDate().toISOString() : null,
+        totalSeconds: refData.totalSeconds || 0,
+        totalHours: Math.floor((refData.totalSeconds || 0) / 3600),
+        tokensEarned: refData.tokensEarnedByInvitee || 0,
+        yourEarnings: totalEarnedFromInvitee,
+        inviteBonus: inviteCompletionToken,
+        commissionEarned,
+        status,
+        completed: refData.completed || false
+      });
+      
+      if (refData.completed) {
+        const completedAt = refData.completedAt ? refData.completedAt.toDate() : null;
+        if (completedAt) {
+          const completedWeekKey = getWeekKey(completedAt);
+          if (completedWeekKey === currentWeekKey) {
+            inviteesThisWeek++;
+          } else if (completedWeekKey === getPreviousWeekKey()) {
+            inviteesLastWeek++;
+          }
+        }
+      }
+    }
+    
+    invitees.sort((a, b) => {
+      const dateA = a.joinedAt ? new Date(a.joinedAt) : new Date(0);
+      const dateB = b.joinedAt ? new Date(b.joinedAt) : new Date(0);
+      return dateB - dateA;
+    });
+    
+    res.json({
+      ok: true,
+      analytics: {
+        tokensThisWeek: userData.tokensThisWeek || 0,
+        tokensLastWeek: userData.tokensLastWeek || 0,
+        tokensLifetime: userData.tokensTotal || 0,
+        tokensFromInvites: userData.tokensFromInvites || 0,
+        tokensFromCommission: userData.tokensFromCommission || 0,
+        totalInvites: userData.invitesCompleted || 0,
+        invitesThisWeek,
+        invitesLastWeek,
+        invitesStarted: userData.invitesStarted || 0,
+        walletAddress: userData.walletAddress || null,
+        referralCode: userData.referralCode,
+        email: userData.email || null,
+        totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
+        weeklyHours: Math.floor((userData.weeklySeconds || 0) / 3600),
+        invitees,
+        inviteesCount: invitees.length,
+        activeInviteesCount: invitees.filter(i => i.status === 'active').length
+      }
+    });
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
+  }
+});
+
+// PUT /api/rewards/wallet
+app.put('/api/rewards/wallet', authenticateToken, async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    const { userId } = req.user;
+    const { walletAddress } = req.body;
+    if (!walletAddress) {
+      return res.status(400).json({ ok: false, error: 'Wallet address required' });
+    }
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress.trim())) {
+      return res.status(400).json({ ok: false, error: 'Invalid BSC wallet format' });
+    }
+    const userDoc = await USERS_COL.doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    const userData = userDoc.data();
+    if (userData.walletAddress && userData.walletAddress !== walletAddress) {
+      const historyEntry = {
+        wallet: userData.walletAddress,
+        tokensTotal: userData.tokensTotal || 0,
+        tokensThisWeek: userData.tokensThisWeek || 0,
+        tokensLastWeek: userData.tokensLastWeek || 0,
+        invitesCompleted: userData.invitesCompleted || 0,
+        totalSeconds: userData.totalSeconds || 0,
+        at: new Date()
+      };
+      await USERS_COL.doc(userId).update({
+        walletAddress: walletAddress.trim(),
+        walletHistory: admin.firestore.FieldValue.arrayUnion(historyEntry),
+        updatedAt: new Date()
+      });
+    } else {
+      await USERS_COL.doc(userId).update({
+        walletAddress: walletAddress.trim(),
+        updatedAt: new Date()
+      });
+    }
+    res.json({
+      ok: true,
+      message: 'Wallet address updated',
+      walletAddress: walletAddress.trim()
+    });
+  } catch (error) {
+    console.error('Update wallet error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to update wallet' });
+  }
+});
+
+// GET /api/rewards/export (Admin only)
+app.get('/api/rewards/export', async (req, res) => {
+  try {
+    const adminSecret = req.headers['x-admin-secret'];
+    if (adminSecret !== process.env.ADMIN_SECRET) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ error: 'Firestore not configured' });
+    }
+    const weekFilter = req.query.week || 'current';
+    const currentWeekKey = getWeekKey();
+    let query = USERS_COL
+      .where('tokensThisWeek', '>', 0)
+      .where('walletAddress', '!=', null);
+    const snapshot = await query.get();
+    const users = [];
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      if (weekFilter === 'last' && (data.tokensLastWeek || 0) <= 0) continue;
+      if (weekFilter === 'current' && (data.tokensThisWeek || 0) <= 0) continue;
+      users.push({
+        email: data.email || 'N/A',
+        userId: data.userId,
+        walletAddress: data.walletAddress,
+        referralCode: data.referralCode,
+        tokensThisWeek: data.tokensThisWeek || 0,
+        tokensLastWeek: data.tokensLastWeek || 0,
+        tokensLifetime: data.tokensTotal || 0,
+        tokensFromInvites: data.tokensFromInvites || 0,
+        tokensFromCommission: data.tokensFromCommission || 0,
+        invitesCompleted: data.invitesCompleted || 0,
+        totalHours: Math.floor((data.totalSeconds || 0) / 3600),
+        weekKey: data.weekKey
+      });
+    }
+    users.sort((a, b) => b.tokensThisWeek - a.tokensThisWeek);
+    res.json({
+      ok: true,
+      count: users.length,
+      weekFilter,
+      currentWeekKey,
+      users
+    });
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to export data' });
+  }
+});
+
+/* --------------------------------------------------------
+   ADMIN PANEL ROUTES
+--------------------------------------------------------- */
+
+// GET /api/admin/users - List all users with emails and tokens
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const adminSecret = req.headers['x-admin-secret'];
+    if (adminSecret !== process.env.ADMIN_SECRET) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ error: 'Firestore not configured' });
+    }
+    
+    const { withEmail, limit } = req.query;
+    let query = USERS_COL.orderBy('tokensTotal', 'desc');
+    
+    // Filter: only users with email (registered accounts)
+    if (withEmail === 'true') {
+      query = query.where('email', '!=', null);
+    }
+    
+    // Limit results (default 100, max 1000)
+    const maxResults = Math.min(parseInt(limit) || 100, 1000);
+    query = query.limit(maxResults);
+    
+    const snapshot = await query.get();
+    const users = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        userId: data.userId,
+        email: data.email || null,
+        walletAddress: data.walletAddress || null,
+        referralCode: data.referralCode,
+        tokensTotal: data.tokensTotal || 0,
+        tokensThisWeek: data.tokensThisWeek || 0,
+        tokensLastWeek: data.tokensLastWeek || 0,
+        tokensFromInvites: data.tokensFromInvites || 0,
+        tokensFromCommission: data.tokensFromCommission || 0,
+        invitesCompleted: data.invitesCompleted || 0,
+        totalHours: Math.floor((data.totalSeconds || 0) / 3600),
+        createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+      };
+    });
+    
+    res.json({
+      ok: true,
+      count: users.length,
+      users
+    });
+    
+  } catch (error) {
+    console.error('Admin users error:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// GET /api/admin/dashboard - Simple HTML admin panel
+app.get('/api/admin/dashboard', (req, res) => {
+  const adminSecret = req.query.secret;
+  if (adminSecret !== process.env.ADMIN_SECRET) {
+    return res.status(403).send('<h1>Forbidden</h1><p>Invalid admin secret</p>');
+  }
+  
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NotifAi Admin Panel</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .header {
+      background: white;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      margin-bottom: 30px;
+    }
+    .header h1 {
+      color: #667eea;
+      font-size: 32px;
+      margin-bottom: 10px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .stat-card {
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .stat-label {
+      color: #666;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      color: #667eea;
+      font-size: 32px;
+      font-weight: 700;
+    }
+    .filters {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .filter-group label {
+      font-weight: 600;
+      color: #333;
+    }
+    input, select {
+      padding: 8px 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    button:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+    }
+    .table-container {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      background: #f8f9fa;
+      padding: 12px;
+      text-align: left;
+      font-weight: 600;
+      color: #333;
+      border-bottom: 2px solid #e0e0e0;
+      position: sticky;
+      top: 0;
+    }
+    td {
+      padding: 12px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    tr:hover {
+      background: #f8f9fa;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #667eea;
+      font-size: 18px;
+    }
+    .email {
+      color: #667eea;
+      font-weight: 500;
+    }
+    .wallet {
+      font-family: monospace;
+      font-size: 12px;
+      color: #666;
+    }
+    .tokens {
+      font-weight: 700;
+      color: #10b981;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-high {
+      background: #10b981;
+      color: white;
+    }
+    .badge-med {
+      background: #f59e0b;
+      color: white;
+    }
+    .badge-low {
+      background: #6b7280;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📊 NotifAi Admin Panel</h1>
+      <p style="color: #666; margin-top: 10px;">User management and rewards tracking</p>
+    </div>
+
+    <div class="stats" id="stats">
+      <div class="stat-card">
+        <div class="stat-label">Total Users</div>
+        <div class="stat-value" id="totalUsers">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Registered</div>
+        <div class="stat-value" id="registeredUsers">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Tokens</div>
+        <div class="stat-value" id="totalTokens">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">This Week</div>
+        <div class="stat-value" id="tokensThisWeek">-</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <label>Filter:</label>
+        <select id="filterType">
+          <option value="all">All Users</option>
+          <option value="registered">Registered Only</option>
+          <option value="hasTokens">Has Tokens</option>
+          <option value="hasWallet">Has Wallet</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Limit:</label>
+        <input type="number" id="limit" value="100" min="10" max="1000" style="width: 80px">
+      </div>
+      <button onclick="loadUsers()">🔄 Refresh</button>
+      <button onclick="exportCSV()">📥 Export CSV</button>
+    </div>
+
+    <div class="table-container">
+      <div class="loading" id="loading">Loading users...</div>
+      <table id="usersTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Wallet Address</th>
+            <th>Tokens Total</th>
+            <th>This Week</th>
+            <th>Last Week</th>
+            <th>Invites</th>
+            <th>From Invites</th>
+            <th>From Commission</th>
+            <th>Hours</th>
+          </tr>
+        </thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const ADMIN_SECRET = '${adminSecret}';
+    let allUsers = [];
+
+    async function loadUsers() {
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('usersTable').style.display = 'none';
+
+      const filterType = document.getElementById('filterType').value;
+      const limit = document.getElementById('limit').value;
+      
+      try {
+        const params = new URLSearchParams({ limit });
+        if (filterType === 'registered') params.append('withEmail', 'true');
+        
+        const res = await fetch(\`/api/admin/users?\${params}\`, {
+          headers: { 'x-admin-secret': ADMIN_SECRET }
+        });
+        const data = await res.json();
+        
+        if (!data.ok) throw new Error(data.error);
+        
+        allUsers = data.users;
+        
+        // Apply client-side filters
+        let filtered = allUsers;
+        if (filterType === 'hasTokens') {
+          filtered = allUsers.filter(u => u.tokensTotal > 0);
+        } else if (filterType === 'hasWallet') {
+          filtered = allUsers.filter(u => u.walletAddress);
+        }
+        
+        displayUsers(filtered);
+        updateStats(allUsers);
+        
+      } catch (error) {
+        alert('Error loading users: ' + error.message);
+      }
+    }
+
+    function displayUsers(users) {
+      const tbody = document.getElementById('usersBody');
+      tbody.innerHTML = '';
+      
+      users.forEach(user => {
+        const row = document.createElement('tr');
+        
+        const tierBadge = user.tokensTotal >= 100 ? 'badge-high' : 
+                          user.tokensTotal >= 20 ? 'badge-med' : 'badge-low';
+        
+        row.innerHTML = \`
+          <td class="email">\${user.email || 'Anonymous'}</td>
+          <td class="wallet">\${user.walletAddress ? user.walletAddress.slice(0, 10) + '...' : '-'}</td>
+          <td class="tokens">
+            \${user.tokensTotal}
+            <span class="badge \${tierBadge}">
+              \${user.tokensTotal >= 100 ? 'VIP' : user.tokensTotal >= 20 ? 'Active' : 'New'}
+            </span>
+          </td>
+          <td>\${user.tokensThisWeek}</td>
+          <td>\${user.tokensLastWeek}</td>
+          <td>\${user.invitesCompleted}</td>
+          <td>\${user.tokensFromInvites || 0}</td>
+          <td>\${user.tokensFromCommission || 0}</td>
+          <td>\${user.totalHours}h</td>
+        \`;
+        
+        tbody.appendChild(row);
+      });
+      
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('usersTable').style.display = 'table';
+    }
+
+    function updateStats(users) {
+      const registered = users.filter(u => u.email).length;
+      const totalTokens = users.reduce((sum, u) => sum + u.tokensTotal, 0);
+      const tokensThisWeek = users.reduce((sum, u) => sum + u.tokensThisWeek, 0);
+      
+      document.getElementById('totalUsers').textContent = users.length;
+      document.getElementById('registeredUsers').textContent = registered;
+      document.getElementById('totalTokens').textContent = totalTokens.toFixed(0);
+      document.getElementById('tokensThisWeek').textContent = tokensThisWeek.toFixed(0);
+    }
+
+    function exportCSV() {
+      const csv = [
+        ['Email', 'Wallet', 'Tokens Total', 'This Week', 'Last Week', 'Invites', 'From Invites', 'From Commission', 'Hours'].join(','),
+        ...allUsers.map(u => [
+          u.email || 'Anonymous',
+          u.walletAddress || '-',
+          u.tokensTotal,
+          u.tokensThisWeek,
+          u.tokensLastWeek,
+          u.invitesCompleted,
+          u.tokensFromInvites || 0,
+          u.tokensFromCommission || 0,
+          u.totalHours
+        ].join(','))
+      ].join('\\n');
+      
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = \`notifai-users-\${new Date().toISOString().split('T')[0]}.csv\`;
+      a.click();
+    }
+
+    // Load on page load
+    loadUsers();
+  </script>
+</body>
+</html>
+  `);
 });
 
 /* --------------------------------------------------------
