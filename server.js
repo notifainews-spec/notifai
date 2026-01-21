@@ -689,10 +689,7 @@ const MAX_SECONDS_PER_WEEK = 7 * 24 * 60 * 60;
 const MAX_SECONDS_PER_CALL = 6 * 60 * 60;
 const MIN_MS_BETWEEN_CALLS = 120000;
 
-// USER_CACHE is declared later in the file
-const REFERRAL_CACHE = new Map();
-const USER_CACHE_TTL = 30000;
-const REFERRAL_CACHE_TTL = 60000;
+// Cache variables are declared earlier in the file (around line 269-273)
 
 async function getOrCreateUser(userId) {
   if (!db || !USERS_COL) throw new Error("Firestore not configured");
