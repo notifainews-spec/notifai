@@ -2728,8 +2728,8 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     const userData = userDoc.data();
     const inviteesSnap = await REFERRALS_COL.where('inviterUserId', '==', userId).get();
     const invitees = [];
-    let inviteesThisWeek = 0;
-    let inviteesLastWeek = 0;
+    let invitesThisWeek = 0;
+    let invitesLastWeek = 0;
     const currentWeekKey = getWeekKey();
     
     for (const doc of inviteesSnap.docs) {
@@ -2761,9 +2761,9 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         if (completedAt) {
           const completedWeekKey = getWeekKey(completedAt);
           if (completedWeekKey === currentWeekKey) {
-            inviteesThisWeek++;
+            invitesThisWeek++;
           } else if (completedWeekKey === getPreviousWeekKey()) {
-            inviteesLastWeek++;
+            invitesLastWeek++;
           }
         }
       }
