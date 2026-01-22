@@ -2775,8 +2775,8 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     const userData = userDoc.data();
     const inviteesSnap = await REFERRALS_COL.where('inviterUserId', '==', userId).get();
     const invitees = [];
-    let invitesThisWeek = 0;
-    let invitesLastWeek = 0;
+    let inviteesThisWeek = 0;
+    let inviteesLastWeek = 0;
     const currentWeekKey = getWeekKey();
     
     for (const doc of inviteesSnap.docs) {
@@ -2808,9 +2808,9 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         if (completedAt) {
           const completedWeekKey = getWeekKey(completedAt);
           if (completedWeekKey === currentWeekKey) {
-            invitesThisWeek++;
+            inviteesThisWeek++;
           } else if (completedWeekKey === getPreviousWeekKey()) {
-            invitesLastWeek++;
+            inviteesLastWeek++;
           }
         }
       }
@@ -2974,34 +2974,88 @@ app.get('/api/admin/users', async (req, res) => {
     // Limit results (default 100, max 1000)
     const maxResults = Math.min(parseInt(limit) || 100, 1000);
     
-    // Fetch users ordered by tokens
-    let query = USERS_COL.orderBy('tokensTotal', 'desc').limit(maxResults * 2); // Fetch more to account for filtering
+    let users = [];
     
-    const snapshot = await query.get();
-    let users = snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        userId: data.userId,
-        email: data.email || null,
-        walletAddress: data.walletAddress || null,
-        referralCode: data.referralCode,
-        tokensTotal: data.tokensTotal || 0,
-        tokensThisWeek: data.tokensThisWeek || 0,
-        tokensLastWeek: data.tokensLastWeek || 0,
-        tokensFromInvites: data.tokensFromInvites || 0,
-        tokensFromCommission: data.tokensFromCommission || 0,
-        invitesCompleted: data.invitesCompleted || 0,
-        totalHours: Math.floor((data.totalSeconds || 0) / 3600),
-        createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
-      };
-    });
-    
-    // Filter: only users with email (registered accounts) - do this in memory
+    // If filtering for registered users, fetch ALL and filter
+    // Otherwise just fetch top by tokens
     if (withEmail === 'true') {
-      users = users.filter(u => u.email && u.email.trim() !== '');
+      // Fetch ALL users in batches to find registered ones
+      console.log('[ADMIN] Fetching registered users...');
+      let lastDoc = null;
+      const batchSize = 500;
+      let totalFetched = 0;
+      
+      while (totalFetched < 10000) { // Safety limit
+        let query = USERS_COL.orderBy('tokensTotal', 'desc').limit(batchSize);
+        if (lastDoc) {
+          query = query.startAfter(lastDoc);
+        }
+        
+        const snapshot = await query.get();
+        if (snapshot.empty) break;
+        
+        const batchUsers = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            docId: doc.id,
+            userId: data.userId,
+            email: data.email || null,
+            walletAddress: data.walletAddress || null,
+            referralCode: data.referralCode,
+            tokensTotal: data.tokensTotal || 0,
+            tokensThisWeek: data.tokensThisWeek || 0,
+            tokensLastWeek: data.tokensLastWeek || 0,
+            tokensFromInvites: data.tokensFromInvites || 0,
+            tokensFromCommission: data.tokensFromCommission || 0,
+            invitesCompleted: data.invitesCompleted || 0,
+            totalHours: Math.floor((data.totalSeconds || 0) / 3600),
+            createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+          };
+        });
+        
+        // Filter for users with email
+        const registeredBatch = batchUsers.filter(u => u.email && u.email.trim() !== '');
+        users = users.concat(registeredBatch);
+        
+        totalFetched += snapshot.docs.length;
+        lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        
+        console.log(`[ADMIN] Fetched ${totalFetched} total, found ${users.length} registered so far`);
+        
+        // If we have enough registered users, stop
+        if (users.length >= maxResults) {
+          break;
+        }
+      }
+      
+      console.log(`[ADMIN] Final: ${users.length} registered users found`);
+      
+    } else {
+      // Regular fetch - just top users by tokens
+      const query = USERS_COL.orderBy('tokensTotal', 'desc').limit(maxResults);
+      const snapshot = await query.get();
+      
+      users = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          docId: doc.id,
+          userId: data.userId,
+          email: data.email || null,
+          walletAddress: data.walletAddress || null,
+          referralCode: data.referralCode,
+          tokensTotal: data.tokensTotal || 0,
+          tokensThisWeek: data.tokensThisWeek || 0,
+          tokensLastWeek: data.tokensLastWeek || 0,
+          tokensFromInvites: data.tokensFromInvites || 0,
+          tokensFromCommission: data.tokensFromCommission || 0,
+          invitesCompleted: data.invitesCompleted || 0,
+          totalHours: Math.floor((data.totalSeconds || 0) / 3600),
+          createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+        };
+      });
     }
     
-    // Apply limit after filtering
+    // Apply limit
     users = users.slice(0, maxResults);
     
     res.json({
@@ -3013,6 +3067,134 @@ app.get('/api/admin/users', async (req, res) => {
   } catch (error) {
     console.error('Admin users error:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// GET /api/admin/check-registered - Debug endpoint to see all registered users
+app.get('/api/admin/check-registered', async (req, res) => {
+  try {
+    const adminSecret = req.query.secret || req.headers['x-admin-secret'];
+    if (adminSecret !== process.env.ADMIN_SECRET) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    
+    if (!db) {
+      return res.status(500).json({ error: 'Firestore not configured' });
+    }
+    
+    // Check notifaiUserAuth collection (all registered emails)
+    const authCol = db.collection('notifaiUserAuth');
+    const authSnap = await authCol.get();
+    
+    const authUsers = authSnap.docs.map(doc => {
+      const data = doc.data();
+      return {
+        email: doc.id,
+        userId: data.userId,
+        createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
+        lastLogin: data.lastLogin ? data.lastLogin.toDate().toISOString() : null
+      };
+    });
+    
+    // For each auth user, get their data from notifaiUsers
+    const fullData = [];
+    for (const authUser of authUsers) {
+      const userDoc = await USERS_COL.doc(authUser.userId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        fullData.push({
+          email: authUser.email,
+          userId: authUser.userId,
+          // From notifaiUsers
+          emailInUsers: userData.email || null,
+          walletAddress: userData.walletAddress || null,
+          tokensTotal: userData.tokensTotal || 0,
+          referralCode: userData.referralCode || null,
+          totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
+          // Status
+          emailMatch: userData.email === authUser.email,
+          authCreatedAt: authUser.createdAt,
+          lastLogin: authUser.lastLogin
+        });
+      } else {
+        fullData.push({
+          email: authUser.email,
+          userId: authUser.userId,
+          error: 'User document not found in notifaiUsers',
+          authCreatedAt: authUser.createdAt
+        });
+      }
+    }
+    
+    res.json({
+      ok: true,
+      totalAuthRecords: authUsers.length,
+      users: fullData
+    });
+    
+  } catch (error) {
+    console.error('Check registered error:', error);
+    res.status(500).json({ error: 'Failed to check registered users', details: error.message });
+  }
+});
+
+// GET /api/admin/sync-emails - Sync emails from auth to users collection
+app.post('/api/admin/sync-emails', async (req, res) => {
+  try {
+    const adminSecret = req.query.secret || req.headers['x-admin-secret'];
+    if (adminSecret !== process.env.ADMIN_SECRET) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ error: 'Firestore not configured' });
+    }
+    
+    // Get all auth records
+    const authCol = db.collection('notifaiUserAuth');
+    const authSnap = await authCol.get();
+    
+    let synced = 0;
+    let errors = [];
+    
+    for (const doc of authSnap.docs) {
+      const authData = doc.data();
+      const email = doc.id;
+      const userId = authData.userId;
+      
+      if (!userId) continue;
+      
+      try {
+        // Check if user exists
+        const userDoc = await USERS_COL.doc(userId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          
+          // If email is missing or different, update it
+          if (!userData.email || userData.email !== email) {
+            await USERS_COL.doc(userId).update({
+              email: email,
+              updatedAt: new Date()
+            });
+            synced++;
+            console.log(`[SYNC] Updated email for ${userId}: ${email}`);
+          }
+        }
+      } catch (err) {
+        errors.push({ userId, email, error: err.message });
+      }
+    }
+    
+    res.json({
+      ok: true,
+      message: `Synced ${synced} users`,
+      synced,
+      errors: errors.length > 0 ? errors : undefined
+    });
+    
+  } catch (error) {
+    console.error('Sync emails error:', error);
+    res.status(500).json({ error: 'Failed to sync emails', details: error.message });
   }
 });
 
