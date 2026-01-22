@@ -2976,59 +2976,54 @@ app.get('/api/admin/users', async (req, res) => {
     
     let users = [];
     
-    // If filtering for registered users, fetch ALL and filter
-    // Otherwise just fetch top by tokens
+    // If filtering for registered users, query notifaiUserAuth directly (source of truth)
     if (withEmail === 'true') {
-      // Fetch ALL users in batches to find registered ones
-      console.log('[ADMIN] Fetching registered users...');
-      let lastDoc = null;
-      const batchSize = 500;
-      let totalFetched = 0;
+      console.log('[ADMIN] Fetching registered users from notifaiUserAuth...');
       
-      while (totalFetched < 10000) { // Safety limit
-        let query = USERS_COL.orderBy('tokensTotal', 'desc').limit(batchSize);
-        if (lastDoc) {
-          query = query.startAfter(lastDoc);
-        }
+      // Get all registered users from auth collection
+      const authCol = db.collection('notifaiUserAuth');
+      const authSnap = await authCol.get();
+      
+      console.log(`[ADMIN] Found ${authSnap.docs.length} records in notifaiUserAuth`);
+      
+      // For each auth record, get user data from notifaiUsers
+      for (const authDoc of authSnap.docs) {
+        const authData = authDoc.data();
+        const email = authDoc.id; // email is the document ID
+        const userId = authData.userId;
         
-        const snapshot = await query.get();
-        if (snapshot.empty) break;
+        if (!userId) continue;
         
-        const batchUsers = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            docId: doc.id,
-            userId: data.userId,
-            email: data.email || null,
-            walletAddress: data.walletAddress || null,
-            referralCode: data.referralCode,
-            tokensTotal: data.tokensTotal || 0,
-            tokensThisWeek: data.tokensThisWeek || 0,
-            tokensLastWeek: data.tokensLastWeek || 0,
-            tokensFromInvites: data.tokensFromInvites || 0,
-            tokensFromCommission: data.tokensFromCommission || 0,
-            invitesCompleted: data.invitesCompleted || 0,
-            totalHours: Math.floor((data.totalSeconds || 0) / 3600),
-            createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
-          };
-        });
-        
-        // Filter for users with email
-        const registeredBatch = batchUsers.filter(u => u.email && u.email.trim() !== '');
-        users = users.concat(registeredBatch);
-        
-        totalFetched += snapshot.docs.length;
-        lastDoc = snapshot.docs[snapshot.docs.length - 1];
-        
-        console.log(`[ADMIN] Fetched ${totalFetched} total, found ${users.length} registered so far`);
-        
-        // If we have enough registered users, stop
-        if (users.length >= maxResults) {
-          break;
+        try {
+          const userDoc = await USERS_COL.doc(userId).get();
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            users.push({
+              docId: userDoc.id,
+              userId: userData.userId || userId,
+              email: email, // Use email from auth collection (source of truth)
+              walletAddress: userData.walletAddress || null,
+              referralCode: userData.referralCode || null,
+              tokensTotal: userData.tokensTotal || 0,
+              tokensThisWeek: userData.tokensThisWeek || 0,
+              tokensLastWeek: userData.tokensLastWeek || 0,
+              tokensFromInvites: userData.tokensFromInvites || 0,
+              tokensFromCommission: userData.tokensFromCommission || 0,
+              invitesCompleted: userData.invitesCompleted || 0,
+              totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
+              createdAt: userData.createdAt ? userData.createdAt.toDate().toISOString() : null,
+              registeredAt: authData.createdAt ? authData.createdAt.toDate().toISOString() : null
+            });
+          }
+        } catch (err) {
+          console.error(`[ADMIN] Error fetching user ${userId}:`, err.message);
         }
       }
       
-      console.log(`[ADMIN] Final: ${users.length} registered users found`);
+      // Sort by tokens descending
+      users.sort((a, b) => (b.tokensTotal || 0) - (a.tokensTotal || 0));
+      
+      console.log(`[ADMIN] Final: ${users.length} registered users with data`);
       
     } else {
       // Regular fetch - just top users by tokens
