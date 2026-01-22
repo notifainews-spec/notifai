@@ -2178,12 +2178,38 @@ app.post("/api/rewards/track-usage", rewardsWriteLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing userId or seconds" });
     }
 
-    // Use provided userId directly (IP dedup was causing issues with VPN users)
-    const userId = providedUserId;
-
     const delta = Number(seconds);
     if (!Number.isFinite(delta) || delta <= 0) {
       return res.status(400).json({ ok: false, error: "Invalid seconds" });
+    }
+
+    // SERVER-ONLY FIX: Check if this device is linked to a registered account
+    let userId = providedUserId;
+    
+    try {
+      // First check if providedUserId is already a registered user
+      const userDoc = await USERS_COL.doc(providedUserId).get();
+      if (userDoc.exists && userDoc.data().email) {
+        // This userId belongs to a registered user, use it directly
+        userId = providedUserId;
+        console.log(`[TRACK] Direct registered user: ${userId}`);
+      } else {
+        // Check device mapping - maybe this device logged in before
+        const deviceMapCol = db.collection('notifaiDeviceMap');
+        const deviceDoc = await deviceMapCol.doc(providedUserId).get();
+        if (deviceDoc.exists) {
+          const mapping = deviceDoc.data();
+          if (mapping.linkedUserId) {
+            userId = mapping.linkedUserId;
+            console.log(`[TRACK] Device ${providedUserId} mapped to registered user ${userId} (${mapping.email})`);
+          }
+        } else {
+          console.log(`[TRACK] Anonymous device: ${providedUserId}`);
+        }
+      }
+    } catch (lookupErr) {
+      console.error(`[TRACK] Lookup error:`, lookupErr.message);
+      // Continue with providedUserId on error
     }
 
     await trackUsageForUser(userId, delta, { region, screen });
@@ -2482,7 +2508,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     if (!db) {
       return res.status(500).json({ ok: false, error: 'Firestore not configured' });
     }
-    const { email, password } = req.body;
+    const { email, password, deviceUserId } = req.body; // Accept deviceUserId from app
     if (!email || !password) {
       return res.status(400).json({ ok: false, error: 'Email and password required' });
     }
@@ -2497,6 +2523,19 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     if (!isValid) {
       return res.status(401).json({ ok: false, error: 'Invalid email or password' });
     }
+    
+    // SERVER-ONLY FIX: Link deviceUserId to this account if provided
+    if (deviceUserId && deviceUserId !== authData.userId) {
+      // Store device mapping so track-usage can find the right account
+      const deviceMapCol = db.collection('notifaiDeviceMap');
+      await deviceMapCol.doc(deviceUserId).set({
+        linkedUserId: authData.userId,
+        email: emailLower,
+        linkedAt: new Date()
+      }, { merge: true });
+      console.log(`[LOGIN] Linked device ${deviceUserId} to user ${authData.userId} (${emailLower})`);
+    }
+    
     await authCol.doc(emailLower).update({ lastLogin: new Date() });
     const userDoc = await USERS_COL.doc(authData.userId).get();
     const userData = userDoc.data();
