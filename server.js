@@ -713,7 +713,7 @@ const MAX_INVITES_PER_WEEK = 200;
 const MAX_TOKENS_PER_WEEK  = 300;
 const MAX_SECONDS_PER_WEEK = 7 * 24 * 60 * 60;
 const MAX_SECONDS_PER_CALL = 6 * 60 * 60;
-const MIN_MS_BETWEEN_CALLS = 10000; // 10 seconds (was 120000 = 2 min which blocked updates)
+const MIN_MS_BETWEEN_CALLS = 10000;
 
 // Cache variables are declared earlier in the file (around line 269-273)
 
@@ -832,11 +832,11 @@ if (deltaUsageTokens > 0) {
 updatePayload.tokensTotal = tokensTotal;
 updatePayload.tokensThisWeek = tokensThisWeek;
 }
-
-// ALWAYS write updates when seconds change (not just when tokens change)
-// This ensures minutes display correctly on dashboard
+const shouldWrite = true;
+if (shouldWrite) {
 await docRef.update(updatePayload);
 USER_CACHE.delete(userId);
+}
 
 if (data.referredByUserId && REFERRALS_COL) {
 await handleReferralRewards(
