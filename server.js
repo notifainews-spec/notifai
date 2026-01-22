@@ -2178,9 +2178,8 @@ app.post("/api/rewards/track-usage", rewardsWriteLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing userId or seconds" });
     }
 
-    // Get client IP and deduplicate
-    const clientIp = getClientIp(req);
-    const userId = getStableUserIdForIp(clientIp, providedUserId);
+    // Use provided userId directly (IP dedup was causing issues with VPN users)
+    const userId = providedUserId;
 
     const delta = Number(seconds);
     if (!Number.isFinite(delta) || delta <= 0) {
