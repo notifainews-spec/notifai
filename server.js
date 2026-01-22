@@ -12,6 +12,11 @@ import admin from "firebase-admin";
 import rateLimit from "express-rate-limit";
 import bcrypt from 'bcryptjs';  // ADD THIS
 import jwt from 'jsonwebtoken';  // ADD THIS
+import { Resend } from 'resend';
+
+const resend = process.env.RESEND_API_KEY 
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1104,20 +1109,31 @@ async function generateBlogForPersona(personaKey, dateStr) {
 
   const userPrompt = `
 Today is ${dateStr}.
-Pick ONE specific topic from this loose list (do NOT list them, just choose one):
-politics, culture, entertainment, food, travel, startup ideas, lifestyle,
-parenting, technology, or a personal reflection.
 
-Write an informal blog post as ${meta.displayName}, in first person "I",
-up to about 700 words.
+CRITICAL: This is a PERSONAL OPINION BLOG, NOT a news article or news summary.
+Do NOT write about breaking news, current events, or news stories.
+Do NOT report on what happened today in the news.
 
-You may casually reference your "life" and backstory consistent with your persona.
-You may loosely reference "today's news" in general, but do NOT reference NotifAi as an app or this server.
+Instead, write a personal, opinion-based blog post from ${meta.displayName}'s perspective.
+
+Pick ONE specific topic for a personal essay:
+- A personal opinion or hot take on something
+- A life experience, story, or reflection
+- Food, travel, or lifestyle thoughts
+- Technology or culture commentary (opinions, not news)
+- Parenting, work, or daily life musings
+- A controversial opinion or unpopular take
+
+Write in first person "I", conversational and informal tone, up to 700 words.
+Share YOUR thoughts, YOUR experiences, YOUR opinions - NOT news reports or summaries.
+
+You may mention snippets of "your life" consistent with your persona backstory.
+Do NOT reference NotifAi as an app or this server.
 
 Return ONLY valid JSON with this exact shape:
 {
-  "title": "short catchy blog headline",
-  "body": "full blog content as markdown or plain text"
+  "title": "catchy personal blog headline (NOT a news headline)",
+  "body": "full blog content as personal opinion essay"
 }
 `;
 
@@ -2591,9 +2607,40 @@ app.post('/api/auth/request-reset', authLimiter, async (req, res) => {
     // Store code
     resetCodes.set(emailLower, { code, expiresAt });
     
-    // Log code (in production, send email)
-    console.log(`[PASSWORD RESET] Code for ${emailLower}: ${code}`);
-    console.log(`[PASSWORD RESET] Code expires in 15 minutes`);
+    // Send email with reset code
+    try {
+      if (resend) {
+        await resend.emails.send({
+          from: 'NotifAi <onboarding@resend.dev>',
+          to: emailLower,
+          subject: 'NotifAi Password Reset Code',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: #000000;">Password Reset Request</h2>
+              <p>Your password reset code is:</p>
+              <div style="background: #000000; color: #ffffff; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; border-radius: 8px; margin: 20px 0;">
+                ${code}
+              </div>
+              <p style="color: #6b7280;">This code expires in 15 minutes.</p>
+              <p style="color: #6b7280;">If you didn't request this, please ignore this email.</p>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+              <p style="color: #9ca3af; font-size: 12px;">NotifAi News - Crypto Rewards</p>
+            </div>
+          `
+        });
+        
+        console.log(`[PASSWORD RESET] Email sent successfully via Resend to ${emailLower}`);
+      } else {
+        // Fallback: log to console if Resend not configured
+        console.log(`[PASSWORD RESET] Resend not configured. Code for ${emailLower}: ${code}`);
+        console.log(`[PASSWORD RESET] Code expires in 15 minutes`);
+        console.log(`[PASSWORD RESET] To enable email: npm install resend and set RESEND_API_KEY env var`);
+      }
+    } catch (emailError) {
+      console.error('[PASSWORD RESET] Email send error:', emailError);
+      // Don't fail the request if email fails - code is still valid
+      console.log(`[PASSWORD RESET] Fallback - Code for ${emailLower}: ${code}`);
+    }
     
     res.json({
       ok: true,
@@ -2728,8 +2775,8 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     const userData = userDoc.data();
     const inviteesSnap = await REFERRALS_COL.where('inviterUserId', '==', userId).get();
     const invitees = [];
-    let invitesThisWeek = 0;
-    let invitesLastWeek = 0;
+    let inviteesThisWeek = 0;
+    let inviteesLastWeek = 0;
     const currentWeekKey = getWeekKey();
     
     for (const doc of inviteesSnap.docs) {
@@ -2761,9 +2808,9 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         if (completedAt) {
           const completedWeekKey = getWeekKey(completedAt);
           if (completedWeekKey === currentWeekKey) {
-            invitesThisWeek++;
+            inviteesThisWeek++;
           } else if (completedWeekKey === getPreviousWeekKey()) {
-            invitesLastWeek++;
+            inviteesLastWeek++;
           }
         }
       }
@@ -2792,6 +2839,8 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         email: userData.email || null,
         totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
         weeklyHours: Math.floor((userData.weeklySeconds || 0) / 3600),
+        totalSeconds: userData.totalSeconds || 0,
+        weeklySeconds: userData.weeklySeconds || 0,
         invitees,
         inviteesCount: invitees.length,
         activeInviteesCount: invitees.filter(i => i.status === 'active').length
