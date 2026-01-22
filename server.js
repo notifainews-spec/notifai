@@ -2970,19 +2970,15 @@ app.get('/api/admin/users', async (req, res) => {
     }
     
     const { withEmail, limit } = req.query;
-    let query = USERS_COL.orderBy('tokensTotal', 'desc');
-    
-    // Filter: only users with email (registered accounts)
-    if (withEmail === 'true') {
-      query = query.where('email', '!=', null);
-    }
     
     // Limit results (default 100, max 1000)
     const maxResults = Math.min(parseInt(limit) || 100, 1000);
-    query = query.limit(maxResults);
+    
+    // Fetch users ordered by tokens
+    let query = USERS_COL.orderBy('tokensTotal', 'desc').limit(maxResults * 2); // Fetch more to account for filtering
     
     const snapshot = await query.get();
-    const users = snapshot.docs.map(doc => {
+    let users = snapshot.docs.map(doc => {
       const data = doc.data();
       return {
         userId: data.userId,
@@ -2999,6 +2995,14 @@ app.get('/api/admin/users', async (req, res) => {
         createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
       };
     });
+    
+    // Filter: only users with email (registered accounts) - do this in memory
+    if (withEmail === 'true') {
+      users = users.filter(u => u.email && u.email.trim() !== '');
+    }
+    
+    // Apply limit after filtering
+    users = users.slice(0, maxResults);
     
     res.json({
       ok: true,
