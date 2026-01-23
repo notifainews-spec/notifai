@@ -2166,16 +2166,25 @@ return res.json({
   }
 });
 
-// 2) Track usage seconds (home + article)
-app.post("/api/rewards/track-usage", rewardsWriteLimiter, async (req, res) => {
+// 2) Track usage seconds (home + article + chat) - UPDATED WITH JWT SUPPORT
+app.post("/api/rewards/track-usage", rewardsWriteLimiter, authenticateTokenOptional, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: "Firestore not configured" });
     }
 
     const { userId: providedUserId, seconds, region, screen } = req.body || {};
-    if (!providedUserId || seconds === undefined || seconds === null) {
-      return res.status(400).json({ ok: false, error: "Missing userId or seconds" });
+    
+    // Get userId from JWT token if available
+    const tokenUserId = req.user && req.user.userId;
+    
+    // Must have either token userId OR body userId
+    if (!tokenUserId && !providedUserId) {
+      return res.status(400).json({ ok: false, error: "Missing userId (token or body)" });
+    }
+    
+    if (seconds === undefined || seconds === null) {
+      return res.status(400).json({ ok: false, error: "Missing seconds" });
     }
 
     const delta = Number(seconds);
@@ -2183,38 +2192,44 @@ app.post("/api/rewards/track-usage", rewardsWriteLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Invalid seconds" });
     }
 
-    // SERVER-ONLY FIX: Check if this device is linked to a registered account
+    // PRIORITY 1: If authenticated via JWT, ALWAYS use that userId
+    if (tokenUserId) {
+      console.log(`[TRACK] ✅ JWT authenticated user: ${tokenUserId} (+${delta}s on ${screen})`);
+      await trackUsageForUser(tokenUserId, delta, { region, screen });
+      return res.json({ ok: true, source: "jwt" });
+    }
+
+    // PRIORITY 2: Not authenticated - use device mapping fallback
     let userId = providedUserId;
     
     try {
-      // First check if providedUserId is already a registered user
+      // Check if providedUserId is already a registered user
       const userDoc = await USERS_COL.doc(providedUserId).get();
       if (userDoc.exists && userDoc.data().email) {
-        // This userId belongs to a registered user, use it directly
         userId = providedUserId;
-        console.log(`[TRACK] Direct registered user: ${userId}`);
+        console.log(`[TRACK] 📧 Registered user via body: ${userId}`);
       } else {
         // Check device mapping - maybe this device logged in before
-        const deviceMapCol = db.collection('notifaiDeviceMap');
+        const deviceMapCol = db.collection("notifaiDeviceMap");
         const deviceDoc = await deviceMapCol.doc(providedUserId).get();
         if (deviceDoc.exists) {
           const mapping = deviceDoc.data();
           if (mapping.linkedUserId) {
             userId = mapping.linkedUserId;
-            console.log(`[TRACK] Device ${providedUserId} mapped to registered user ${userId} (${mapping.email})`);
+            console.log(`[TRACK] 🔗 Device ${providedUserId} → ${userId} (${mapping.email})`);
           }
         } else {
-          console.log(`[TRACK] Anonymous device: ${providedUserId}`);
+          console.log(`[TRACK] 📱 Anonymous device: ${providedUserId}`);
         }
       }
     } catch (lookupErr) {
-      console.error(`[TRACK] Lookup error:`, lookupErr.message);
+      console.error(`[TRACK] ⚠️ Lookup error:`, lookupErr.message);
       // Continue with providedUserId on error
     }
 
     await trackUsageForUser(userId, delta, { region, screen });
-
-    return res.json({ ok: true });
+    return res.json({ ok: true, source: "fallback" });
+    
   } catch (err) {
     console.error("POST /api/rewards/track-usage error", err);
     return res.status(500).json({ ok: false, error: "Server error" });
@@ -2442,6 +2457,27 @@ function authenticateToken(req, res, next) {
     if (err) {
       return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
     }
+    req.user = user;
+    next();
+  });
+}
+
+function authenticateTokenOptional(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  // If no token, allow anonymous - don't return error
+  if (!token) {
+    return next();
+  }
+  
+  // If token exists, verify it
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      // Invalid token - return error
+      return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
+    }
+    // Valid token - attach user to request
     req.user = user;
     next();
   });
