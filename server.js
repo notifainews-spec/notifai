@@ -3522,7 +3522,7 @@ app.get('/api/admin/dashboard', (req, res) => {
         const params = new URLSearchParams({ limit });
         if (filterType === 'registered') params.append('withEmail', 'true');
         
-        const res = await fetch(`/api/admin/users?${params}`, {
+        const res = await fetch('/api/admin/users?' + params, {
           headers: { 'x-admin-secret': ADMIN_SECRET }
         });
         const data = await res.json();
