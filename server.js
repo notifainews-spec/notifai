@@ -3522,7 +3522,7 @@ app.get('/api/admin/dashboard', (req, res) => {
         const params = new URLSearchParams({ limit });
         if (filterType === 'registered') params.append('withEmail', 'true');
         
-        const res = await fetch('/api/admin/users?' + params, {
+        const res = await fetch(\`/api/admin/users?\${params}\`, {
           headers: { 'x-admin-secret': ADMIN_SECRET }
         });
         const data = await res.json();
@@ -3557,22 +3557,22 @@ app.get('/api/admin/dashboard', (req, res) => {
         const tierBadge = user.tokensTotal >= 100 ? 'badge-high' : 
                           user.tokensTotal >= 20 ? 'badge-med' : 'badge-low';
         
-        row.innerHTML = `
-          <td class="email">${user.email || 'Anonymous'}</td>
-          <td class="wallet">${user.walletAddress ? user.walletAddress.slice(0, 10) + '...' : '-'}</td>
+        row.innerHTML = \`
+          <td class="email">\${user.email || 'Anonymous'}</td>
+          <td class="wallet">\${user.walletAddress ? user.walletAddress.slice(0, 10) + '...' : '-'}</td>
           <td class="tokens">
-            ${user.tokensTotal}
-            <span class="badge ${tierBadge}">
-              ${user.tokensTotal >= 100 ? 'VIP' : user.tokensTotal >= 20 ? 'Active' : 'New'}
+            \${user.tokensTotal}
+            <span class="badge \${tierBadge}">
+              \${user.tokensTotal >= 100 ? 'VIP' : user.tokensTotal >= 20 ? 'Active' : 'New'}
             </span>
           </td>
-          <td>${user.tokensThisWeek}</td>
-          <td>${user.tokensLastWeek}</td>
-          <td>${user.invitesCompleted}</td>
-          <td>${user.tokensFromInvites || 0}</td>
-          <td>${user.tokensFromCommission || 0}</td>
-          <td>${user.totalHours}h</td>
-        `;
+          <td>\${user.tokensThisWeek}</td>
+          <td>\${user.tokensLastWeek}</td>
+          <td>\${user.invitesCompleted}</td>
+          <td>\${user.tokensFromInvites || 0}</td>
+          <td>\${user.tokensFromCommission || 0}</td>
+          <td>\${user.totalHours}h</td>
+        \`;
         
         tbody.appendChild(row);
       });
@@ -3612,7 +3612,7 @@ app.get('/api/admin/dashboard', (req, res) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `notifai-users-${new Date().toISOString().split('T')[0]}.csv`;
+      a.download = \`notifai-users-\${new Date().toISOString().split('T')[0]}.csv\`;
       a.click();
     }
 
@@ -3622,346 +3622,6 @@ app.get('/api/admin/dashboard', (req, res) => {
 </body>
 </html>
   `);
-});
-
-/* --------------------------------------------------------
-   REFERRAL LANDING PAGE
---------------------------------------------------------- */
-app.get('/join/:referralCode', (req, res) => {
-  const { referralCode } = req.params;
-  const userAgent = req.headers['user-agent'] || '';
-  
-  // Detect platform
-  const isIOS = /iPhone|iPad|iPod/.test(userAgent);
-  const isAndroid = /Android/.test(userAgent);
-  
-  // Your actual app store links
-  const iosAppLink = 'https://apps.apple.com/us/app/notifai-news/id6755790910';
-  const androidAppLink = 'https://play.google.com/store/apps/details?id=com.MCDuyJUZlEDU.natively';
-  
-  // Deep link for app (if configured later)
-  const deepLink = `notifainews://join?ref=${referralCode}`;
-  
-  res.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Join NotifAi News - Get Crypto Rewards!</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .container {
-      background: white;
-      border-radius: 24px;
-      padding: 40px;
-      max-width: 500px;
-      width: 100%;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      text-align: center;
-    }
-    h1 {
-      color: #667eea;
-      font-size: 32px;
-      margin-bottom: 16px;
-    }
-    .emoji {
-      font-size: 48px;
-      margin-bottom: 16px;
-    }
-    .subtitle {
-      color: #666;
-      font-size: 16px;
-      margin-bottom: 32px;
-      line-height: 1.6;
-    }
-    .referral-code-box {
-      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-      border: 3px dashed #667eea;
-      border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 32px;
-    }
-    .referral-code-label {
-      color: #666;
-      font-size: 14px;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      margin-bottom: 12px;
-      font-weight: 600;
-    }
-    .referral-code {
-      font-size: 42px;
-      font-weight: 900;
-      color: #667eea;
-      font-family: 'Courier New', monospace;
-      letter-spacing: 4px;
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-    }
-    .copy-btn {
-      background: #667eea;
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-weight: 700;
-      cursor: pointer;
-      margin-top: 16px;
-      transition: all 0.3s;
-      font-size: 14px;
-    }
-    .copy-btn:hover {
-      background: #5568d3;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    }
-    .copy-btn:active {
-      transform: translateY(0);
-    }
-    .download-section {
-      margin-top: 32px;
-    }
-    .download-btn {
-      display: block;
-      background: #667eea;
-      color: white;
-      text-decoration: none;
-      padding: 18px 32px;
-      border-radius: 12px;
-      font-weight: 700;
-      font-size: 18px;
-      margin: 12px 0;
-      transition: all 0.3s;
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    }
-    .download-btn:hover {
-      background: #5568d3;
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-    }
-    .download-btn.secondary {
-      background: #6b7280;
-      box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
-    }
-    .download-btn.secondary:hover {
-      background: #4b5563;
-      box-shadow: 0 6px 20px rgba(107, 114, 128, 0.4);
-    }
-    .features {
-      margin-top: 32px;
-      text-align: left;
-      background: #f8f9fa;
-      border-radius: 12px;
-      padding: 20px;
-    }
-    .feature {
-      display: flex;
-      align-items: flex-start;
-      margin-bottom: 16px;
-    }
-    .feature:last-child {
-      margin-bottom: 0;
-    }
-    .feature-icon {
-      font-size: 24px;
-      margin-right: 12px;
-      flex-shrink: 0;
-    }
-    .feature-text {
-      color: #333;
-      font-size: 14px;
-      line-height: 1.6;
-    }
-    .feature-text strong {
-      color: #667eea;
-      display: block;
-      margin-bottom: 4px;
-    }
-    .instructions {
-      background: #fff3cd;
-      border-left: 4px solid #ffc107;
-      padding: 20px;
-      margin-top: 24px;
-      text-align: left;
-      border-radius: 8px;
-    }
-    .instructions h3 {
-      color: #856404;
-      font-size: 16px;
-      margin-bottom: 12px;
-      font-weight: 700;
-    }
-    .instructions ol {
-      margin-left: 20px;
-      color: #856404;
-      font-size: 14px;
-      line-height: 1.8;
-    }
-    .instructions li {
-      margin-bottom: 8px;
-    }
-    .instructions li strong {
-      font-weight: 700;
-    }
-    .toast {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: #10b981;
-      color: white;
-      padding: 16px 32px;
-      border-radius: 12px;
-      font-weight: 700;
-      opacity: 0;
-      transition: all 0.3s;
-      pointer-events: none;
-      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-    }
-    .toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-    @media (max-width: 480px) {
-      .container {
-        padding: 24px;
-      }
-      h1 {
-        font-size: 24px;
-      }
-      .referral-code {
-        font-size: 32px;
-        letter-spacing: 2px;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="emoji">🎉</div>
-    <h1>You've Been Invited!</h1>
-    <p class="subtitle">
-      Join NotifAi News and earn crypto tokens for reading news. 
-      Your friend has shared their referral code with you!
-    </p>
-
-    <div class="referral-code-box">
-      <div class="referral-code-label">Your Referral Code</div>
-      <div class="referral-code" id="code">${referralCode}</div>
-      <button class="copy-btn" onclick="copyCode()">📋 Copy Code</button>
-    </div>
-
-    <div class="download-section">
-      ${isIOS ? `
-        <a href="${iosAppLink}" class="download-btn">
-          📱 Download on App Store
-        </a>
-      ` : isAndroid ? `
-        <a href="${androidAppLink}" class="download-btn">
-          🤖 Get it on Google Play
-        </a>
-      ` : `
-        <a href="${iosAppLink}" class="download-btn">
-          📱 Download on App Store
-        </a>
-        <a href="${androidAppLink}" class="download-btn secondary">
-          🤖 Get it on Google Play
-        </a>
-      `}
-    </div>
-
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon">💰</div>
-        <div class="feature-text">
-          <strong>Earn Crypto Tokens</strong>
-          Get 1 token for every hour you read news
-        </div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">🎁</div>
-        <div class="feature-text">
-          <strong>Referral Bonuses</strong>
-          Your friend earns 10% commission on your earnings
-        </div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">📰</div>
-        <div class="feature-text">
-          <strong>AI-Powered News</strong>
-          Get personalized news from multiple sources
-        </div>
-      </div>
-    </div>
-
-    <div class="instructions">
-      <h3>📝 How to Use Your Code:</h3>
-      <ol>
-        <li>Download the <strong>NotifAi News</strong> app using the button above</li>
-        <li>Open the app and tap on the <strong>Rewards</strong> tab</li>
-        <li>Click <strong>Register</strong> to create your account</li>
-        <li>Enter this referral code: <strong>${referralCode}</strong></li>
-        <li>Start reading news and earning tokens! 🚀</li>
-      </ol>
-    </div>
-  </div>
-
-  <div class="toast" id="toast">✓ Code copied to clipboard!</div>
-
-  <script>
-    function copyCode() {
-      const code = document.getElementById('code').textContent;
-      navigator.clipboard.writeText(code).then(() => {
-        const toast = document.getElementById('toast');
-        toast.classList.add('show');
-        setTimeout(() => {
-          toast.classList.remove('show');
-        }, 2000);
-      }).catch(err => {
-        // Fallback for older browsers
-        const textArea = document.createElement('textarea');
-        textArea.value = code;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        
-        const toast = document.getElementById('toast');
-        toast.classList.add('show');
-        setTimeout(() => {
-          toast.classList.remove('show');
-        }, 2000);
-      });
-    }
-
-    // Try to open app via deep link (if app is installed)
-    ${isIOS || isAndroid ? `
-      setTimeout(() => {
-        window.location.href = '${deepLink}';
-      }, 500);
-    ` : ''}
-  </script>
-</body>
-</html>
-  `);
-});
-
-// Also support /ref/:code for backwards compatibility
-app.get('/ref/:referralCode', (req, res) => {
-  res.redirect('/join/' + req.params.referralCode);
 });
 
 /* --------------------------------------------------------
