@@ -3557,7 +3557,7 @@ app.get('/api/admin/dashboard', (req, res) => {
         const tierBadge = user.tokensTotal >= 100 ? 'badge-high' : 
                           user.tokensTotal >= 20 ? 'badge-med' : 'badge-low';
         
-        row.innerHTML = \`
+        row.innerHTML = `
           <td class="email">${user.email || 'Anonymous'}</td>
           <td class="wallet">${user.walletAddress ? user.walletAddress.slice(0, 10) + '...' : '-'}</td>
           <td class="tokens">
@@ -3572,7 +3572,7 @@ app.get('/api/admin/dashboard', (req, res) => {
           <td>${user.tokensFromInvites || 0}</td>
           <td>${user.tokensFromCommission || 0}</td>
           <td>${user.totalHours}h</td>
-        \`;
+        `;
         
         tbody.appendChild(row);
       });
