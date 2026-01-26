@@ -3522,7 +3522,7 @@ app.get('/api/admin/dashboard', (req, res) => {
         const params = new URLSearchParams({ limit });
         if (filterType === 'registered') params.append('withEmail', 'true');
         
-        const res = await fetch(\`/api/admin/users?\${params}\`, {
+        const res = await fetch(`/api/admin/users?${params}`, {
           headers: { 'x-admin-secret': ADMIN_SECRET }
         });
         const data = await res.json();
@@ -3558,20 +3558,20 @@ app.get('/api/admin/dashboard', (req, res) => {
                           user.tokensTotal >= 20 ? 'badge-med' : 'badge-low';
         
         row.innerHTML = \`
-          <td class="email">\${user.email || 'Anonymous'}</td>
-          <td class="wallet">\${user.walletAddress ? user.walletAddress.slice(0, 10) + '...' : '-'}</td>
+          <td class="email">${user.email || 'Anonymous'}</td>
+          <td class="wallet">${user.walletAddress ? user.walletAddress.slice(0, 10) + '...' : '-'}</td>
           <td class="tokens">
-            \${user.tokensTotal}
-            <span class="badge \${tierBadge}">
-              \${user.tokensTotal >= 100 ? 'VIP' : user.tokensTotal >= 20 ? 'Active' : 'New'}
+            ${user.tokensTotal}
+            <span class="badge ${tierBadge}">
+              ${user.tokensTotal >= 100 ? 'VIP' : user.tokensTotal >= 20 ? 'Active' : 'New'}
             </span>
           </td>
-          <td>\${user.tokensThisWeek}</td>
-          <td>\${user.tokensLastWeek}</td>
-          <td>\${user.invitesCompleted}</td>
-          <td>\${user.tokensFromInvites || 0}</td>
-          <td>\${user.tokensFromCommission || 0}</td>
-          <td>\${user.totalHours}h</td>
+          <td>${user.tokensThisWeek}</td>
+          <td>${user.tokensLastWeek}</td>
+          <td>${user.invitesCompleted}</td>
+          <td>${user.tokensFromInvites || 0}</td>
+          <td>${user.tokensFromCommission || 0}</td>
+          <td>${user.totalHours}h</td>
         \`;
         
         tbody.appendChild(row);
@@ -3612,7 +3612,7 @@ app.get('/api/admin/dashboard', (req, res) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = \`notifai-users-\${new Date().toISOString().split('T')[0]}.csv\`;
+      a.download = `notifai-users-${new Date().toISOString().split('T')[0]}.csv`;
       a.click();
     }
 
@@ -3961,7 +3961,7 @@ app.get('/join/:referralCode', (req, res) => {
 
 // Also support /ref/:code for backwards compatibility
 app.get('/ref/:referralCode', (req, res) => {
-  res.redirect(\`/join/\${req.params.referralCode}\`);
+  res.redirect('/join/' + req.params.referralCode);
 });
 
 /* --------------------------------------------------------
