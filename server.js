@@ -2484,6 +2484,7 @@ function authenticateTokenOptional(req, res, next) {
 }
 
 // POST /api/auth/register
+// POST /api/auth/register - Step 1: Send verification code
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
@@ -2499,7 +2500,16 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (password.length < 8) {
       return res.status(400).json({ ok: false, error: 'Password must be 8+ characters' });
     }
+    
     const emailLower = email.toLowerCase().trim();
+    
+    // Block disposable email domains
+    const disposableDomains = ['tempmail.com', 'throwaway.email', 'guerrillamail.com', 'mailinator.com', '10minutemail.com', 'temp-mail.org', 'fakeinbox.com', 'trashmail.com', 'yopmail.com', 'sharklasers.com', 'guerrillamail.info', 'grr.la', 'spam4.me'];
+    const emailDomain = emailLower.split('@')[1];
+    if (disposableDomains.some(d => emailDomain?.includes(d))) {
+      return res.status(400).json({ ok: false, error: 'Please use a valid email address' });
+    }
+    
     const authCol = db.collection('notifaiUserAuth');
     const existingAuth = await authCol.doc(emailLower).get();
     if (existingAuth.exists) {
@@ -2513,28 +2523,347 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (userData.email && userData.email !== emailLower) {
       return res.status(400).json({ ok: false, error: 'User ID linked to another email' });
     }
+    
+    // Generate 6-digit verification code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + VERIFICATION_CODE_EXPIRY;
     const passwordHash = await bcrypt.hash(password, 10);
-    await authCol.doc(emailLower).set({
-      email: emailLower, passwordHash, userId,
-      createdAt: new Date(), lastLogin: new Date()
+    
+    // Store pending registration
+    verificationCodes.set(emailLower, {
+      code,
+      expiresAt,
+      userId,
+      passwordHash
     });
+    
+    // Send verification email
+    try {
+      if (resend) {
+        await resend.emails.send({
+          from: 'NotifAi <onboarding@resend.dev>',
+          to: emailLower,
+          subject: 'Verify your NotifAi account',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: #000000;">Welcome to NotifAi! 🎉</h2>
+              <p>Your verification code is:</p>
+              <div style="background: #000000; color: #ffffff; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; border-radius: 8px; margin: 20px 0;">
+                ${code}
+              </div>
+              <p style="color: #6b7280;">This code expires in 15 minutes.</p>
+              <p style="color: #6b7280;">Enter this code in the app to complete your registration.</p>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+              <p style="color: #9ca3af; font-size: 12px;">NotifAi News - Earn rewards for reading news</p>
+            </div>
+          `
+        });
+        console.log(`[VERIFY] Sent verification email to ${emailLower}`);
+      } else {
+        // Fallback: log to console if Resend not configured
+        console.log(`[VERIFY] Resend not configured. Code for ${emailLower}: ${code}`);
+      }
+    } catch (emailError) {
+      console.error('[VERIFY] Email send error:', emailError);
+      // Still return success - code is stored
+      console.log(`[VERIFY] Fallback - Code for ${emailLower}: ${code}`);
+    }
+    
+    res.json({
+      ok: true,
+      message: 'Verification code sent to your email',
+      requiresVerification: true
+    });
+    
+  } catch (error) {
+    console.error('Register error:', error);
+    res.status(500).json({ ok: false, error: 'Registration failed' });
+  }
+});
+
+// POST /api/auth/verify-email - Step 2: Verify code and complete registration
+app.post('/api/auth/verify-email', authLimiter, async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ ok: false, error: 'Email and code required' });
+    }
+    
+    const emailLower = email.toLowerCase().trim();
+    const pending = verificationCodes.get(emailLower);
+    
+    if (!pending) {
+      return res.status(400).json({ ok: false, error: 'No pending registration. Please register again.' });
+    }
+    
+    if (Date.now() > pending.expiresAt) {
+      verificationCodes.delete(emailLower);
+      return res.status(400).json({ ok: false, error: 'Code expired. Please register again.' });
+    }
+    
+    if (pending.code !== code.trim()) {
+      return res.status(400).json({ ok: false, error: 'Invalid verification code' });
+    }
+    
+    // Code is valid - complete registration
+    const { userId, passwordHash } = pending;
+    
+    const authCol = db.collection('notifaiUserAuth');
+    
+    // Double-check email isn't taken (race condition protection)
+    const existingAuth = await authCol.doc(emailLower).get();
+    if (existingAuth.exists) {
+      verificationCodes.delete(emailLower);
+      return res.status(400).json({ ok: false, error: 'Email already registered' });
+    }
+    
+    // Create the auth record
+    await authCol.doc(emailLower).set({
+      email: emailLower,
+      passwordHash,
+      userId,
+      emailVerified: true,
+      verifiedAt: new Date(),
+      createdAt: new Date(),
+      lastLogin: new Date()
+    });
+    
+    // Update user record
     await USERS_COL.doc(userId).update({
-      email: emailLower, passwordHash,
+      email: emailLower,
+      emailVerified: true,
       updatedAt: new Date()
     });
+    
+    // Clear pending registration
+    verificationCodes.delete(emailLower);
+    
+    // Get user data for response
+    const userDoc = await USERS_COL.doc(userId).get();
+    const userData = userDoc.data();
+    
+    // Generate JWT token
     const token = jwt.sign({ email: emailLower, userId }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    
+    console.log(`[VERIFY] Email verified and account created: ${emailLower}`);
+    
     res.json({
-      ok: true, token,
+      ok: true,
+      token,
       user: {
-        email: emailLower, userId,
-        walletAddress: userData.walletAddress,
+        email: emailLower,
+        userId,
+        walletAddress: userData.walletAddress || null,
         referralCode: userData.referralCode,
         tokensTotal: userData.tokensTotal || 0
       }
     });
+    
   } catch (error) {
-    console.error('Register error:', error);
-    res.status(500).json({ ok: false, error: 'Registration failed' });
+    console.error('Verify email error:', error);
+    res.status(500).json({ ok: false, error: 'Verification failed' });
+  }
+});
+
+// POST /api/auth/resend-verification - Resend verification code
+app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ ok: false, error: 'Email required' });
+    }
+    
+    const emailLower = email.toLowerCase().trim();
+    const pending = verificationCodes.get(emailLower);
+    
+    if (!pending) {
+      return res.status(400).json({ ok: false, error: 'No pending registration. Please register again.' });
+    }
+    
+    // Generate new code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + VERIFICATION_CODE_EXPIRY;
+    
+    // Update stored registration with new code
+    verificationCodes.set(emailLower, {
+      ...pending,
+      code,
+      expiresAt
+    });
+    
+    // Send new verification email
+    try {
+      if (resend) {
+        await resend.emails.send({
+          from: 'NotifAi <onboarding@resend.dev>',
+          to: emailLower,
+          subject: 'Your new NotifAi verification code',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: #000000;">New Verification Code</h2>
+              <p>Your new verification code is:</p>
+              <div style="background: #000000; color: #ffffff; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; border-radius: 8px; margin: 20px 0;">
+                ${code}
+              </div>
+              <p style="color: #6b7280;">This code expires in 15 minutes.</p>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+              <p style="color: #9ca3af; font-size: 12px;">NotifAi News - Earn rewards for reading news</p>
+            </div>
+          `
+        });
+        console.log(`[VERIFY] Resent verification email to ${emailLower}`);
+      } else {
+        console.log(`[VERIFY] Resend not configured. New code for ${emailLower}: ${code}`);
+      }
+    } catch (emailError) {
+      console.error('[VERIFY] Email resend error:', emailError);
+      console.log(`[VERIFY] Fallback - New code for ${emailLower}: ${code}`);
+    }
+    
+    res.json({
+      ok: true,
+      message: 'New verification code sent'
+    });
+    
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to resend code' });
+  }
+});
+
+// POST /api/auth/request-email-verification - For existing users to verify their email
+app.post('/api/auth/request-email-verification', authenticateToken, async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    
+    const { email, userId } = req.user;
+    
+    // Check if already verified
+    const userDoc = await USERS_COL.doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    if (userData.emailVerified) {
+      return res.json({ ok: true, alreadyVerified: true, message: 'Email already verified' });
+    }
+    
+    // Generate 6-digit verification code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + VERIFICATION_CODE_EXPIRY;
+    
+    // Store verification code for existing user
+    verificationCodes.set(email, {
+      code,
+      expiresAt,
+      userId,
+      isExistingUser: true
+    });
+    
+    // Send verification email
+    try {
+      if (resend) {
+        await resend.emails.send({
+          from: 'NotifAi <onboarding@resend.dev>',
+          to: email,
+          subject: 'Verify your NotifAi email',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: #000000;">Verify Your Email</h2>
+              <p>Your verification code is:</p>
+              <div style="background: #000000; color: #ffffff; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; border-radius: 8px; margin: 20px 0;">
+                ${code}
+              </div>
+              <p style="color: #6b7280;">This code expires in 15 minutes.</p>
+              <p style="color: #6b7280;">Enter this code in the app to verify your email.</p>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+              <p style="color: #9ca3af; font-size: 12px;">NotifAi News - Earn rewards for reading news</p>
+            </div>
+          `
+        });
+        console.log(`[VERIFY] Sent verification email to existing user ${email}`);
+      } else {
+        console.log(`[VERIFY] Resend not configured. Code for existing user ${email}: ${code}`);
+      }
+    } catch (emailError) {
+      console.error('[VERIFY] Email send error:', emailError);
+      console.log(`[VERIFY] Fallback - Code for ${email}: ${code}`);
+    }
+    
+    res.json({
+      ok: true,
+      message: 'Verification code sent to your email'
+    });
+    
+  } catch (error) {
+    console.error('Request email verification error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to send verification code' });
+  }
+});
+
+// POST /api/auth/confirm-email-verification - For existing users to confirm their code
+app.post('/api/auth/confirm-email-verification', authenticateToken, async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    
+    const { email, userId } = req.user;
+    const { code } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ ok: false, error: 'Verification code required' });
+    }
+    
+    const pending = verificationCodes.get(email);
+    
+    if (!pending) {
+      return res.status(400).json({ ok: false, error: 'No pending verification. Please request a new code.' });
+    }
+    
+    if (Date.now() > pending.expiresAt) {
+      verificationCodes.delete(email);
+      return res.status(400).json({ ok: false, error: 'Code expired. Please request a new code.' });
+    }
+    
+    if (pending.code !== code.trim()) {
+      return res.status(400).json({ ok: false, error: 'Invalid verification code' });
+    }
+    
+    // Code is valid - mark email as verified
+    await USERS_COL.doc(userId).update({
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+      updatedAt: new Date()
+    });
+    
+    // Also update auth collection
+    const authCol = db.collection('notifaiUserAuth');
+    await authCol.doc(email).update({
+      emailVerified: true,
+      verifiedAt: new Date()
+    });
+    
+    // Clear pending verification
+    verificationCodes.delete(email);
+    
+    console.log(`[VERIFY] Existing user verified email: ${email}`);
+    
+    res.json({
+      ok: true,
+      message: 'Email verified successfully!'
+    });
+    
+  } catch (error) {
+    console.error('Confirm email verification error:', error);
+    res.status(500).json({ ok: false, error: 'Verification failed' });
   }
 });
 
@@ -2582,7 +2911,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
         email: emailLower, userId: authData.userId,
         walletAddress: userData.walletAddress,
         referralCode: userData.referralCode,
-        tokensTotal: userData.tokensTotal || 0
+        tokensTotal: userData.tokensTotal || 0,
+        emailVerified: userData.emailVerified || false  // Include verification status
       }
     });
   } catch (error) {
@@ -2649,6 +2979,10 @@ function getPreviousWeekKey() {
 // Store reset codes in memory (for production, use Redis or Firestore)
 const resetCodes = new Map(); // email -> { code, expiresAt }
 const RESET_CODE_EXPIRY = 15 * 60 * 1000; // 15 minutes
+
+// NEW: Store email verification codes and pending registrations
+const verificationCodes = new Map(); // email -> { code, expiresAt, userId, passwordHash }
+const VERIFICATION_CODE_EXPIRY = 15 * 60 * 1000; // 15 minutes
 
 // POST /api/auth/request-reset
 app.post('/api/auth/request-reset', authLimiter, async (req, res) => {
@@ -2912,6 +3246,7 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         referralCode: userData.referralCode,
         referredByCode: userData.referredByCode || null,
         email: userData.email || null,
+        emailVerified: userData.emailVerified || false,
         totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
         weeklyHours: Math.floor((userData.weeklySeconds || 0) / 3600),
         totalSeconds: userData.totalSeconds || 0,
