@@ -3529,10 +3529,10 @@ app.get('/api/admin/users', async (req, res) => {
     
     const { withEmail, limit, exportAll } = req.query;
     
-    // For export, allow up to 100000. For regular view, max 500
+    // For export, allow up to 250000. For regular view, max 500
     const isExport = exportAll === 'true';
     const maxResults = isExport 
-      ? Math.min(parseInt(limit) || 100000, 100000)
+      ? Math.min(parseInt(limit) || 250000, 250000)
       : Math.min(parseInt(limit) || 100, 500);
     
     // Helper to safely convert date fields
@@ -4011,7 +4011,7 @@ app.get('/api/admin/dashboard', (req, res) => {
       </div>
       <button onclick="loadUsers()">🔄 Refresh</button>
       <button onclick="exportCSV()">📥 Export CSV (view)</button>
-      <button onclick="exportAllCSV()">📥 Export 100K CSV</button>
+      <button onclick="exportAllCSV()">📥 Export 250K CSV</button>
     </div>
 
     <div class="table-container">
@@ -4157,11 +4157,11 @@ app.get('/api/admin/dashboard', (req, res) => {
     async function exportAllCSV() {
       const btn = event.target;
       btn.disabled = true;
-      btn.textContent = '⏳ Loading 100K users...';
+      btn.textContent = '⏳ Loading 250K users...';
       
       try {
         const params = new URLSearchParams({ 
-          limit: 100000,
+          limit: 250000,
           withEmail: 'true',
           exportAll: 'true'
         });
@@ -4209,7 +4209,7 @@ app.get('/api/admin/dashboard', (req, res) => {
         alert('Export failed: ' + error.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = '📥 Export 100K CSV';
+        btn.textContent = '📥 Export 250K CSV';
       }
     }
 
