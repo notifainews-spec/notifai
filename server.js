@@ -2166,7 +2166,7 @@ return res.json({
   }
 });
 
-// 2) Track usage seconds (home + article + chat) - UPDATED WITH JWT SUPPORT
+// 2) Track usage seconds (home + article + chat) - REQUIRES EMAIL VERIFICATION
 app.post("/api/rewards/track-usage", rewardsWriteLimiter, authenticateTokenOptional, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
@@ -2177,6 +2177,7 @@ app.post("/api/rewards/track-usage", rewardsWriteLimiter, authenticateTokenOptio
     
     // Get userId from JWT token if available
     const tokenUserId = req.user && req.user.userId;
+    const tokenEmail = req.user && req.user.email;
     
     // Must have either token userId OR body userId
     if (!tokenUserId && !providedUserId) {
@@ -2192,43 +2193,69 @@ app.post("/api/rewards/track-usage", rewardsWriteLimiter, authenticateTokenOptio
       return res.status(400).json({ ok: false, error: "Invalid seconds" });
     }
 
-    // PRIORITY 1: If authenticated via JWT, ALWAYS use that userId
-    if (tokenUserId) {
-      console.log(`[TRACK] ✅ JWT authenticated user: ${tokenUserId} (+${delta}s on ${screen})`);
-      await trackUsageForUser(tokenUserId, delta, { region, screen });
-      return res.json({ ok: true, source: "jwt" });
-    }
-
-    // PRIORITY 2: Not authenticated - use device mapping fallback
-    let userId = providedUserId;
+    // Determine the userId to use
+    let userId = tokenUserId || providedUserId;
+    let userEmail = tokenEmail;
+    let isVerified = false;
     
-    try {
-      // Check if providedUserId is already a registered user
-      const userDoc = await USERS_COL.doc(providedUserId).get();
-      if (userDoc.exists && userDoc.data().email) {
-        userId = providedUserId;
-        console.log(`[TRACK] 📧 Registered user via body: ${userId}`);
-      } else {
-        // Check device mapping - maybe this device logged in before
-        const deviceMapCol = db.collection("notifaiDeviceMap");
-        const deviceDoc = await deviceMapCol.doc(providedUserId).get();
-        if (deviceDoc.exists) {
-          const mapping = deviceDoc.data();
-          if (mapping.linkedUserId) {
-            userId = mapping.linkedUserId;
-            console.log(`[TRACK] 🔗 Device ${providedUserId} → ${userId} (${mapping.email})`);
+    // PRIORITY 1: If authenticated via JWT, use that userId
+    if (tokenUserId) {
+      // Check if user is email verified
+      const userDoc = await USERS_COL.doc(tokenUserId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        isVerified = userData.emailVerified === true;
+        userEmail = userData.email;
+      }
+    } else {
+      // PRIORITY 2: Not authenticated - check device mapping
+      try {
+        const userDoc = await USERS_COL.doc(providedUserId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          if (userData.email) {
+            userId = providedUserId;
+            userEmail = userData.email;
+            isVerified = userData.emailVerified === true;
           }
         } else {
-          console.log(`[TRACK] 📱 Anonymous device: ${providedUserId}`);
+          // Check device mapping
+          const deviceMapCol = db.collection("notifaiDeviceMap");
+          const deviceDoc = await deviceMapCol.doc(providedUserId).get();
+          if (deviceDoc.exists) {
+            const mapping = deviceDoc.data();
+            if (mapping.linkedUserId) {
+              userId = mapping.linkedUserId;
+              const linkedUserDoc = await USERS_COL.doc(userId).get();
+              if (linkedUserDoc.exists) {
+                const linkedUserData = linkedUserDoc.data();
+                isVerified = linkedUserData.emailVerified === true;
+                userEmail = linkedUserData.email;
+              }
+            }
+          }
         }
+      } catch (lookupErr) {
+        console.error(`[TRACK] ⚠️ Lookup error:`, lookupErr.message);
       }
-    } catch (lookupErr) {
-      console.error(`[TRACK] ⚠️ Lookup error:`, lookupErr.message);
-      // Continue with providedUserId on error
     }
 
+    // BLOCK TOKEN EARNING FOR UNVERIFIED USERS
+    if (!isVerified) {
+      // Still track that they're using the app, but don't award tokens
+      console.log(`[TRACK] ⛔ Unverified user ${userId} - tracking blocked`);
+      return res.json({ 
+        ok: false, 
+        error: "Email verification required to earn tokens",
+        requiresVerification: true,
+        email: userEmail || null
+      });
+    }
+
+    // User is verified - track normally
+    console.log(`[TRACK] ✅ Verified user: ${userId} (${userEmail}) +${delta}s on ${screen}`);
     await trackUsageForUser(userId, delta, { region, screen });
-    return res.json({ ok: true, source: "fallback" });
+    return res.json({ ok: true, verified: true });
     
   } catch (err) {
     console.error("POST /api/rewards/track-usage error", err);
@@ -2735,23 +2762,33 @@ app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
   }
 });
 
-// POST /api/auth/request-email-verification - For existing users to verify their email
-app.post('/api/auth/request-email-verification', authenticateToken, async (req, res) => {
+// POST /api/auth/send-verification - Send verification code to EXISTING registered user
+app.post('/api/auth/send-verification', authLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: 'Firestore not configured' });
     }
     
-    const { email, userId } = req.user;
-    
-    // Check if already verified
-    const userDoc = await USERS_COL.doc(userId).get();
-    if (!userDoc.exists) {
-      return res.status(404).json({ ok: false, error: 'User not found' });
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ ok: false, error: 'Email required' });
     }
     
-    const userData = userDoc.data();
-    if (userData.emailVerified) {
+    const emailLower = email.toLowerCase().trim();
+    
+    // Check if user exists in auth collection
+    const authCol = db.collection('notifaiUserAuth');
+    const authDoc = await authCol.doc(emailLower).get();
+    
+    if (!authDoc.exists) {
+      // Don't reveal if email exists
+      return res.json({ ok: true, message: 'If that email is registered, a verification code has been sent' });
+    }
+    
+    const authData = authDoc.data();
+    
+    // Check if already verified
+    if (authData.emailVerified === true) {
       return res.json({ ok: true, alreadyVerified: true, message: 'Email already verified' });
     }
     
@@ -2760,10 +2797,10 @@ app.post('/api/auth/request-email-verification', authenticateToken, async (req, 
     const expiresAt = Date.now() + VERIFICATION_CODE_EXPIRY;
     
     // Store verification code for existing user
-    verificationCodes.set(email, {
+    verificationCodes.set(emailLower, {
       code,
       expiresAt,
-      userId,
+      userId: authData.userId,
       isExistingUser: true
     });
     
@@ -2772,29 +2809,30 @@ app.post('/api/auth/request-email-verification', authenticateToken, async (req, 
       if (resend) {
         await resend.emails.send({
           from: 'NotifAi <onboarding@resend.dev>',
-          to: email,
+          to: emailLower,
           subject: 'Verify your NotifAi email',
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
               <h2 style="color: #000000;">Verify Your Email</h2>
+              <p>To continue earning rewards, please verify your email address.</p>
               <p>Your verification code is:</p>
               <div style="background: #000000; color: #ffffff; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; border-radius: 8px; margin: 20px 0;">
                 ${code}
               </div>
               <p style="color: #6b7280;">This code expires in 15 minutes.</p>
-              <p style="color: #6b7280;">Enter this code in the app to verify your email.</p>
+              <p style="color: #6b7280;">Enter this code in the app to verify your email and continue earning tokens.</p>
               <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
               <p style="color: #9ca3af; font-size: 12px;">NotifAi News - Earn rewards for reading news</p>
             </div>
           `
         });
-        console.log(`[VERIFY] Sent verification email to existing user ${email}`);
+        console.log(`[VERIFY] Sent verification email to existing user ${emailLower}`);
       } else {
-        console.log(`[VERIFY] Resend not configured. Code for existing user ${email}: ${code}`);
+        console.log(`[VERIFY] Resend not configured. Code for ${emailLower}: ${code}`);
       }
     } catch (emailError) {
       console.error('[VERIFY] Email send error:', emailError);
-      console.log(`[VERIFY] Fallback - Code for ${email}: ${code}`);
+      console.log(`[VERIFY] Fallback - Code for ${emailLower}: ${code}`);
     }
     
     res.json({
@@ -2803,67 +2841,103 @@ app.post('/api/auth/request-email-verification', authenticateToken, async (req, 
     });
     
   } catch (error) {
-    console.error('Request email verification error:', error);
+    console.error('Send verification error:', error);
     res.status(500).json({ ok: false, error: 'Failed to send verification code' });
   }
 });
 
-// POST /api/auth/confirm-email-verification - For existing users to confirm their code
-app.post('/api/auth/confirm-email-verification', authenticateToken, async (req, res) => {
+// POST /api/auth/verify-existing - Verify email for EXISTING registered user
+app.post('/api/auth/verify-existing', authLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: 'Firestore not configured' });
     }
     
-    const { email, userId } = req.user;
-    const { code } = req.body;
-    
-    if (!code) {
-      return res.status(400).json({ ok: false, error: 'Verification code required' });
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ ok: false, error: 'Email and code required' });
     }
     
-    const pending = verificationCodes.get(email);
+    const emailLower = email.toLowerCase().trim();
+    const pending = verificationCodes.get(emailLower);
     
     if (!pending) {
-      return res.status(400).json({ ok: false, error: 'No pending verification. Please request a new code.' });
+      return res.status(400).json({ ok: false, error: 'No verification pending. Request a new code.' });
     }
     
     if (Date.now() > pending.expiresAt) {
-      verificationCodes.delete(email);
-      return res.status(400).json({ ok: false, error: 'Code expired. Please request a new code.' });
+      verificationCodes.delete(emailLower);
+      return res.status(400).json({ ok: false, error: 'Code expired. Request a new code.' });
     }
     
     if (pending.code !== code.trim()) {
       return res.status(400).json({ ok: false, error: 'Invalid verification code' });
     }
     
-    // Code is valid - mark email as verified
-    await USERS_COL.doc(userId).update({
-      emailVerified: true,
-      emailVerifiedAt: new Date(),
-      updatedAt: new Date()
-    });
+    // Code is valid - mark user as verified
+    const { userId } = pending;
     
-    // Also update auth collection
     const authCol = db.collection('notifaiUserAuth');
-    await authCol.doc(email).update({
+    
+    // Update auth record
+    await authCol.doc(emailLower).update({
       emailVerified: true,
       verifiedAt: new Date()
     });
     
-    // Clear pending verification
-    verificationCodes.delete(email);
+    // Update user record
+    await USERS_COL.doc(userId).update({
+      emailVerified: true,
+      verifiedAt: new Date(),
+      updatedAt: new Date()
+    });
     
-    console.log(`[VERIFY] Existing user verified email: ${email}`);
+    // Clear pending verification
+    verificationCodes.delete(emailLower);
+    
+    console.log(`[VERIFY] Existing user verified: ${emailLower} (${userId})`);
+    
+    // Generate new token with verified status
+    const token = jwt.sign({ email: emailLower, userId, verified: true }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
     
     res.json({
       ok: true,
-      message: 'Email verified successfully!'
+      token,
+      message: 'Email verified successfully! You can now earn tokens.'
     });
     
   } catch (error) {
-    console.error('Confirm email verification error:', error);
+    console.error('Verify existing error:', error);
     res.status(500).json({ ok: false, error: 'Verification failed' });
+  }
+});
+
+// GET /api/auth/verification-status - Check if user's email is verified
+app.get('/api/auth/verification-status', authenticateToken, async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    
+    const { userId, email } = req.user;
+    
+    const userDoc = await USERS_COL.doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    
+    res.json({
+      ok: true,
+      email: email,
+      emailVerified: userData.emailVerified === true,
+      verifiedAt: userData.verifiedAt || null
+    });
+    
+  } catch (error) {
+    console.error('Verification status error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to check status' });
   }
 });
 
@@ -2904,15 +2978,17 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     await authCol.doc(emailLower).update({ lastLogin: new Date() });
     const userDoc = await USERS_COL.doc(authData.userId).get();
     const userData = userDoc.data();
-    const token = jwt.sign({ email: emailLower, userId: authData.userId }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    const isVerified = userData.emailVerified === true || authData.emailVerified === true;
+    const token = jwt.sign({ email: emailLower, userId: authData.userId, verified: isVerified }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
     res.json({
       ok: true, token,
       user: {
-        email: emailLower, userId: authData.userId,
+        email: emailLower, 
+        userId: authData.userId,
         walletAddress: userData.walletAddress,
         referralCode: userData.referralCode,
         tokensTotal: userData.tokensTotal || 0,
-        emailVerified: userData.emailVerified || false  // Include verification status
+        emailVerified: isVerified
       }
     });
   } catch (error) {
@@ -3246,7 +3322,6 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         referralCode: userData.referralCode,
         referredByCode: userData.referredByCode || null,
         email: userData.email || null,
-        emailVerified: userData.emailVerified || false,
         totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
         weeklyHours: Math.floor((userData.weeklySeconds || 0) / 3600),
         totalSeconds: userData.totalSeconds || 0,
@@ -3454,10 +3529,10 @@ app.get('/api/admin/users', async (req, res) => {
     
     const { withEmail, limit, exportAll } = req.query;
     
-    // For export, allow up to 25000. For regular view, max 500
+    // For export, allow up to 100000. For regular view, max 500
     const isExport = exportAll === 'true';
     const maxResults = isExport 
-      ? Math.min(parseInt(limit) || 25000, 25000)
+      ? Math.min(parseInt(limit) || 100000, 100000)
       : Math.min(parseInt(limit) || 100, 500);
     
     // Helper to safely convert date fields
@@ -3510,6 +3585,7 @@ app.get('/api/admin/users', async (req, res) => {
             docId: doc.id,
             userId: data.userId || doc.id,
             email: data.email || null,
+            emailVerified: data.emailVerified === true,
             walletAddress: data.walletAddress || null,
             referralCode: data.referralCode || null,
             referredByCode: data.referredByCode || null,
@@ -3935,7 +4011,7 @@ app.get('/api/admin/dashboard', (req, res) => {
       </div>
       <button onclick="loadUsers()">🔄 Refresh</button>
       <button onclick="exportCSV()">📥 Export CSV (view)</button>
-      <button onclick="exportAllCSV()">📥 Export 25K CSV</button>
+      <button onclick="exportAllCSV()">📥 Export 100K CSV</button>
     </div>
 
     <div class="table-container">
@@ -4050,9 +4126,10 @@ app.get('/api/admin/dashboard', (req, res) => {
 
     function exportCSV() {
       const csv = [
-        ['Email', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Hours', 'Total Seconds', 'Created At'].join(','),
+        ['Email', 'Email Verified', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Hours', 'Total Seconds', 'Created At'].join(','),
         ...allUsers.map(u => [
           '"' + (u.email || 'Anonymous') + '"',
+          u.emailVerified ? 'Yes' : 'No',
           u.walletAddress || '-',
           u.referralCode || '-',
           u.referredByCode || '-',
@@ -4080,11 +4157,11 @@ app.get('/api/admin/dashboard', (req, res) => {
     async function exportAllCSV() {
       const btn = event.target;
       btn.disabled = true;
-      btn.textContent = '⏳ Loading 25K users...';
+      btn.textContent = '⏳ Loading 100K users...';
       
       try {
         const params = new URLSearchParams({ 
-          limit: 25000,
+          limit: 100000,
           withEmail: 'true',
           exportAll: 'true'
         });
@@ -4099,9 +4176,10 @@ app.get('/api/admin/dashboard', (req, res) => {
         btn.textContent = \`⏳ Generating CSV (\${data.users.length} users)...\`;
         
         const csv = [
-          ['Email', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Hours', 'Total Seconds', 'Created At'].join(','),
+          ['Email', 'Email Verified', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Hours', 'Total Seconds', 'Created At'].join(','),
           ...data.users.map(u => [
             '"' + (u.email || 'Anonymous') + '"',
+            u.emailVerified ? 'Yes' : 'No',
             u.walletAddress || '-',
             u.referralCode || '-',
             u.referredByCode || '-',
@@ -4131,7 +4209,7 @@ app.get('/api/admin/dashboard', (req, res) => {
         alert('Export failed: ' + error.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = '📥 Export 25K CSV';
+        btn.textContent = '📥 Export 100K CSV';
       }
     }
 
