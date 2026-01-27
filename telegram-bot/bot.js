@@ -6,83 +6,107 @@ const cron = require('node-cron');
 // ===== CONFIGURATION =====
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
-const NOTIFAI_API_URL = process.env.NOTIFAI_API_URL || 'https://notifai-news.onrender.com';
+const NOTIFAI_API_URL = process.env.NOTIFAI_API_URL || 'https://notifainews1.onrender.com';
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL) || 60000; // 1 minute default
 
 // Initialize bot
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
-// Track posted articles to avoid duplicates (persisted in memory)
+// Track posted articles to avoid duplicates
 const postedArticles = new Set();
 let lastCheckedTimestamp = {};
 
-// News categories with Chinese labels
-const CATEGORIES = {
-  china: { emoji: '🇨🇳', zh: '中国新闻', en: 'China', apiCategory: 'china' },
-  crypto: { emoji: '🪙', zh: '加密货币', en: 'Crypto', apiCategory: 'crypto' },
-  world: { emoji: '🌍', zh: '国际新闻', en: 'World', apiCategory: 'world' },
-  business: { emoji: '💼', zh: '商业财经', en: 'Business', apiCategory: 'business' },
-  technology: { emoji: '💻', zh: '科技', en: 'Technology', apiCategory: 'technology' },
-  entertainment: { emoji: '🎬', zh: '娱乐', en: 'Entertainment', apiCategory: 'entertainment' },
-  sports: { emoji: '⚽', zh: '体育', en: 'Sports', apiCategory: 'sports' },
-  health: { emoji: '🏥', zh: '健康', en: 'Health', apiCategory: 'health' },
-  science: { emoji: '🔬', zh: '科学', en: 'Science', apiCategory: 'science' }
+// Available regions in NotifAi API
+const REGIONS = ['us', 'cn', 'pk', 'id', 'uk', 'ng'];
+
+// Categories returned by API (lanes)
+// API returns: { categories: { us, entertainment, finance, world, crypto } }
+// "us" = politics for region, others are global or region-specific
+const CATEGORY_INFO = {
+  us: { emoji: '🇺🇸', zh: '美国政治', en: 'US Politics' },
+  cn: { emoji: '🇨🇳', zh: '中国政治', en: 'China Politics' },
+  pk: { emoji: '🇵🇰', zh: '巴基斯坦', en: 'Pakistan' },
+  ng: { emoji: '🇳🇬', zh: '尼日利亚', en: 'Nigeria' },
+  uk: { emoji: '🇬🇧', zh: '英国', en: 'UK' },
+  id: { emoji: '🇮🇩', zh: '印尼', en: 'Indonesia' },
+  world: { emoji: '🌍', zh: '国际新闻', en: 'World' },
+  crypto: { emoji: '🪙', zh: '加密货币', en: 'Crypto' },
+  finance: { emoji: '💼', zh: '财经', en: 'Finance' },
+  entertainment: { emoji: '🎬', zh: '娱乐', en: 'Entertainment' }
 };
 
-// Priority categories for real-time updates
-const REALTIME_CATEGORIES = ['china', 'crypto', 'world'];
+// Categories to monitor for real-time (China users focus)
+const REALTIME_CATEGORIES = ['world', 'crypto', 'cn'];
 
 // ===== NOTIFAI API FUNCTIONS =====
 
-// Fetch news from NotifAi backend
-async function fetchFromNotifAi(category, language = 'zh', limit = 10) {
+// Fetch articles from NotifAi API
+// API: GET /api/articles?region=cn returns { categories: { cn, entertainment, finance, world, crypto } }
+async function fetchFromNotifAi(region = 'cn') {
   try {
-    const response = await axios.get(`${NOTIFAI_API_URL}/api/news`, {
-      params: {
-        category: category,
-        language: language,
-        limit: limit
-      },
-      timeout: 10000
+    const response = await axios.get(`${NOTIFAI_API_URL}/api/articles`, {
+      params: { region: region },
+      timeout: 15000
     });
     
-    return response.data.articles || response.data || [];
+    const data = response.data;
+    
+    // API returns { site, region, categories: { us/cn/etc, entertainment, finance, world, crypto } }
+    if (data.categories) {
+      return data.categories;
+    }
+    
+    return {};
   } catch (error) {
-    console.error(`❌ Error fetching ${category} from NotifAi:`, error.message);
-    return [];
+    console.error(`❌ Error fetching from NotifAi:`, error.message);
+    return {};
   }
 }
 
+// Get articles for a specific category/lane
+async function getArticlesForCategory(category, region = 'cn', limit = 10) {
+  const categories = await fetchFromNotifAi(region);
+  
+  // Map category names
+  // 'world' and 'crypto' are global
+  // 'politics' maps to the region name (e.g., 'cn' for China politics)
+  // 'finance' and 'entertainment' are region-specific
+  
+  let articles = [];
+  
+  if (category === 'world') {
+    articles = categories.world || [];
+  } else if (category === 'crypto') {
+    articles = categories.crypto || [];
+  } else if (category === 'finance') {
+    articles = categories.finance || [];
+  } else if (category === 'entertainment') {
+    articles = categories.entertainment || [];
+  } else if (REGIONS.includes(category)) {
+    // For region-specific politics (cn, us, pk, etc.)
+    articles = categories[category] || categories[region] || [];
+  } else {
+    // Default: try to get from categories directly
+    articles = categories[category] || [];
+  }
+  
+  return Array.isArray(articles) ? articles.slice(0, limit) : [];
+}
+
 // Fetch latest news with timestamp filter (for real-time)
-async function fetchLatestNews(category, sinceTimestamp = null) {
+async function fetchLatestNews(category, region = 'cn', sinceTimestamp = null) {
   try {
-    const params = {
-      category: category,
-      language: 'zh',
-      limit: 20,
-      sortBy: 'publishedAt'
-    };
+    const articles = await getArticlesForCategory(category, region, 20);
     
-    if (sinceTimestamp) {
-      params.since = sinceTimestamp;
+    if (!sinceTimestamp || articles.length === 0) {
+      return articles;
     }
     
-    const response = await axios.get(`${NOTIFAI_API_URL}/api/news`, {
-      params,
-      timeout: 10000
+    // Filter by timestamp - only return new articles
+    return articles.filter(article => {
+      const articleTime = new Date(article.publishedAt || article.createdAt).getTime();
+      return articleTime > sinceTimestamp;
     });
-    
-    let articles = response.data.articles || response.data || [];
-    
-    // Filter by timestamp if API doesn't support 'since' parameter
-    if (sinceTimestamp && articles.length > 0) {
-      articles = articles.filter(article => {
-        const articleTime = new Date(article.publishedAt || article.createdAt).getTime();
-        return articleTime > sinceTimestamp;
-      });
-    }
-    
-    return articles;
   } catch (error) {
     console.error(`❌ Error fetching latest ${category}:`, error.message);
     return [];
@@ -100,17 +124,19 @@ function escapeHtml(text) {
 }
 
 function formatArticle(article, categoryKey) {
-  const cat = CATEGORIES[categoryKey] || CATEGORIES.world;
-  const title = article.title || '无标题';
-  const description = article.description || article.summary || article.content
-    ? (article.description || article.summary || article.content).substring(0, 250) + 
-      ((article.description || article.summary || article.content).length > 250 ? '...' : '')
-    : '点击查看详情';
-  const source = article.source?.name || article.sourceName || article.source || '未知来源';
-  const url = article.url || article.link;
-  const imageUrl = article.urlToImage || article.imageUrl || article.image || article.thumbnail;
+  const catInfo = CATEGORY_INFO[categoryKey] || CATEGORY_INFO.world;
   
-  // Format publish time
+  // Map NotifAi's field names
+  const title = article.title || '无标题';
+  const summary = article.summary || article.description || '';
+  const displaySummary = summary.length > 280 
+    ? summary.substring(0, 280) + '...' 
+    : summary;
+  const source = article.source || '未知来源';
+  const url = article.url;
+  const imageUrl = article.image || article.urlToImage;
+  
+  // Format publish time (Beijing timezone)
   let timeStr = '';
   if (article.publishedAt || article.createdAt) {
     const pubDate = new Date(article.publishedAt || article.createdAt);
@@ -118,11 +144,11 @@ function formatArticle(article, categoryKey) {
   }
   
   const message = `
-${cat.emoji} <b>${cat.zh} | ${cat.en}</b>
+${catInfo.emoji} <b>${catInfo.zh} | ${catInfo.en}</b>
 
 📌 <b>${escapeHtml(title)}</b>
 
-${escapeHtml(description)}
+${escapeHtml(displaySummary)}
 
 📍 来源: ${escapeHtml(source)}
 ${timeStr}
@@ -137,50 +163,18 @@ ${timeStr}
   return { message: message.trim(), imageUrl };
 }
 
-// Format breaking news (more prominent)
-function formatBreakingNews(article, categoryKey) {
-  const cat = CATEGORIES[categoryKey] || CATEGORIES.world;
-  const title = article.title || '无标题';
-  const description = article.description || article.summary || '';
-  const source = article.source?.name || article.sourceName || article.source || '未知来源';
-  const url = article.url || article.link;
-  const imageUrl = article.urlToImage || article.imageUrl || article.image;
-  
-  const message = `
-🚨🚨🚨 <b>突发新闻 BREAKING</b> 🚨🚨🚨
-
-${cat.emoji} <b>${cat.zh}</b>
-
-📌 <b>${escapeHtml(title)}</b>
-
-${escapeHtml(description.substring(0, 300))}${description.length > 300 ? '...' : ''}
-
-📍 ${escapeHtml(source)}
-🔗 <a href="${url}">阅读全文</a>
-
-━━━━━━━━━━━━━━━
-💎 <b>NotifAi</b> - 下载App获取更多新闻
-📱 https://play.google.com/store/apps/details?id=com.notifai
-━━━━━━━━━━━━━━━
-`;
-  
-  return { message: message.trim(), imageUrl };
-}
-
 // ===== POSTING FUNCTIONS =====
 
 async function postToChannel(article, categoryKey, isBreaking = false) {
   // Create unique ID for deduplication
-  const articleId = article.url || article.link || article.title || JSON.stringify(article).substring(0, 100);
+  const articleId = article.id || article.url || article.title;
   
   if (postedArticles.has(articleId)) {
     console.log(`⏭️ Skipping duplicate: ${article.title?.substring(0, 50)}...`);
     return false;
   }
   
-  const { message, imageUrl } = isBreaking 
-    ? formatBreakingNews(article, categoryKey)
-    : formatArticle(article, categoryKey);
+  const { message, imageUrl } = formatArticle(article, categoryKey);
   
   try {
     if (imageUrl) {
@@ -231,7 +225,9 @@ async function checkForNewArticles() {
   for (const category of REALTIME_CATEGORIES) {
     try {
       const since = lastCheckedTimestamp[category] || Date.now() - (5 * 60 * 1000); // Default: last 5 mins
-      const articles = await fetchLatestNews(category, since);
+      
+      // Use 'cn' region for China-focused bot
+      const articles = await fetchLatestNews(category, 'cn', since);
       
       if (articles.length > 0) {
         console.log(`📰 Found ${articles.length} new ${category} articles`);
@@ -244,6 +240,8 @@ async function checkForNewArticles() {
           // Rate limit: 2 seconds between posts
           await sleep(2000);
         }
+      } else {
+        console.log(`📭 No new ${category} articles`);
       }
       
       // Update timestamp
@@ -260,10 +258,10 @@ async function checkForNewArticles() {
 
 // ===== SCHEDULED BROADCASTS =====
 
-async function broadcastCategory(category, limit = 3) {
+async function broadcastCategory(category, region = 'cn', limit = 3) {
   console.log(`📡 Broadcasting ${category} news...`);
   
-  const articles = await fetchFromNotifAi(category, 'zh', limit);
+  const articles = await getArticlesForCategory(category, region, limit);
   
   if (articles.length === 0) {
     console.log(`⚠️ No articles found for ${category}`);
@@ -299,7 +297,7 @@ async function dailyDigest() {
   
   // Post top story from each priority category
   for (const category of REALTIME_CATEGORIES) {
-    await broadcastCategory(category, 2);
+    await broadcastCategory(category, 'cn', 2);
     await sleep(5000);
   }
 }
@@ -312,16 +310,16 @@ bot.onText(/\/start/, async (msg) => {
   const keyboard = {
     inline_keyboard: [
       [
-        { text: '🇨🇳 中国新闻', callback_data: 'news_china' },
+        { text: '🇨🇳 中国新闻', callback_data: 'news_cn' },
         { text: '🪙 加密货币', callback_data: 'news_crypto' }
       ],
       [
         { text: '🌍 国际新闻', callback_data: 'news_world' },
-        { text: '💼 商业财经', callback_data: 'news_business' }
+        { text: '💼 财经', callback_data: 'news_finance' }
       ],
       [
-        { text: '💻 科技', callback_data: 'news_technology' },
-        { text: '⚽ 体育', callback_data: 'news_sports' }
+        { text: '🎬 娱乐', callback_data: 'news_entertainment' },
+        { text: '🇺🇸 美国', callback_data: 'news_us' }
       ],
       [
         { text: '📱 下载 NotifAi App', url: 'https://play.google.com/store/apps/details?id=com.notifai' }
@@ -342,6 +340,7 @@ Welcome to NotifAi News Bot!
 /china - 中国新闻
 /crypto - 加密货币
 /world - 国际新闻
+/finance - 财经新闻
 /categories - 所有分类
 
 点击下方按钮获取新闻 👇
@@ -360,21 +359,22 @@ bot.on('callback_query', async (query) => {
   
   if (data.startsWith('news_')) {
     const category = data.replace('news_', '');
-    await bot.answerCallbackQuery(query.id, { text: `正在获取${CATEGORIES[category]?.zh || category}...` });
+    const catInfo = CATEGORY_INFO[category] || { zh: category };
+    await bot.answerCallbackQuery(query.id, { text: `正在获取${catInfo.zh}...` });
     await sendCategoryNews(chatId, category);
   }
 });
 
 // Generic news command
-bot.onText(/\/news/, async (msg) => {
+bot.onText(/\/news$/, async (msg) => {
   const chatId = msg.chat.id;
   await bot.sendMessage(chatId, '⏳ 正在获取最新新闻...');
   
-  // Get mix of china, crypto, world
-  for (const cat of ['china', 'crypto', 'world']) {
-    const articles = await fetchFromNotifAi(cat, 'zh', 1);
+  // Get mix of cn, crypto, world
+  for (const category of ['cn', 'crypto', 'world']) {
+    const articles = await getArticlesForCategory(category, 'cn', 1);
     if (articles.length > 0) {
-      const { message, imageUrl } = formatArticle(articles[0], cat);
+      const { message, imageUrl } = formatArticle(articles[0], category);
       try {
         if (imageUrl) {
           await bot.sendPhoto(chatId, imageUrl, { caption: message, parse_mode: 'HTML' });
@@ -390,32 +390,31 @@ bot.onText(/\/news/, async (msg) => {
 });
 
 // Category-specific commands
-bot.onText(/\/china/, async (msg) => await sendCategoryNews(msg.chat.id, 'china'));
+bot.onText(/\/china/, async (msg) => await sendCategoryNews(msg.chat.id, 'cn'));
+bot.onText(/\/cn/, async (msg) => await sendCategoryNews(msg.chat.id, 'cn'));
 bot.onText(/\/crypto/, async (msg) => await sendCategoryNews(msg.chat.id, 'crypto'));
 bot.onText(/\/world/, async (msg) => await sendCategoryNews(msg.chat.id, 'world'));
-bot.onText(/\/business/, async (msg) => await sendCategoryNews(msg.chat.id, 'business'));
-bot.onText(/\/tech(nology)?/, async (msg) => await sendCategoryNews(msg.chat.id, 'technology'));
-bot.onText(/\/sports/, async (msg) => await sendCategoryNews(msg.chat.id, 'sports'));
-bot.onText(/\/health/, async (msg) => await sendCategoryNews(msg.chat.id, 'health'));
-bot.onText(/\/science/, async (msg) => await sendCategoryNews(msg.chat.id, 'science'));
+bot.onText(/\/us/, async (msg) => await sendCategoryNews(msg.chat.id, 'us'));
+bot.onText(/\/finance/, async (msg) => await sendCategoryNews(msg.chat.id, 'finance'));
 bot.onText(/\/entertainment/, async (msg) => await sendCategoryNews(msg.chat.id, 'entertainment'));
 
 // /categories command
 bot.onText(/\/categories/, async (msg) => {
   const chatId = msg.chat.id;
   
-  let catList = `<b>📋 新闻分类 News Categories</b>\n\n`;
-  catList += `<b>🔴 实时更新 Real-time:</b>\n`;
-  for (const key of REALTIME_CATEGORIES) {
-    const cat = CATEGORIES[key];
-    catList += `${cat.emoji} /${key} - ${cat.zh}\n`;
-  }
-  catList += `\n<b>📰 其他分类 Other:</b>\n`;
-  for (const [key, cat] of Object.entries(CATEGORIES)) {
-    if (!REALTIME_CATEGORIES.includes(key)) {
-      catList += `${cat.emoji} /${key} - ${cat.zh}\n`;
-    }
-  }
+  const catList = `
+<b>📋 新闻分类 News Categories</b>
+
+<b>🔴 实时更新 Real-time:</b>
+🇨🇳 /china - 中国新闻
+🪙 /crypto - 加密货币
+🌍 /world - 国际新闻
+
+<b>📰 其他分类 Other:</b>
+💼 /finance - 财经
+🎬 /entertainment - 娱乐
+🇺🇸 /us - 美国新闻
+`;
   
   await bot.sendMessage(chatId, catList, { parse_mode: 'HTML' });
 });
@@ -432,25 +431,23 @@ bot.onText(/\/status/, async (msg) => {
 📢 Channel: ${CHANNEL_ID}
 
 <b>Last checked:</b>
-${Object.entries(lastCheckedTimestamp).map(([k,v]) => `• ${k}: ${new Date(v).toLocaleTimeString()}`).join('\n')}
+${Object.entries(lastCheckedTimestamp).map(([k,v]) => `• ${k}: ${new Date(v).toLocaleTimeString()}`).join('\n') || '• Not yet checked'}
 `;
   await bot.sendMessage(chatId, status, { parse_mode: 'HTML' });
 });
 
 // Helper function to send category news
 async function sendCategoryNews(chatId, category) {
-  const cat = CATEGORIES[category];
-  if (!cat) {
-    await bot.sendMessage(chatId, '❌ 未知分类');
-    return;
-  }
+  const catInfo = CATEGORY_INFO[category] || { zh: category, en: category };
   
-  await bot.sendMessage(chatId, `⏳ 正在获取${cat.zh}...`);
+  await bot.sendMessage(chatId, `⏳ 正在获取${catInfo.zh}...`);
   
-  const articles = await fetchFromNotifAi(category, 'zh', 5);
+  // Determine region based on category
+  const region = REGIONS.includes(category) ? category : 'cn';
+  const articles = await getArticlesForCategory(category, region, 5);
   
   if (articles.length === 0) {
-    await bot.sendMessage(chatId, `❌ 暂无${cat.zh}，请稍后再试`);
+    await bot.sendMessage(chatId, `❌ 暂无${catInfo.zh}，请稍后再试\nNo ${catInfo.en} news available`);
     return;
   }
   
@@ -486,18 +483,18 @@ cron.schedule('0 8 * * *', dailyDigest, { timezone: 'Asia/Shanghai' });
 
 // Midday update at 12:30 PM
 cron.schedule('30 12 * * *', () => {
-  broadcastCategory('china', 2);
-  setTimeout(() => broadcastCategory('crypto', 2), 10000);
+  broadcastCategory('cn', 'cn', 2);
+  setTimeout(() => broadcastCategory('crypto', 'cn', 2), 10000);
 }, { timezone: 'Asia/Shanghai' });
 
 // Evening update at 6:00 PM
 cron.schedule('0 18 * * *', () => {
-  broadcastCategory('world', 2);
-  setTimeout(() => broadcastCategory('business', 2), 10000);
+  broadcastCategory('world', 'cn', 2);
+  setTimeout(() => broadcastCategory('finance', 'cn', 2), 10000);
 }, { timezone: 'Asia/Shanghai' });
 
 // Night crypto update at 10:00 PM
-cron.schedule('0 22 * * *', () => broadcastCategory('crypto', 3), { timezone: 'Asia/Shanghai' });
+cron.schedule('0 22 * * *', () => broadcastCategory('crypto', 'cn', 3), { timezone: 'Asia/Shanghai' });
 
 // ===== STARTUP =====
 
@@ -538,6 +535,7 @@ https://play.google.com/store/apps/details?id=com.notifai
     console.log('✅ Startup message sent to channel');
   } catch (error) {
     console.error('⚠️ Could not send startup message:', error.message);
+    console.error('Make sure bot is admin in channel with posting permissions');
   }
   
   // Do initial check after 10 seconds
