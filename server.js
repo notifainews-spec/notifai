@@ -3110,17 +3110,31 @@ app.get('/api/admin/users', async (req, res) => {
   try {
     const adminSecret = req.headers['x-admin-secret'];
     if (adminSecret !== process.env.ADMIN_SECRET) {
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ ok: false, error: 'Forbidden' });
     }
     
     if (!db || !USERS_COL) {
-      return res.status(500).json({ error: 'Firestore not configured' });
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
     }
     
     const { withEmail, limit } = req.query;
     
     // Limit results (default 100, max 1000)
     const maxResults = Math.min(parseInt(limit) || 100, 1000);
+    
+    // Helper to safely convert date fields
+    const safeDate = (val) => {
+      if (!val) return null;
+      try {
+        if (typeof val === 'string') return val;
+        if (val instanceof Date) return val.toISOString();
+        if (val.toDate && typeof val.toDate === 'function') return val.toDate().toISOString();
+        if (val._seconds) return new Date(val._seconds * 1000).toISOString(); // Firestore Timestamp object
+      } catch (e) {
+        console.error('Date conversion error:', e);
+      }
+      return null;
+    };
     
     let users = [];
     
@@ -3134,48 +3148,56 @@ app.get('/api/admin/users', async (req, res) => {
       
       console.log(`[ADMIN] Found ${authSnap.docs.length} records in notifaiUserAuth`);
       
-      // For each auth record, get user data from notifaiUsers
+      // Collect all userIds first
+      const authMap = new Map();
       for (const authDoc of authSnap.docs) {
         const authData = authDoc.data();
-        const email = authDoc.id; // email is the document ID
+        const email = authDoc.id;
         const userId = authData.userId;
+        if (userId) {
+          authMap.set(userId, { email, authData });
+        }
+      }
+      
+      console.log(`[ADMIN] Collected ${authMap.size} valid userIds`);
+      
+      // Fetch user data - batch by chunks to avoid timeout
+      const userIds = Array.from(authMap.keys());
+      const BATCH_SIZE = 30; // Firestore 'in' queries limited to 30
+      
+      for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+        const batch = userIds.slice(i, i + BATCH_SIZE);
         
-        if (!userId) continue;
+        // Use Promise.all for parallel fetching within batch
+        const userDocs = await Promise.all(
+          batch.map(userId => USERS_COL.doc(userId).get())
+        );
         
-        try {
-          const userDoc = await USERS_COL.doc(userId).get();
+        for (const userDoc of userDocs) {
           if (userDoc.exists) {
             const userData = userDoc.data();
+            const authInfo = authMap.get(userDoc.id);
             
-            // Helper to safely convert date fields
-            const safeDate = (val) => {
-              if (!val) return null;
-              if (typeof val === 'string') return val;
-              if (val instanceof Date) return val.toISOString();
-              if (val.toDate && typeof val.toDate === 'function') return val.toDate().toISOString();
-              return null;
-            };
-            
-            users.push({
-              docId: userDoc.id,
-              userId: userData.userId || userId,
-              email: email, // Use email from auth collection (source of truth)
-              walletAddress: userData.walletAddress || null,
-              referralCode: userData.referralCode || null,
-              referredByCode: userData.referredByCode || null,
-              tokensTotal: userData.tokensTotal || 0,
-              tokensThisWeek: userData.tokensThisWeek || 0,
-              tokensLastWeek: userData.tokensLastWeek || 0,
-              tokensFromInvites: userData.tokensFromInvites || 0,
-              tokensFromCommission: userData.tokensFromCommission || 0,
-              invitesCompleted: userData.invitesCompleted || 0,
-              totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
-              createdAt: safeDate(userData.createdAt),
-              registeredAt: safeDate(authData.createdAt)
-            });
+            if (authInfo) {
+              users.push({
+                docId: userDoc.id,
+                userId: userData.userId || userDoc.id,
+                email: authInfo.email,
+                walletAddress: userData.walletAddress || null,
+                referralCode: userData.referralCode || null,
+                referredByCode: userData.referredByCode || null,
+                tokensTotal: userData.tokensTotal || 0,
+                tokensThisWeek: userData.tokensThisWeek || 0,
+                tokensLastWeek: userData.tokensLastWeek || 0,
+                tokensFromInvites: userData.tokensFromInvites || 0,
+                tokensFromCommission: userData.tokensFromCommission || 0,
+                invitesCompleted: userData.invitesCompleted || 0,
+                totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
+                createdAt: safeDate(userData.createdAt),
+                registeredAt: safeDate(authInfo.authData.createdAt)
+              });
+            }
           }
-        } catch (err) {
-          console.error(`[ADMIN] Error fetching user ${userId}:`, err.message);
         }
       }
       
@@ -3188,15 +3210,6 @@ app.get('/api/admin/users', async (req, res) => {
       // Regular fetch - just top users by tokens
       const query = USERS_COL.orderBy('tokensTotal', 'desc').limit(maxResults);
       const snapshot = await query.get();
-      
-      // Helper to safely convert date fields
-      const safeDate = (val) => {
-        if (!val) return null;
-        if (typeof val === 'string') return val;
-        if (val instanceof Date) return val.toISOString();
-        if (val.toDate && typeof val.toDate === 'function') return val.toDate().toISOString();
-        return null;
-      };
       
       users = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -3230,7 +3243,8 @@ app.get('/api/admin/users', async (req, res) => {
     
   } catch (error) {
     console.error('Admin users error:', error);
-    res.status(500).json({ error: 'Failed to fetch users' });
+    console.error('Admin users error stack:', error.stack);
+    res.status(500).json({ ok: false, error: 'Failed to fetch users', details: error.message });
   }
 });
 
@@ -3246,6 +3260,15 @@ app.get('/api/admin/check-registered', async (req, res) => {
       return res.status(500).json({ error: 'Firestore not configured' });
     }
     
+    // Helper to safely convert date fields
+    const safeDate = (val) => {
+      if (!val) return null;
+      if (typeof val === 'string') return val;
+      if (val instanceof Date) return val.toISOString();
+      if (val.toDate && typeof val.toDate === 'function') return val.toDate().toISOString();
+      return null;
+    };
+    
     // Check notifaiUserAuth collection (all registered emails)
     const authCol = db.collection('notifaiUserAuth');
     const authSnap = await authCol.get();
@@ -3255,8 +3278,8 @@ app.get('/api/admin/check-registered', async (req, res) => {
       return {
         email: doc.id,
         userId: data.userId,
-        createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
-        lastLogin: data.lastLogin ? data.lastLogin.toDate().toISOString() : null
+        createdAt: safeDate(data.createdAt),
+        lastLogin: safeDate(data.lastLogin)
       };
     });
     
