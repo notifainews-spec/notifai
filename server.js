@@ -2910,6 +2910,7 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         invitesStarted: userData.invitesStarted || 0,
         walletAddress: userData.walletAddress || null,
         referralCode: userData.referralCode,
+        referredByCode: userData.referredByCode || null,
         email: userData.email || null,
         totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
         weeklyHours: Math.floor((userData.weeklySeconds || 0) / 3600),
@@ -2974,6 +2975,79 @@ app.put('/api/rewards/wallet', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Update wallet error:', error);
     res.status(500).json({ ok: false, error: 'Failed to update wallet' });
+  }
+});
+
+// PUT /api/rewards/invite-code - Link an invite code (one-time only)
+app.put('/api/rewards/invite-code', authenticateToken, async (req, res) => {
+  try {
+    if (!db || !USERS_COL) {
+      return res.status(500).json({ ok: false, error: 'Firestore not configured' });
+    }
+    const { userId } = req.user;
+    const { inviteCode } = req.body;
+    
+    if (!inviteCode) {
+      return res.status(400).json({ ok: false, error: 'Invite code required' });
+    }
+    
+    const userDoc = await USERS_COL.doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    
+    // Check if already has an invite code linked - cannot be changed
+    if (userData.referredByCode) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Invite code already linked. It cannot be changed.',
+        currentCode: userData.referredByCode
+      });
+    }
+    
+    // Cannot use your own referral code
+    if (userData.referralCode === inviteCode.trim().toUpperCase()) {
+      return res.status(400).json({ ok: false, error: 'You cannot use your own referral code' });
+    }
+    
+    // Validate the invite code exists
+    const inviterSnap = await USERS_COL.where('referralCode', '==', inviteCode.trim().toUpperCase())
+      .limit(1)
+      .get();
+    
+    if (inviterSnap.empty) {
+      return res.status(400).json({ ok: false, error: 'Invalid invite code' });
+    }
+    
+    const inviterDoc = inviterSnap.docs[0];
+    const inviterUserId = inviterDoc.id;
+    
+    // Link the invite code
+    await USERS_COL.doc(userId).update({
+      referredByCode: inviteCode.trim().toUpperCase(),
+      referredByUserId: inviterUserId,
+      updatedAt: new Date()
+    });
+    
+    // Increment invitesStarted for inviter
+    await USERS_COL.doc(inviterUserId).update({
+      invitesStarted: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`[INVITE] User ${userId} linked to inviter ${inviterUserId} with code ${inviteCode}`);
+    
+    res.json({
+      ok: true,
+      message: 'Invite code linked successfully!',
+      inviteCode: inviteCode.trim().toUpperCase()
+    });
+    
+  } catch (error) {
+    console.error('Link invite code error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to link invite code' });
   }
 });
 
@@ -3072,12 +3146,23 @@ app.get('/api/admin/users', async (req, res) => {
           const userDoc = await USERS_COL.doc(userId).get();
           if (userDoc.exists) {
             const userData = userDoc.data();
+            
+            // Helper to safely convert date fields
+            const safeDate = (val) => {
+              if (!val) return null;
+              if (typeof val === 'string') return val;
+              if (val instanceof Date) return val.toISOString();
+              if (val.toDate && typeof val.toDate === 'function') return val.toDate().toISOString();
+              return null;
+            };
+            
             users.push({
               docId: userDoc.id,
               userId: userData.userId || userId,
               email: email, // Use email from auth collection (source of truth)
               walletAddress: userData.walletAddress || null,
               referralCode: userData.referralCode || null,
+              referredByCode: userData.referredByCode || null,
               tokensTotal: userData.tokensTotal || 0,
               tokensThisWeek: userData.tokensThisWeek || 0,
               tokensLastWeek: userData.tokensLastWeek || 0,
@@ -3085,8 +3170,8 @@ app.get('/api/admin/users', async (req, res) => {
               tokensFromCommission: userData.tokensFromCommission || 0,
               invitesCompleted: userData.invitesCompleted || 0,
               totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
-              createdAt: userData.createdAt ? userData.createdAt.toDate().toISOString() : null,
-              registeredAt: authData.createdAt ? authData.createdAt.toDate().toISOString() : null
+              createdAt: safeDate(userData.createdAt),
+              registeredAt: safeDate(authData.createdAt)
             });
           }
         } catch (err) {
@@ -3104,6 +3189,15 @@ app.get('/api/admin/users', async (req, res) => {
       const query = USERS_COL.orderBy('tokensTotal', 'desc').limit(maxResults);
       const snapshot = await query.get();
       
+      // Helper to safely convert date fields
+      const safeDate = (val) => {
+        if (!val) return null;
+        if (typeof val === 'string') return val;
+        if (val instanceof Date) return val.toISOString();
+        if (val.toDate && typeof val.toDate === 'function') return val.toDate().toISOString();
+        return null;
+      };
+      
       users = snapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -3112,6 +3206,7 @@ app.get('/api/admin/users', async (req, res) => {
           email: data.email || null,
           walletAddress: data.walletAddress || null,
           referralCode: data.referralCode,
+          referredByCode: data.referredByCode || null,
           tokensTotal: data.tokensTotal || 0,
           tokensThisWeek: data.tokensThisWeek || 0,
           tokensLastWeek: data.tokensLastWeek || 0,
@@ -3119,7 +3214,7 @@ app.get('/api/admin/users', async (req, res) => {
           tokensFromCommission: data.tokensFromCommission || 0,
           invitesCompleted: data.invitesCompleted || 0,
           totalHours: Math.floor((data.totalSeconds || 0) / 3600),
-          createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+          createdAt: safeDate(data.createdAt)
         };
       });
     }
