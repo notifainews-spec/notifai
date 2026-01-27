@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: notifai-telegram-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: NOTIFAI_API_URL
+        value: https://notifai-news.onrender.com
+      - key: POLL_INTERVAL
+        value: "60000"
