@@ -3117,10 +3117,13 @@ app.get('/api/admin/users', async (req, res) => {
       return res.status(500).json({ ok: false, error: 'Firestore not configured' });
     }
     
-    const { withEmail, limit } = req.query;
+    const { withEmail, limit, exportAll } = req.query;
     
-    // Limit results (default 100, max 1000)
-    const maxResults = Math.min(parseInt(limit) || 100, 1000);
+    // For export, allow up to 25000. For regular view, max 500
+    const isExport = exportAll === 'true';
+    const maxResults = isExport 
+      ? Math.min(parseInt(limit) || 25000, 25000)
+      : Math.min(parseInt(limit) || 100, 500);
     
     // Helper to safely convert date fields
     const safeDate = (val) => {
@@ -3129,7 +3132,7 @@ app.get('/api/admin/users', async (req, res) => {
         if (typeof val === 'string') return val;
         if (val instanceof Date) return val.toISOString();
         if (val.toDate && typeof val.toDate === 'function') return val.toDate().toISOString();
-        if (val._seconds) return new Date(val._seconds * 1000).toISOString(); // Firestore Timestamp object
+        if (val._seconds) return new Date(val._seconds * 1000).toISOString();
       } catch (e) {
         console.error('Date conversion error:', e);
       }
@@ -3138,73 +3141,69 @@ app.get('/api/admin/users', async (req, res) => {
     
     let users = [];
     
-    // If filtering for registered users, query notifaiUserAuth directly (source of truth)
+    // If filtering for registered users
     if (withEmail === 'true') {
-      console.log('[ADMIN] Fetching registered users from notifaiUserAuth...');
+      console.log(`[ADMIN] Fetching registered users (limit: ${maxResults}, export: ${isExport})...`);
       
-      // Get all registered users from auth collection
-      const authCol = db.collection('notifaiUserAuth');
-      const authSnap = await authCol.get();
+      // Use pagination to fetch large datasets
+      const BATCH_SIZE = 1000;
+      let lastDoc = null;
+      let fetchedCount = 0;
       
-      console.log(`[ADMIN] Found ${authSnap.docs.length} records in notifaiUserAuth`);
-      
-      // Collect all userIds first
-      const authMap = new Map();
-      for (const authDoc of authSnap.docs) {
-        const authData = authDoc.data();
-        const email = authDoc.id;
-        const userId = authData.userId;
-        if (userId) {
-          authMap.set(userId, { email, authData });
+      while (fetchedCount < maxResults) {
+        let query = USERS_COL
+          .where('email', '!=', null)
+          .orderBy('email')
+          .limit(Math.min(BATCH_SIZE, maxResults - fetchedCount));
+        
+        if (lastDoc) {
+          query = query.startAfter(lastDoc);
         }
-      }
-      
-      console.log(`[ADMIN] Collected ${authMap.size} valid userIds`);
-      
-      // Fetch user data - batch by chunks to avoid timeout
-      const userIds = Array.from(authMap.keys());
-      const BATCH_SIZE = 30; // Firestore 'in' queries limited to 30
-      
-      for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
-        const batch = userIds.slice(i, i + BATCH_SIZE);
         
-        // Use Promise.all for parallel fetching within batch
-        const userDocs = await Promise.all(
-          batch.map(userId => USERS_COL.doc(userId).get())
-        );
+        const snapshot = await query.get();
         
-        for (const userDoc of userDocs) {
-          if (userDoc.exists) {
-            const userData = userDoc.data();
-            const authInfo = authMap.get(userDoc.id);
-            
-            if (authInfo) {
-              users.push({
-                docId: userDoc.id,
-                userId: userData.userId || userDoc.id,
-                email: authInfo.email,
-                walletAddress: userData.walletAddress || null,
-                referralCode: userData.referralCode || null,
-                referredByCode: userData.referredByCode || null,
-                tokensTotal: userData.tokensTotal || 0,
-                tokensThisWeek: userData.tokensThisWeek || 0,
-                tokensLastWeek: userData.tokensLastWeek || 0,
-                tokensFromInvites: userData.tokensFromInvites || 0,
-                tokensFromCommission: userData.tokensFromCommission || 0,
-                invitesCompleted: userData.invitesCompleted || 0,
-                totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
-                createdAt: safeDate(userData.createdAt),
-                registeredAt: safeDate(authInfo.authData.createdAt)
-              });
-            }
-          }
+        if (snapshot.empty) {
+          console.log(`[ADMIN] No more documents to fetch`);
+          break;
+        }
+        
+        console.log(`[ADMIN] Fetched batch of ${snapshot.docs.length} users (total: ${fetchedCount + snapshot.docs.length})`);
+        
+        for (const doc of snapshot.docs) {
+          const data = doc.data();
+          users.push({
+            docId: doc.id,
+            userId: data.userId || doc.id,
+            email: data.email || null,
+            walletAddress: data.walletAddress || null,
+            referralCode: data.referralCode || null,
+            referredByCode: data.referredByCode || null,
+            tokensTotal: data.tokensTotal || 0,
+            tokensThisWeek: data.tokensThisWeek || 0,
+            tokensLastWeek: data.tokensLastWeek || 0,
+            tokensFromInvites: data.tokensFromInvites || 0,
+            tokensFromCommission: data.tokensFromCommission || 0,
+            invitesCompleted: data.invitesCompleted || 0,
+            invitesStarted: data.invitesStarted || 0,
+            totalHours: Math.floor((data.totalSeconds || 0) / 3600),
+            totalSeconds: data.totalSeconds || 0,
+            createdAt: safeDate(data.createdAt)
+          });
+        }
+        
+        fetchedCount = users.length;
+        lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        
+        // If we got fewer than BATCH_SIZE, we've reached the end
+        if (snapshot.docs.length < BATCH_SIZE) {
+          break;
         }
       }
       
       // Sort by tokens descending
       users.sort((a, b) => (b.tokensTotal || 0) - (a.tokensTotal || 0));
       
-      console.log(`[ADMIN] Final: ${users.length} registered users with data`);
+      console.log(`[ADMIN] Returning ${users.length} registered users`);
       
     } else {
       // Regular fetch - just top users by tokens
@@ -3226,14 +3225,13 @@ app.get('/api/admin/users', async (req, res) => {
           tokensFromInvites: data.tokensFromInvites || 0,
           tokensFromCommission: data.tokensFromCommission || 0,
           invitesCompleted: data.invitesCompleted || 0,
+          invitesStarted: data.invitesStarted || 0,
           totalHours: Math.floor((data.totalSeconds || 0) / 3600),
+          totalSeconds: data.totalSeconds || 0,
           createdAt: safeDate(data.createdAt)
         };
       });
     }
-    
-    // Apply limit
-    users = users.slice(0, maxResults);
     
     res.json({
       ok: true,
@@ -3598,10 +3596,11 @@ app.get('/api/admin/dashboard', (req, res) => {
       </div>
       <div class="filter-group">
         <label>Limit:</label>
-        <input type="number" id="limit" value="100" min="10" max="1000" style="width: 80px">
+        <input type="number" id="limit" value="100" min="10" max="500" style="width: 80px">
       </div>
       <button onclick="loadUsers()">🔄 Refresh</button>
-      <button onclick="exportCSV()">📥 Export CSV</button>
+      <button onclick="exportCSV()">📥 Export CSV (view)</button>
+      <button onclick="exportAllCSV()">📥 Export 25K CSV</button>
     </div>
 
     <div class="table-container">
@@ -3611,10 +3610,12 @@ app.get('/api/admin/dashboard', (req, res) => {
           <tr>
             <th>Email</th>
             <th>Wallet Address</th>
+            <th>Referral Code</th>
+            <th>Invited By</th>
             <th>Tokens Total</th>
             <th>This Week</th>
             <th>Last Week</th>
-            <th>Invites</th>
+            <th>Invites Done</th>
             <th>From Invites</th>
             <th>From Commission</th>
             <th>Hours</th>
@@ -3678,6 +3679,8 @@ app.get('/api/admin/dashboard', (req, res) => {
         row.innerHTML = \`
           <td class="email">\${user.email || 'Anonymous'}</td>
           <td class="wallet">\${user.walletAddress ? user.walletAddress.slice(0, 10) + '...' : '-'}</td>
+          <td>\${user.referralCode || '-'}</td>
+          <td>\${user.referredByCode || '-'}</td>
           <td class="tokens">
             \${user.tokensTotal}
             <span class="badge \${tierBadge}">
@@ -3712,17 +3715,22 @@ app.get('/api/admin/dashboard', (req, res) => {
 
     function exportCSV() {
       const csv = [
-        ['Email', 'Wallet', 'Tokens Total', 'This Week', 'Last Week', 'Invites', 'From Invites', 'From Commission', 'Hours'].join(','),
+        ['Email', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Hours', 'Total Seconds', 'Created At'].join(','),
         ...allUsers.map(u => [
-          u.email || 'Anonymous',
+          '"' + (u.email || 'Anonymous') + '"',
           u.walletAddress || '-',
+          u.referralCode || '-',
+          u.referredByCode || '-',
           u.tokensTotal,
           u.tokensThisWeek,
           u.tokensLastWeek,
           u.invitesCompleted,
+          u.invitesStarted || 0,
           u.tokensFromInvites || 0,
           u.tokensFromCommission || 0,
-          u.totalHours
+          u.totalHours,
+          u.totalSeconds || 0,
+          u.createdAt || '-'
         ].join(','))
       ].join('\\n');
       
@@ -3732,6 +3740,64 @@ app.get('/api/admin/dashboard', (req, res) => {
       a.href = url;
       a.download = \`notifai-users-\${new Date().toISOString().split('T')[0]}.csv\`;
       a.click();
+    }
+
+    async function exportAllCSV() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = '⏳ Loading 25K users...';
+      
+      try {
+        const params = new URLSearchParams({ 
+          limit: 25000,
+          withEmail: 'true',
+          exportAll: 'true'
+        });
+        
+        const res = await fetch(\`/api/admin/users?\${params}\`, {
+          headers: { 'x-admin-secret': ADMIN_SECRET }
+        });
+        const data = await res.json();
+        
+        if (!data.ok) throw new Error(data.error);
+        
+        btn.textContent = \`⏳ Generating CSV (\${data.users.length} users)...\`;
+        
+        const csv = [
+          ['Email', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Hours', 'Total Seconds', 'Created At'].join(','),
+          ...data.users.map(u => [
+            '"' + (u.email || 'Anonymous') + '"',
+            u.walletAddress || '-',
+            u.referralCode || '-',
+            u.referredByCode || '-',
+            u.tokensTotal,
+            u.tokensThisWeek,
+            u.tokensLastWeek,
+            u.invitesCompleted,
+            u.invitesStarted || 0,
+            u.tokensFromInvites || 0,
+            u.tokensFromCommission || 0,
+            u.totalHours,
+            u.totalSeconds || 0,
+            u.createdAt || '-'
+          ].join(','))
+        ].join('\\n');
+        
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = \`notifai-registered-users-\${data.users.length}-\${new Date().toISOString().split('T')[0]}.csv\`;
+        a.click();
+        
+        alert(\`Exported \${data.users.length} registered users!\`);
+        
+      } catch (error) {
+        alert('Export failed: ' + error.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '📥 Export 25K CSV';
+      }
     }
 
     // Load on page load
