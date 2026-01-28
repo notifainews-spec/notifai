@@ -2638,7 +2638,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
       if (resend) {
         const emailResult = await resend.emails.send({
-          from: 'NotifAi <onboarding@resend.dev>',
+          from: 'NotifAi <noreply@notifai.news>',
           to: emailLower,
           subject: 'Verify your NotifAi account',
           html: `
@@ -2797,7 +2797,7 @@ app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
     try {
       if (resend) {
         await resend.emails.send({
-          from: 'NotifAi <onboarding@resend.dev>',
+          from: 'NotifAi <noreply@notifai.news>',
           to: emailLower,
           subject: 'Your new NotifAi verification code',
           html: `
@@ -2879,7 +2879,7 @@ app.post('/api/auth/send-verification', authLimiter, async (req, res) => {
     try {
       if (resend) {
         await resend.emails.send({
-          from: 'NotifAi <onboarding@resend.dev>',
+          from: 'NotifAi <noreply@notifai.news>',
           to: emailLower,
           subject: 'Verify your NotifAi email',
           html: `
@@ -3166,7 +3166,7 @@ app.post('/api/auth/request-reset', authLimiter, async (req, res) => {
     try {
       if (resend) {
         await resend.emails.send({
-          from: 'NotifAi <onboarding@resend.dev>',
+          from: 'NotifAi <noreply@notifai.news>',
           to: emailLower,
           subject: 'NotifAi Password Reset Code',
           html: `
