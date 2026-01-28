@@ -3544,14 +3544,28 @@ app.put('/api/rewards/invite-code', authenticateToken, async (req, res) => {
     }
     
     // Cannot use your own referral code
-    if (userData.referralCode === inviteCode.trim().toUpperCase()) {
+    const trimmedCode = inviteCode.trim();
+    console.log(`[INVITE-DEBUG] User ${userId} trying to link code: "${trimmedCode}" (length: ${trimmedCode.length}, chars: ${[...trimmedCode].map(c => c.charCodeAt(0)).join(',')})`);
+    console.log(`[INVITE-DEBUG] User's own referralCode: "${userData.referralCode}"`);
+    
+    if (userData.referralCode === trimmedCode) {
       return res.status(400).json({ ok: false, error: 'You cannot use your own referral code' });
     }
     
-    // Validate the invite code exists
-    const inviterSnap = await USERS_COL.where('referralCode', '==', inviteCode.trim().toUpperCase())
+    // Validate the invite code exists (case-sensitive - nanoid generates mixed case)
+    const inviterSnap = await USERS_COL.where('referralCode', '==', trimmedCode)
       .limit(1)
       .get();
+    
+    console.log(`[INVITE-DEBUG] Query result: found=${!inviterSnap.empty}, docs=${inviterSnap.size}`);
+    
+    // Extra debug: if not found, try to find any similar codes
+    if (inviterSnap.empty) {
+      // Check if maybe the code exists with different casing
+      const allUsersSnap = await USERS_COL.limit(10).get();
+      const sampleCodes = allUsersSnap.docs.map(d => d.data().referralCode).filter(Boolean);
+      console.log(`[INVITE-DEBUG] Sample referralCodes in DB: ${sampleCodes.join(', ')}`);
+    }
     
     if (inviterSnap.empty) {
       return res.status(400).json({ ok: false, error: 'Invalid invite code' });
@@ -3562,7 +3576,7 @@ app.put('/api/rewards/invite-code', authenticateToken, async (req, res) => {
     
     // Link the invite code
     await USERS_COL.doc(userId).update({
-      referredByCode: inviteCode.trim().toUpperCase(),
+      referredByCode: trimmedCode,
       referredByUserId: inviterUserId,
       updatedAt: new Date()
     });
@@ -3573,12 +3587,12 @@ app.put('/api/rewards/invite-code', authenticateToken, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    console.log(`[INVITE] User ${userId} linked to inviter ${inviterUserId} with code ${inviteCode}`);
+    console.log(`[INVITE] User ${userId} linked to inviter ${inviterUserId} with code ${trimmedCode}`);
     
     res.json({
       ok: true,
       message: 'Invite code linked successfully!',
-      inviteCode: inviteCode.trim().toUpperCase()
+      inviteCode: trimmedCode
     });
     
   } catch (error) {
