@@ -3340,16 +3340,19 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
       return res.status(404).json({ ok: false, error: 'User not found' });
     }
     const userData = userDoc.data();
+    
+    // Get referral progress docs
     const inviteesSnap = await REFERRALS_COL.where('inviterUserId', '==', userId).get();
     const invitees = [];
     let invitesThisWeek = 0;
     let invitesLastWeek = 0;
     const currentWeekKey = getWeekKey();
     
+    // ✅ FIX: Don't fetch individual user docs - use only referral progress data
     for (const doc of inviteesSnap.docs) {
       const refData = doc.data();
-      const inviteeUserDoc = await USERS_COL.doc(refData.userId).get();
-      const inviteeUserData = inviteeUserDoc.exists ? inviteeUserDoc.data() : {};
+      
+      // Calculate everything from referral progress data only
       const isActive = refData.totalSeconds >= 600;
       const status = isActive ? 'active' : 'pending';
       const inviteCompletionToken = refData.completed ? 1 : 0;
@@ -3416,11 +3419,13 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
       }
     };
     
-    // Cache the response
+    // Cache the response for 30 minutes
     DASHBOARD_CACHE.set(userId, {
       data: responseData,
       ts: Date.now()
     });
+    
+    console.log(`[CACHE] 📊 Dashboard cached for ${userId} (${invitees.length} invitees)`);
     
     // Send response ONCE
     res.json(responseData);
@@ -3430,6 +3435,7 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
   }
 });
+
 
 // PUT /api/rewards/wallet
 app.put('/api/rewards/wallet', authenticateToken, async (req, res) => {
