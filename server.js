@@ -842,12 +842,13 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
   const roomThisWeek = Math.max(0, MAX_SECONDS_PER_WEEK - prevWeeklySeconds);
   increment = Math.min(increment, roomThisWeek);
   if (increment <= 0) {
-    await docRef.update({
-      lastUsageAtMs: nowMs,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    return;
-  }
+  // Use batched write even for timestamp-only updates
+  await scheduleBatchedWrite(userId, {
+    lastUsageAtMs: nowMs,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return;
+}
   
   const prevTotalSeconds = data.totalSeconds || 0;
   const totalSeconds = prevTotalSeconds + increment;
@@ -3325,6 +3326,7 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
       return res.status(500).json({ ok: false, error: 'Firestore not configured' });
     }
     const { userId } = req.user;
+    
     // Check cache first
     const cached = DASHBOARD_CACHE.get(userId);
     if (cached && Date.now() - cached.ts < DASHBOARD_CACHE_TTL) {
@@ -3387,23 +3389,8 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
       return dateB - dateA;
     });
     
+    // Build response
     const responseData = {
-      ok: true,
-      analytics: {
-        tokensThisWeek: userData.tokensThisWeek || 0,
-        // ... all your existing fields ...
-      }
-    };
-    
-    // Cache the response
-    DASHBOARD_CACHE.set(userId, {
-      data: responseData,
-      ts: Date.now()
-    });
-    
-    res.json(responseData);
-    
-    res.json({
       ok: true,
       analytics: {
         tokensThisWeek: userData.tokensThisWeek || 0,
@@ -3427,7 +3414,17 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         inviteesCount: invitees.length,
         activeInviteesCount: invitees.filter(i => i.status === 'active').length
       }
+    };
+    
+    // Cache the response
+    DASHBOARD_CACHE.set(userId, {
+      data: responseData,
+      ts: Date.now()
     });
+    
+    // Send response ONCE
+    res.json(responseData);
+    
   } catch (error) {
     console.error('Dashboard error:', error);
     res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
