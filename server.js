@@ -288,6 +288,10 @@ const VERIFIED_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const DEVICE_MAP_CACHE = new Map(); // deviceId -> { linkedUserId, ts }
 const DEVICE_MAP_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
+// -------------------- ME ENDPOINT CACHE --------------------
+const ME_CACHE = new Map(); // oduserId -> { data, ts }
+const ME_CACHE_TTL = 2 * 60 * 1000; // 2 minutes (short so users see updates)
+
 // -------------------- END REWARDS CACHE --------------------
 
 function sha1(s) {
@@ -891,6 +895,10 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
   // Update cache immediately for next request
   const updatedData = { ...data, ...updatePayload };
   USER_CACHE.set(userId, { data: updatedData, ts: Date.now() });
+  
+  // Clear dashboard cache so user sees updated stats
+  DASHBOARD_CACHE.delete(userId);
+  ME_CACHE && ME_CACHE.delete(userId);
   }
   
   if (data.referredByUserId && REFERRALS_COL) {
@@ -2395,10 +2403,16 @@ app.get("/api/rewards/me", rewardsLimiter, async (req, res) => {
     const clientIp = getClientIp(req);
     const userId = getStableUserIdForIp(clientIp, providedUserId);
 
+    // Check cache first (short TTL so users see updates quickly)
+    const cached = ME_CACHE.get(userId);
+    if (cached && Date.now() - cached.ts < ME_CACHE_TTL) {
+      return res.json(cached.data);
+    }
+
     const { ref, data } = await getOrCreateUser(userId);
     const ensured = await ensureWeek(ref, data);
 
-    return res.json({
+    const responseData = {
       ok: true,
       user: {
         userId: ensured.userId,
@@ -2413,7 +2427,12 @@ app.get("/api/rewards/me", rewardsLimiter, async (req, res) => {
         invitesCompleted: ensured.invitesCompleted || 0,
         invitesStarted: ensured.invitesStarted || 0,
       },
-    });
+    };
+
+    // Cache for 2 minutes
+    ME_CACHE.set(userId, { data: responseData, ts: Date.now() });
+
+    return res.json(responseData);
   } catch (err) {
     console.error("GET /api/rewards/me error", err);
     return res.status(500).json({
@@ -2637,7 +2656,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     // Send verification email
     try {
       if (resend) {
-        const emailResult = await resend.emails.send({
+        await resend.emails.send({
           from: 'NotifAi <noreply@notifai.news>',
           to: emailLower,
           subject: 'Verify your NotifAi account',
@@ -2655,14 +2674,13 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             </div>
           `
         });
-        console.log(`[VERIFY] ✅ Email sent to ${emailLower}:`, JSON.stringify(emailResult));
+        console.log(`[VERIFY] Sent verification email to ${emailLower}`);
       } else {
         // Fallback: log to console if Resend not configured
-        console.log(`[VERIFY] ⚠️ Resend not configured. Code for ${emailLower}: ${code}`);
+        console.log(`[VERIFY] Resend not configured. Code for ${emailLower}: ${code}`);
       }
     } catch (emailError) {
-      console.error('[VERIFY] ❌ Email send FAILED to', emailLower, ':', emailError?.message || emailError);
-      console.error('[VERIFY] Full error:', JSON.stringify(emailError, null, 2));
+      console.error('[VERIFY] Email send error:', emailError);
       // Still return success - code is stored
       console.log(`[VERIFY] Fallback - Code for ${emailLower}: ${code}`);
     }
