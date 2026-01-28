@@ -3433,7 +3433,6 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     res.json(responseData);
     
   } catch (error) {
-    } catch (error) {
     console.error('Dashboard error:', error);
     if (error.message?.includes('RESOURCE_EXHAUSTED')) {
       const cached = DASHBOARD_CACHE.get(req.user?.userId);
@@ -3442,10 +3441,7 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     }
     res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
   }
-});, error);
-    res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
-  }
-});
+});;
 
 
 // PUT /api/rewards/wallet
