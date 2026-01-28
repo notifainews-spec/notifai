@@ -44,15 +44,15 @@ app.set("trust proxy", 1);
 
 // Temporary abuse controls (no app update required)
 const rewardsLimiter = rateLimit({
-  windowMs: 60 * 1000,      // 1 minute
-  max: 30,                 // 120 requests/min/IP
+  windowMs: 60 * 1000,
+  max: 20,  // Reduced from 30
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const rewardsWriteLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,                  // 60 writes/min/IP
+  max: 5,   // Reduced from 10
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -272,14 +272,20 @@ const TRANSLATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 // -------------------- REWARDS CACHE --------------------
 const USER_CACHE = new Map(); // userId -> { data, ts }
-const USER_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+const USER_CACHE_TTL = 15 * 60 * 1000; // 15 minutes - CRITICAL CHANGE
 
 const REFERRAL_CACHE = new Map(); // userId -> { data, ts }
-const REFERRAL_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+const REFERRAL_CACHE_TTL = 15 * 60 * 1000; // 15 minutes - CRITICAL CHANGE
 
 let leaderboardCache = null;
 let leaderboardCacheTime = 0;
-const LEADERBOARD_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const LEADERBOARD_CACHE_TTL = 30 * 60 * 1000; // 30 minutes - CRITICAL CHANGE
+
+const PENDING_REQUESTS = new Map(); // key -> Promise
+
+const DASHBOARD_CACHE = new Map();
+const DASHBOARD_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 // -------------------- END REWARDS CACHE --------------------
 
 function sha1(s) {
@@ -296,13 +302,29 @@ function normLang(lang) {
 async function firestoreGetTranslation(db, key) {
   try {
     if (!db) return null;
-    const ref = db.collection("translations_v1").doc(key);
-    const snap = await ref.get();
-    if (!snap.exists) return null;
-    const data = snap.data();
-    if (!data?.text) return null;
-    if (data.ts && Date.now() - data.ts > TRANSLATION_TTL_MS) return null;
-    return data.text;
+    
+    // Deduplicate concurrent requests
+    const pendingKey = `translate:${key}`;
+    if (PENDING_REQUESTS.has(pendingKey)) {
+      console.log(`[DEDUP] Reusing pending request for ${key.slice(0, 20)}...`);
+      return await PENDING_REQUESTS.get(pendingKey);
+    }
+    
+    const promise = (async () => {
+      const ref = db.collection("translations_v1").doc(key);
+      const snap = await ref.get();
+      if (!snap.exists) return null;
+      const data = snap.data();
+      if (!data?.text) return null;
+      if (data.ts && Date.now() - data.ts > TRANSLATION_TTL_MS) return null;
+      return data.text;
+    })();
+    
+    PENDING_REQUESTS.set(pendingKey, promise);
+    const result = await promise;
+    PENDING_REQUESTS.delete(pendingKey);
+    
+    return result;
   } catch {
     return null;
   }
@@ -727,13 +749,56 @@ async function ensureWeek(docRef, data) {
     ...data, weekKey: currentWeekKey,
     weeklySeconds: 0, tokensThisWeek: 0, tokensLastWeek: lastWeekTokens,
   };
-  await docRef.update({
-    weekKey: currentWeekKey, weeklySeconds: 0,
-    tokensThisWeek: 0, tokensLastWeek: lastWeekTokens,
+  await scheduleBatchedWrite(data.userId, {
+    weekKey: currentWeekKey,
+    weeklySeconds: 0,
+    tokensThisWeek: 0,
+    tokensLastWeek: lastWeekTokens,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
   USER_CACHE.delete(updated.userId);
   return updated;
+}
+
+const WRITE_QUEUE = new Map(); // userId -> { updates, scheduledTime }
+const WRITE_BATCH_DELAY = 30000; // 30 seconds
+
+async function scheduleBatchedWrite(userId, updates) {
+  if (!USERS_COL) return;
+  
+  const existing = WRITE_QUEUE.get(userId);
+  
+  if (existing) {
+    // Merge updates - this is the magic that saves writes!
+    Object.assign(existing.updates, updates);
+    console.log(`[BATCH] Merged update for ${userId}`);
+    return;
+  }
+  
+  // Schedule new write
+  WRITE_QUEUE.set(userId, {
+    updates,
+    scheduledTime: Date.now() + WRITE_BATCH_DELAY
+  });
+  
+  console.log(`[BATCH] Scheduled write for ${userId} in ${WRITE_BATCH_DELAY}ms`);
+  
+  // Execute after delay
+  setTimeout(async () => {
+    const queued = WRITE_QUEUE.get(userId);
+    if (!queued) return;
+    
+    WRITE_QUEUE.delete(userId);
+    
+    try {
+      const docRef = USERS_COL.doc(userId);
+      await docRef.update(queued.updates);
+      USER_CACHE.delete(userId);
+      console.log(`[BATCH] ✅ Wrote ${Object.keys(queued.updates).length} fields for ${userId}`);
+    } catch (err) {
+      console.error(`[BATCH] ❌ Write failed for ${userId}:`, err.message);
+    }
+  }, WRITE_BATCH_DELAY);
 }
 
 async function trackUsageForUser(userId, seconds, { region, screen }) {
@@ -758,7 +823,12 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
   data = await ensureWeek(docRef, data);
   const nowMs = Date.now();
   const lastMs = Number(data.lastUsageAtMs || 0);
-  if (lastMs && (nowMs - lastMs < MIN_MS_BETWEEN_CALLS)) return;
+  
+  // CRITICAL: Extend minimum time from 10s to 30s
+  if (lastMs && (nowMs - lastMs < 30000)) {  // Was: MIN_MS_BETWEEN_CALLS (10000)
+    console.log(`[TRACK] ⏭️ Skipping write for ${userId} - too soon (${Math.floor((nowMs - lastMs) / 1000)}s ago)`);
+    return;
+  }
   
   const rawInc = Number(seconds) || 0;
   if (!Number.isFinite(rawInc) || rawInc <= 0) return;
@@ -813,8 +883,11 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
   }
   const shouldWrite = true;
   if (shouldWrite) {
-    await docRef.update(updatePayload);
-    USER_CACHE.delete(userId);
+    await scheduleBatchedWrite(userId, updatePayload);
+  
+  // Update cache immediately for next request
+  const updatedData = { ...data, ...updatePayload };
+  USER_CACHE.set(userId, { data: updatedData, ts: Date.now() });
   }
   
   if (data.referredByUserId && REFERRALS_COL) {
@@ -3252,6 +3325,14 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
       return res.status(500).json({ ok: false, error: 'Firestore not configured' });
     }
     const { userId } = req.user;
+    // Check cache first
+    const cached = DASHBOARD_CACHE.get(userId);
+    if (cached && Date.now() - cached.ts < DASHBOARD_CACHE_TTL) {
+      console.log(`[CACHE] 📊 Dashboard hit for ${userId}`);
+      return res.json(cached.data);
+    }
+    console.log(`[CACHE] 📊 Dashboard miss for ${userId} - fetching from Firestore`);
+
     const userDoc = await USERS_COL.doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ ok: false, error: 'User not found' });
@@ -3305,6 +3386,22 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
       const dateB = b.joinedAt ? new Date(b.joinedAt) : new Date(0);
       return dateB - dateA;
     });
+    
+    const responseData = {
+      ok: true,
+      analytics: {
+        tokensThisWeek: userData.tokensThisWeek || 0,
+        // ... all your existing fields ...
+      }
+    };
+    
+    // Cache the response
+    DASHBOARD_CACHE.set(userId, {
+      data: responseData,
+      ts: Date.now()
+    });
+    
+    res.json(responseData);
     
     res.json({
       ok: true,
@@ -4220,6 +4317,34 @@ app.get('/api/admin/dashboard', (req, res) => {
 </html>
   `);
 });
+
+// NEW ENDPOINT TO ADD:
+app.get('/api/admin/cache-stats', async (req, res) => {
+  const adminSecret = req.headers['x-admin-secret'];
+  if (adminSecret !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  
+  res.json({
+    cacheStats: {
+      users: USER_CACHE.size,
+      referrals: REFERRAL_CACHE.size,
+      translations: TRANSLATION_MEM.size,
+      dashboards: DASHBOARD_CACHE.size,
+      writeQueue: WRITE_QUEUE.size,
+      pendingRequests: PENDING_REQUESTS.size
+    },
+    cacheTTLs: {
+      user: `${USER_CACHE_TTL / 1000}s`,
+      referral: `${REFERRAL_CACHE_TTL / 1000}s`,
+      leaderboard: `${LEADERBOARD_CACHE_TTL / 1000}s`,
+      dashboard: `${DASHBOARD_CACHE_TTL / 1000}s`,
+      writeBatch: `${WRITE_BATCH_DELAY / 1000}s`
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 
 /* --------------------------------------------------------
    START + AUTO-INGEST
