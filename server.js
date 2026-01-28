@@ -277,10 +277,6 @@ const USER_CACHE_TTL = 15 * 60 * 1000; // 15 minutes - CRITICAL CHANGE
 const REFERRAL_CACHE = new Map(); // userId -> { data, ts }
 const REFERRAL_CACHE_TTL = 15 * 60 * 1000; // 15 minutes - CRITICAL CHANGE
 
-let leaderboardCache = null;
-let leaderboardCacheTime = 0;
-const LEADERBOARD_CACHE_TTL = 30 * 60 * 1000; // 30 minutes - CRITICAL CHANGE
-
 const PENDING_REQUESTS = new Map(); // key -> Promise
 
 const DASHBOARD_CACHE = new Map();
@@ -2407,48 +2403,6 @@ app.get("/api/debug/firestore", async (req, res) => {
   }
 });
 
-// 4) Simple leaderboard (top by tokensTotal)
-app.get("/api/rewards/leaderboard", rewardsLimiter, async (req, res) => {
-  try {
-    if (!db || !USERS_COL) {
-      return res.status(500).json({ ok: false, error: "Firestore not configured" });
-    }
-
-    const limit = Math.min(Number(req.query.limit) || 10, 50);
-
-    // Check cache first
-    if (leaderboardCache && Date.now() - leaderboardCacheTime < LEADERBOARD_CACHE_TTL) {
-      console.log(`[CACHE] Leaderboard from cache`);
-      return res.json({ ok: true, items: leaderboardCache.slice(0, limit) });
-    }
-
-    // Cache miss - read from Firestore
-    console.log(`[CACHE] Leaderboard MISS - reading Firestore`);
-    const snap = await USERS_COL.orderBy("tokensTotal", "desc")
-      .limit(50) // Always fetch 50, slice as needed
-      .get();
-
-    const items = snap.docs.map((doc) => {
-      const d = doc.data();
-      return {
-        userId: d.userId,
-        referralCode: d.referralCode,
-        tokensTotal: d.tokensTotal || 0,
-        invitesCompleted: d.invitesCompleted || 0,
-      };
-    });
-
-    // Cache the results
-    leaderboardCache = items;
-    leaderboardCacheTime = Date.now();
-    console.log(`[CACHE] Leaderboard cached with ${items.length} items`);
-
-    return res.json({ ok: true, items: items.slice(0, limit) });
-  } catch (err) {
-    console.error("GET /api/rewards/leaderboard error", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
 
 /* --------------------------------------------------------
    ADMIN: CLEANUP GHOST USERS
