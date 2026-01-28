@@ -1,13 +1,13 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
-const cron = require('node-cron');
 
 // ===== CONFIGURATION =====
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
 const NOTIFAI_API_URL = process.env.NOTIFAI_API_URL || 'https://notifainews1.onrender.com';
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL) || 60000; // 1 minute default
+const LANGUAGE = process.env.LANGUAGE || 'zh-CN'; // Chinese by default
 
 // Initialize bot
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -19,12 +19,10 @@ let lastCheckedTimestamp = {};
 // Available regions in NotifAi API
 const REGIONS = ['us', 'cn', 'pk', 'id', 'uk', 'ng'];
 
-// Categories returned by API (lanes)
-// API returns: { categories: { us, entertainment, finance, world, crypto } }
-// "us" = politics for region, others are global or region-specific
+// Categories returned by API
 const CATEGORY_INFO = {
   us: { emoji: '🇺🇸', zh: '美国政治', en: 'US Politics' },
-  cn: { emoji: '🇨🇳', zh: '中国政治', en: 'China Politics' },
+  cn: { emoji: '🇨🇳', zh: '中国新闻', en: 'China News' },
   pk: { emoji: '🇵🇰', zh: '巴基斯坦', en: 'Pakistan' },
   ng: { emoji: '🇳🇬', zh: '尼日利亚', en: 'Nigeria' },
   uk: { emoji: '🇬🇧', zh: '英国', en: 'UK' },
@@ -40,18 +38,19 @@ const REALTIME_CATEGORIES = ['world', 'crypto', 'cn'];
 
 // ===== NOTIFAI API FUNCTIONS =====
 
-// Fetch articles from NotifAi API
-// API: GET /api/articles?region=cn returns { categories: { cn, entertainment, finance, world, crypto } }
-async function fetchFromNotifAi(region = 'cn') {
+// Fetch articles from NotifAi API with Chinese translation
+async function fetchFromNotifAi(region = 'cn', lang = LANGUAGE) {
   try {
     const response = await axios.get(`${NOTIFAI_API_URL}/api/articles`, {
-      params: { region: region },
-      timeout: 15000
+      params: { 
+        region: region,
+        lang: lang  // Request Chinese translation from API
+      },
+      timeout: 20000
     });
     
     const data = response.data;
     
-    // API returns { site, region, categories: { us/cn/etc, entertainment, finance, world, crypto } }
     if (data.categories) {
       return data.categories;
     }
@@ -64,13 +63,8 @@ async function fetchFromNotifAi(region = 'cn') {
 }
 
 // Get articles for a specific category/lane
-async function getArticlesForCategory(category, region = 'cn', limit = 10) {
-  const categories = await fetchFromNotifAi(region);
-  
-  // Map category names
-  // 'world' and 'crypto' are global
-  // 'politics' maps to the region name (e.g., 'cn' for China politics)
-  // 'finance' and 'entertainment' are region-specific
+async function getArticlesForCategory(category, region = 'cn', limit = 10, lang = LANGUAGE) {
+  const categories = await fetchFromNotifAi(region, lang);
   
   let articles = [];
   
@@ -83,10 +77,8 @@ async function getArticlesForCategory(category, region = 'cn', limit = 10) {
   } else if (category === 'entertainment') {
     articles = categories.entertainment || [];
   } else if (REGIONS.includes(category)) {
-    // For region-specific politics (cn, us, pk, etc.)
     articles = categories[category] || categories[region] || [];
   } else {
-    // Default: try to get from categories directly
     articles = categories[category] || [];
   }
   
@@ -94,9 +86,9 @@ async function getArticlesForCategory(category, region = 'cn', limit = 10) {
 }
 
 // Fetch latest news with timestamp filter (for real-time)
-async function fetchLatestNews(category, region = 'cn', sinceTimestamp = null) {
+async function fetchLatestNews(category, region = 'cn', sinceTimestamp = null, lang = LANGUAGE) {
   try {
-    const articles = await getArticlesForCategory(category, region, 20);
+    const articles = await getArticlesForCategory(category, region, 20, lang);
     
     if (!sinceTimestamp || articles.length === 0) {
       return articles;
@@ -126,11 +118,10 @@ function escapeHtml(text) {
 function formatArticle(article, categoryKey) {
   const catInfo = CATEGORY_INFO[categoryKey] || CATEGORY_INFO.world;
   
-  // Map NotifAi's field names
   const title = article.title || '无标题';
   const summary = article.summary || article.description || '';
-  const displaySummary = summary.length > 280 
-    ? summary.substring(0, 280) + '...' 
+  const displaySummary = summary.length > 300 
+    ? summary.substring(0, 300) + '...' 
     : summary;
   const source = article.source || '未知来源';
   const url = article.url;
@@ -144,7 +135,7 @@ function formatArticle(article, categoryKey) {
   }
   
   const message = `
-${catInfo.emoji} <b>${catInfo.zh} | ${catInfo.en}</b>
+${catInfo.emoji} <b>${catInfo.zh}</b>
 
 📌 <b>${escapeHtml(title)}</b>
 
@@ -152,11 +143,11 @@ ${escapeHtml(displaySummary)}
 
 📍 来源: ${escapeHtml(source)}
 ${timeStr}
-🔗 <a href="${url}">阅读全文 Read More</a>
+🔗 <a href="${url}">阅读全文</a>
 
 ━━━━━━━━━━━━━━━
 💎 <b>NotifAi</b> - 阅读新闻赚取代币
-📱 https://play.google.com/store/apps/details?id=com.notifai
+📱 https://linktr.ee/notifainews
 ━━━━━━━━━━━━━━━
 `;
   
@@ -165,12 +156,11 @@ ${timeStr}
 
 // ===== POSTING FUNCTIONS =====
 
-async function postToChannel(article, categoryKey, isBreaking = false) {
-  // Create unique ID for deduplication
+async function postToChannel(article, categoryKey) {
   const articleId = article.id || article.url || article.title;
   
   if (postedArticles.has(articleId)) {
-    console.log(`⏭️ Skipping duplicate: ${article.title?.substring(0, 50)}...`);
+    console.log(`⏭️ 跳过重复: ${article.title?.substring(0, 40)}...`);
     return false;
   }
   
@@ -184,7 +174,7 @@ async function postToChannel(article, categoryKey, isBreaking = false) {
           parse_mode: 'HTML'
         });
       } catch (imgError) {
-        console.log(`⚠️ Image failed, sending text only`);
+        console.log(`⚠️ 图片失败，发送纯文本`);
         await bot.sendMessage(CHANNEL_ID, message, {
           parse_mode: 'HTML',
           disable_web_page_preview: false
@@ -197,10 +187,9 @@ async function postToChannel(article, categoryKey, isBreaking = false) {
       });
     }
     
-    // Mark as posted
     postedArticles.add(articleId);
     
-    // Keep set manageable (max 2000 articles)
+    // Keep set manageable
     if (postedArticles.size > 2000) {
       const arr = Array.from(postedArticles);
       arr.splice(0, 1000);
@@ -208,11 +197,11 @@ async function postToChannel(article, categoryKey, isBreaking = false) {
       arr.forEach(id => postedArticles.add(id));
     }
     
-    console.log(`✅ Posted: ${article.title?.substring(0, 50)}...`);
+    console.log(`✅ 已发布: ${article.title?.substring(0, 40)}...`);
     return true;
     
   } catch (error) {
-    console.error(`❌ Error posting to channel:`, error.message);
+    console.error(`❌ 发布失败:`, error.message);
     return false;
   }
 }
@@ -220,85 +209,36 @@ async function postToChannel(article, categoryKey, isBreaking = false) {
 // ===== REAL-TIME NEWS MONITORING =====
 
 async function checkForNewArticles() {
-  console.log(`\n🔍 [${new Date().toISOString()}] Checking for new articles...`);
+  console.log(`\n🔍 [${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] 检查新文章...`);
   
   for (const category of REALTIME_CATEGORIES) {
     try {
-      const since = lastCheckedTimestamp[category] || Date.now() - (5 * 60 * 1000); // Default: last 5 mins
+      const since = lastCheckedTimestamp[category] || Date.now() - (5 * 60 * 1000);
       
-      // Use 'cn' region for China-focused bot
-      const articles = await fetchLatestNews(category, 'cn', since);
+      // Fetch with Chinese translation
+      const articles = await fetchLatestNews(category, 'cn', since, LANGUAGE);
       
       if (articles.length > 0) {
-        console.log(`📰 Found ${articles.length} new ${category} articles`);
+        console.log(`📰 发现 ${articles.length} 篇新 ${CATEGORY_INFO[category]?.zh || category} 文章`);
         
-        // Post newest articles (max 3 per check to avoid spam)
-        const toPost = articles.slice(0, 3);
-        
-        for (const article of toPost) {
-          await postToChannel(article, category, false);
+        // Post ALL new articles immediately
+        for (const article of articles) {
+          await postToChannel(article, category);
           // Rate limit: 2 seconds between posts
           await sleep(2000);
         }
       } else {
-        console.log(`📭 No new ${category} articles`);
+        console.log(`📭 无新 ${CATEGORY_INFO[category]?.zh || category} 文章`);
       }
       
       // Update timestamp
       lastCheckedTimestamp[category] = Date.now();
       
     } catch (error) {
-      console.error(`❌ Error checking ${category}:`, error.message);
+      console.error(`❌ 检查 ${category} 失败:`, error.message);
     }
     
-    // Small delay between categories
     await sleep(1000);
-  }
-}
-
-// ===== SCHEDULED BROADCASTS =====
-
-async function broadcastCategory(category, region = 'cn', limit = 3) {
-  console.log(`📡 Broadcasting ${category} news...`);
-  
-  const articles = await getArticlesForCategory(category, region, limit);
-  
-  if (articles.length === 0) {
-    console.log(`⚠️ No articles found for ${category}`);
-    return 0;
-  }
-  
-  let posted = 0;
-  for (const article of articles.slice(0, limit)) {
-    if (await postToChannel(article, category)) {
-      posted++;
-      await sleep(3000); // 3 second delay between posts
-    }
-  }
-  
-  console.log(`✅ Posted ${posted}/${limit} ${category} articles`);
-  return posted;
-}
-
-async function dailyDigest() {
-  console.log(`\n📰 Sending daily digest...`);
-  
-  const digestMessage = `
-🌅 <b>NotifAi 每日新闻摘要</b>
-<b>Daily News Digest</b>
-
-━━━━━━━━━━━━━━━
-
-今日为您精选以下新闻:
-`;
-  
-  await bot.sendMessage(CHANNEL_ID, digestMessage, { parse_mode: 'HTML' });
-  await sleep(1000);
-  
-  // Post top story from each priority category
-  for (const category of REALTIME_CATEGORIES) {
-    await broadcastCategory(category, 'cn', 2);
-    await sleep(5000);
   }
 }
 
@@ -322,20 +262,19 @@ bot.onText(/\/start/, async (msg) => {
         { text: '🇺🇸 美国', callback_data: 'news_us' }
       ],
       [
-        { text: '📱 下载 NotifAi App', url: 'https://play.google.com/store/apps/details?id=com.notifai' }
+        { text: '📱 下载 NotifAi App', url: 'https://linktr.ee/notifainews' }
       ]
     ]
   };
   
   const welcomeMessage = `
 🎉 <b>欢迎使用 NotifAi 新闻机器人!</b>
-Welcome to NotifAi News Bot!
 
-📰 实时获取中国、加密货币及国际新闻
-🔔 自动推送最新资讯到频道
+📰 实时推送中国、加密货币及国际新闻
+🇨🇳 所有内容自动翻译成中文
 💎 下载 NotifAi App 阅读新闻赚取代币
 
-<b>命令 Commands:</b>
+<b>命令:</b>
 /news - 最新新闻
 /china - 中国新闻
 /crypto - 加密货币
@@ -352,7 +291,7 @@ Welcome to NotifAi News Bot!
   });
 });
 
-// Callback query handler for inline buttons
+// Callback query handler
 bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const data = query.data;
@@ -370,9 +309,8 @@ bot.onText(/\/news$/, async (msg) => {
   const chatId = msg.chat.id;
   await bot.sendMessage(chatId, '⏳ 正在获取最新新闻...');
   
-  // Get mix of cn, crypto, world
   for (const category of ['cn', 'crypto', 'world']) {
-    const articles = await getArticlesForCategory(category, 'cn', 1);
+    const articles = await getArticlesForCategory(category, 'cn', 1, LANGUAGE);
     if (articles.length > 0) {
       const { message, imageUrl } = formatArticle(articles[0], category);
       try {
@@ -403,14 +341,14 @@ bot.onText(/\/categories/, async (msg) => {
   const chatId = msg.chat.id;
   
   const catList = `
-<b>📋 新闻分类 News Categories</b>
+<b>📋 新闻分类</b>
 
-<b>🔴 实时更新 Real-time:</b>
+<b>🔴 实时更新:</b>
 🇨🇳 /china - 中国新闻
 🪙 /crypto - 加密货币
 🌍 /world - 国际新闻
 
-<b>📰 其他分类 Other:</b>
+<b>📰 其他分类:</b>
 💼 /finance - 财经
 🎬 /entertainment - 娱乐
 🇺🇸 /us - 美国新闻
@@ -419,19 +357,20 @@ bot.onText(/\/categories/, async (msg) => {
   await bot.sendMessage(chatId, catList, { parse_mode: 'HTML' });
 });
 
-// /status command (admin)
+// /status command
 bot.onText(/\/status/, async (msg) => {
   const chatId = msg.chat.id;
   const status = `
-🤖 <b>Bot Status</b>
+🤖 <b>机器人状态</b>
 
-📊 Articles tracked: ${postedArticles.size}
-🔄 Poll interval: ${POLL_INTERVAL/1000}s
+📊 已追踪文章: ${postedArticles.size}
+🔄 检查间隔: ${POLL_INTERVAL/1000}秒
+🌐 语言: ${LANGUAGE}
 📡 API: ${NOTIFAI_API_URL}
-📢 Channel: ${CHANNEL_ID}
+📢 频道: ${CHANNEL_ID}
 
-<b>Last checked:</b>
-${Object.entries(lastCheckedTimestamp).map(([k,v]) => `• ${k}: ${new Date(v).toLocaleTimeString()}`).join('\n') || '• Not yet checked'}
+<b>上次检查:</b>
+${Object.entries(lastCheckedTimestamp).map(([k,v]) => `• ${CATEGORY_INFO[k]?.zh || k}: ${new Date(v).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' })}`).join('\n') || '• 尚未检查'}
 `;
   await bot.sendMessage(chatId, status, { parse_mode: 'HTML' });
 });
@@ -442,12 +381,11 @@ async function sendCategoryNews(chatId, category) {
   
   await bot.sendMessage(chatId, `⏳ 正在获取${catInfo.zh}...`);
   
-  // Determine region based on category
   const region = REGIONS.includes(category) ? category : 'cn';
-  const articles = await getArticlesForCategory(category, region, 5);
+  const articles = await getArticlesForCategory(category, region, 5, LANGUAGE);
   
   if (articles.length === 0) {
-    await bot.sendMessage(chatId, `❌ 暂无${catInfo.zh}，请稍后再试\nNo ${catInfo.en} news available`);
+    await bot.sendMessage(chatId, `❌ 暂无${catInfo.zh}，请稍后再试`);
     return;
   }
   
@@ -472,40 +410,22 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ===== SCHEDULED TASKS =====
+// ===== REAL-TIME ONLY - NO SCHEDULED BROADCASTS =====
 
-// Real-time monitoring: Check every minute
+// Check for new articles every minute
 setInterval(checkForNewArticles, POLL_INTERVAL);
-
-// Scheduled broadcasts (Beijing timezone)
-// Morning digest at 8:00 AM
-cron.schedule('0 8 * * *', dailyDigest, { timezone: 'Asia/Shanghai' });
-
-// Midday update at 12:30 PM
-cron.schedule('30 12 * * *', () => {
-  broadcastCategory('cn', 'cn', 2);
-  setTimeout(() => broadcastCategory('crypto', 'cn', 2), 10000);
-}, { timezone: 'Asia/Shanghai' });
-
-// Evening update at 6:00 PM
-cron.schedule('0 18 * * *', () => {
-  broadcastCategory('world', 'cn', 2);
-  setTimeout(() => broadcastCategory('finance', 'cn', 2), 10000);
-}, { timezone: 'Asia/Shanghai' });
-
-// Night crypto update at 10:00 PM
-cron.schedule('0 22 * * *', () => broadcastCategory('crypto', 'cn', 3), { timezone: 'Asia/Shanghai' });
 
 // ===== STARTUP =====
 
 async function startup() {
   console.log('═══════════════════════════════════════');
-  console.log('🚀 NotifAi Telegram Bot Starting...');
+  console.log('🚀 NotifAi 电报机器人启动中...');
   console.log('═══════════════════════════════════════');
   console.log(`📡 API: ${NOTIFAI_API_URL}`);
-  console.log(`📢 Channel: ${CHANNEL_ID}`);
-  console.log(`🔄 Poll Interval: ${POLL_INTERVAL/1000} seconds`);
-  console.log(`🔴 Real-time categories: ${REALTIME_CATEGORIES.join(', ')}`);
+  console.log(`📢 频道: ${CHANNEL_ID}`);
+  console.log(`🔄 检查间隔: ${POLL_INTERVAL/1000} 秒`);
+  console.log(`🌐 语言: ${LANGUAGE}`);
+  console.log(`🔴 实时分类: ${REALTIME_CATEGORIES.map(c => CATEGORY_INFO[c]?.zh || c).join(', ')}`);
   console.log('═══════════════════════════════════════');
   
   // Initialize timestamps
@@ -514,47 +434,45 @@ async function startup() {
     lastCheckedTimestamp[cat] = now;
   }
   
-  // Send startup message to channel
+  // Send startup message
   try {
     await bot.sendMessage(CHANNEL_ID, `
 🤖 <b>NotifAi 新闻机器人已上线!</b>
-Bot is now online!
 
-🔴 <b>实时更新 Real-time Updates:</b>
-• 🇨🇳 中国新闻 China News
-• 🪙 加密货币 Crypto
-• 🌍 国际新闻 World News
+🔴 <b>实时更新分类:</b>
+• 🇨🇳 中国新闻
+• 🪙 加密货币
+• 🌍 国际新闻
 
-📰 新闻将自动推送到此频道
-News will be posted automatically
+📰 新文章将立即推送到此频道
+🇨🇳 所有内容自动翻译成中文
 
 💎 下载 NotifAi App 赚取代币:
-https://play.google.com/store/apps/details?id=com.notifai
+https://linktr.ee/notifainews
 `, { parse_mode: 'HTML' });
     
-    console.log('✅ Startup message sent to channel');
+    console.log('✅ 启动消息已发送到频道');
   } catch (error) {
-    console.error('⚠️ Could not send startup message:', error.message);
-    console.error('Make sure bot is admin in channel with posting permissions');
+    console.error('⚠️ 无法发送启动消息:', error.message);
   }
   
-  // Do initial check after 10 seconds
+  // Initial check after 10 seconds
   setTimeout(checkForNewArticles, 10000);
   
-  console.log('✅ Bot is running and monitoring for news...\n');
+  console.log('✅ 机器人正在运行，监控新闻中...\n');
 }
 
 // Error handling
 bot.on('polling_error', (error) => {
-  console.error('Polling error:', error.message);
+  console.error('轮询错误:', error.message);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+  console.error('未捕获异常:', error);
 });
 
 process.on('unhandledRejection', (error) => {
-  console.error('Unhandled rejection:', error);
+  console.error('未处理拒绝:', error);
 });
 
 // Start the bot
