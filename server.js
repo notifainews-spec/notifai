@@ -272,15 +272,21 @@ const TRANSLATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 // -------------------- REWARDS CACHE --------------------
 const USER_CACHE = new Map(); // userId -> { data, ts }
-const USER_CACHE_TTL = 15 * 60 * 1000; // 15 minutes - CRITICAL CHANGE
+const USER_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 const REFERRAL_CACHE = new Map(); // userId -> { data, ts }
-const REFERRAL_CACHE_TTL = 15 * 60 * 1000; // 15 minutes - CRITICAL CHANGE
+const REFERRAL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 const PENDING_REQUESTS = new Map(); // key -> Promise
 
 const DASHBOARD_CACHE = new Map();
-const DASHBOARD_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const DASHBOARD_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+// -------------------- VERIFICATION CACHE (reduces Firestore reads) --------------------
+const VERIFIED_USER_CACHE = new Map(); // userId -> { isVerified, email, ts }
+const VERIFIED_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const DEVICE_MAP_CACHE = new Map(); // deviceId -> { linkedUserId, ts }
+const DEVICE_MAP_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 // -------------------- END REWARDS CACHE --------------------
 
@@ -2245,11 +2251,10 @@ app.post("/api/rewards/track-usage", rewardsWriteLimiter, authenticateTokenOptio
 
     const { userId: providedUserId, seconds, region, screen } = req.body || {};
     
-    // Get userId from JWT token if available
     const tokenUserId = req.user && req.user.userId;
     const tokenEmail = req.user && req.user.email;
+    const tokenVerified = req.user && req.user.verified;
     
-    // Must have either token userId OR body userId
     if (!tokenUserId && !providedUserId) {
       return res.status(400).json({ ok: false, error: "Missing userId (token or body)" });
     }
@@ -2263,57 +2268,93 @@ app.post("/api/rewards/track-usage", rewardsWriteLimiter, authenticateTokenOptio
       return res.status(400).json({ ok: false, error: "Invalid seconds" });
     }
 
-    // Determine the userId to use
     let userId = tokenUserId || providedUserId;
     let userEmail = tokenEmail;
-    let isVerified = false;
+    let isVerified = tokenVerified === true;
     
-    // PRIORITY 1: If authenticated via JWT, use that userId
-    if (tokenUserId) {
-      // Check if user is email verified
-      const userDoc = await USERS_COL.doc(tokenUserId).get();
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        isVerified = userData.emailVerified === true;
-        userEmail = userData.email;
+    // FAST PATH: JWT says verified = no Firestore read needed
+    if (tokenUserId && tokenVerified === true) {
+      isVerified = true;
+      userEmail = tokenEmail;
+    }
+    // Check memory cache before Firestore
+    else if (tokenUserId) {
+      const cached = VERIFIED_USER_CACHE.get(tokenUserId);
+      if (cached && Date.now() - cached.ts < VERIFIED_CACHE_TTL) {
+        isVerified = cached.isVerified;
+        userEmail = cached.email;
+      } else {
+        try {
+          const userDoc = await USERS_COL.doc(tokenUserId).get();
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            isVerified = userData.emailVerified === true;
+            userEmail = userData.email;
+            VERIFIED_USER_CACHE.set(tokenUserId, { isVerified, email: userEmail, ts: Date.now() });
+          }
+        } catch (err) {
+          if (err.message?.includes('RESOURCE_EXHAUSTED')) {
+            return res.status(503).json({ ok: false, error: "Service temporarily busy" });
+          }
+        }
       }
     } else {
-      // PRIORITY 2: Not authenticated - check device mapping
-      try {
-        const userDoc = await USERS_COL.doc(providedUserId).get();
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-          if (userData.email) {
-            userId = providedUserId;
-            userEmail = userData.email;
-            isVerified = userData.emailVerified === true;
+      // Not authenticated - check caches first
+      const cachedVerified = VERIFIED_USER_CACHE.get(providedUserId);
+      if (cachedVerified && Date.now() - cachedVerified.ts < VERIFIED_CACHE_TTL) {
+        isVerified = cachedVerified.isVerified;
+        userEmail = cachedVerified.email;
+        userId = providedUserId;
+      } else {
+        const cachedDevice = DEVICE_MAP_CACHE.get(providedUserId);
+        if (cachedDevice && Date.now() - cachedDevice.ts < DEVICE_MAP_CACHE_TTL) {
+          userId = cachedDevice.linkedUserId;
+          const cachedLinked = VERIFIED_USER_CACHE.get(userId);
+          if (cachedLinked && Date.now() - cachedLinked.ts < VERIFIED_CACHE_TTL) {
+            isVerified = cachedLinked.isVerified;
+            userEmail = cachedLinked.email;
           }
         } else {
-          // Check device mapping
-          const deviceMapCol = db.collection("notifaiDeviceMap");
-          const deviceDoc = await deviceMapCol.doc(providedUserId).get();
-          if (deviceDoc.exists) {
-            const mapping = deviceDoc.data();
-            if (mapping.linkedUserId) {
-              userId = mapping.linkedUserId;
-              const linkedUserDoc = await USERS_COL.doc(userId).get();
-              if (linkedUserDoc.exists) {
-                const linkedUserData = linkedUserDoc.data();
-                isVerified = linkedUserData.emailVerified === true;
-                userEmail = linkedUserData.email;
+          try {
+            const userDoc = await USERS_COL.doc(providedUserId).get();
+            if (userDoc.exists) {
+              const userData = userDoc.data();
+              if (userData.email) {
+                userId = providedUserId;
+                userEmail = userData.email;
+                isVerified = userData.emailVerified === true;
+                VERIFIED_USER_CACHE.set(providedUserId, { isVerified, email: userEmail, ts: Date.now() });
               }
+            } else {
+              const deviceMapCol = db.collection("notifaiDeviceMap");
+              const deviceDoc = await deviceMapCol.doc(providedUserId).get();
+              if (deviceDoc.exists) {
+                const mapping = deviceDoc.data();
+                if (mapping.linkedUserId) {
+                  userId = mapping.linkedUserId;
+                  DEVICE_MAP_CACHE.set(providedUserId, { linkedUserId: userId, ts: Date.now() });
+                  const linkedUserDoc = await USERS_COL.doc(userId).get();
+                  if (linkedUserDoc.exists) {
+                    const linkedUserData = linkedUserDoc.data();
+                    isVerified = linkedUserData.emailVerified === true;
+                    userEmail = linkedUserData.email;
+                    VERIFIED_USER_CACHE.set(userId, { isVerified, email: userEmail, ts: Date.now() });
+                  }
+                }
+              } else {
+                VERIFIED_USER_CACHE.set(providedUserId, { isVerified: false, email: null, ts: Date.now() });
+              }
+            }
+          } catch (lookupErr) {
+            if (lookupErr.message?.includes('RESOURCE_EXHAUSTED')) {
+              return res.status(503).json({ ok: false, error: "Service temporarily busy" });
             }
           }
         }
-      } catch (lookupErr) {
-        console.error(`[TRACK] ⚠️ Lookup error:`, lookupErr.message);
       }
     }
 
-    // BLOCK TOKEN EARNING FOR UNVERIFIED USERS
     if (!isVerified) {
-      // Still track that they're using the app, but don't award tokens
-      console.log(`[TRACK] ⛔ Unverified user ${userId} - tracking blocked`);
       return res.json({ 
         ok: false, 
         error: "Email verification required to earn tokens",
@@ -2322,13 +2363,14 @@ app.post("/api/rewards/track-usage", rewardsWriteLimiter, authenticateTokenOptio
       });
     }
 
-    // User is verified - track normally
-    console.log(`[TRACK] ✅ Verified user: ${userId} (${userEmail}) +${delta}s on ${screen}`);
     await trackUsageForUser(userId, delta, { region, screen });
     return res.json({ ok: true, verified: true });
     
   } catch (err) {
     console.error("POST /api/rewards/track-usage error", err);
+    if (err.message?.includes('RESOURCE_EXHAUSTED')) {
+      return res.status(503).json({ ok: false, error: "Service temporarily busy" });
+    }
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
@@ -3284,10 +3326,16 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     // Check cache first
     const cached = DASHBOARD_CACHE.get(userId);
     if (cached && Date.now() - cached.ts < DASHBOARD_CACHE_TTL) {
-      console.log(`[CACHE] 📊 Dashboard hit for ${userId}`);
       return res.json(cached.data);
     }
-    console.log(`[CACHE] 📊 Dashboard miss for ${userId} - fetching from Firestore`);
+    
+    // Rate limit: 1 refresh per minute per user
+    const lastReq = DASHBOARD_CACHE.get(`lastReq:${userId}`);
+    if (lastReq && Date.now() - lastReq < 60000) {
+      if (cached) return res.json(cached.data);
+      return res.status(429).json({ ok: false, error: 'Please wait before refreshing' });
+    }
+    DASHBOARD_CACHE.set(`lastReq:${userId}`, Date.now());
 
     const userDoc = await USERS_COL.doc(userId).get();
     if (!userDoc.exists) {
@@ -3385,7 +3433,16 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     res.json(responseData);
     
   } catch (error) {
+    } catch (error) {
     console.error('Dashboard error:', error);
+    if (error.message?.includes('RESOURCE_EXHAUSTED')) {
+      const cached = DASHBOARD_CACHE.get(req.user?.userId);
+      if (cached) return res.json({ ...cached.data, _stale: true });
+      return res.status(503).json({ ok: false, error: 'Service temporarily busy' });
+    }
+    res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
+  }
+});, error);
     res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
   }
 });
@@ -4289,19 +4346,21 @@ app.get('/api/admin/cache-stats', async (req, res) => {
       translations: TRANSLATION_MEM.size,
       dashboards: DASHBOARD_CACHE.size,
       writeQueue: WRITE_QUEUE.size,
-      pendingRequests: PENDING_REQUESTS.size
+      pendingRequests: PENDING_REQUESTS.size,
+      verifiedUsers: VERIFIED_USER_CACHE.size,
+      deviceMappings: DEVICE_MAP_CACHE.size
     },
     cacheTTLs: {
-      user: `${USER_CACHE_TTL / 1000}s`,
-      referral: `${REFERRAL_CACHE_TTL / 1000}s`,
-      leaderboard: `${LEADERBOARD_CACHE_TTL / 1000}s`,
-      dashboard: `${DASHBOARD_CACHE_TTL / 1000}s`,
+      user: `${USER_CACHE_TTL / 1000 / 60}min`,
+      referral: `${REFERRAL_CACHE_TTL / 1000 / 60}min`,
+      dashboard: `${DASHBOARD_CACHE_TTL / 1000 / 60}min`,
+      verified: `${VERIFIED_CACHE_TTL / 1000 / 60}min`,
+      deviceMap: `${DEVICE_MAP_CACHE_TTL / 1000 / 60}min`,
       writeBatch: `${WRITE_BATCH_DELAY / 1000}s`
     },
     timestamp: new Date().toISOString()
   });
 });
-
 
 /* --------------------------------------------------------
    START + AUTO-INGEST
