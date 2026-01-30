@@ -2825,6 +2825,20 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
     const userData = userDoc.data();
     
+    // Check rate limit - 5 minutes between verification emails
+    const lastSent = verificationEmailsSent.get(emailLower);
+    const RATE_LIMIT_MS = 5 * 60 * 1000; // 5 minutes
+    if (lastSent && Date.now() - lastSent < RATE_LIMIT_MS) {
+      const waitSeconds = Math.ceil((RATE_LIMIT_MS - (Date.now() - lastSent)) / 1000);
+      const waitMinutes = Math.floor(waitSeconds / 60);
+      const waitSecs = waitSeconds % 60;
+      return res.status(429).json({ 
+        ok: false, 
+        error: `Please wait ${waitMinutes}:${waitSecs.toString().padStart(2, '0')} before requesting another code`,
+        retryAfter: waitSeconds
+      });
+    }
+    
     // Generate 6-digit verification code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + VERIFICATION_CODE_EXPIRY;
@@ -2869,6 +2883,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       // Still return success - code is stored
       console.log(`[VERIFY] Fallback - Code for ${emailLower}: ${code}`);
     }
+
+    console.log(`[VERIFY] Sent verification email to ${emailLower}`);
+        verificationEmailsSent.set(emailLower, Date.now()); // Track when email was sent
     
     res.json({
       ok: true,
@@ -2984,6 +3001,20 @@ app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
     if (!pending) {
       return res.status(400).json({ ok: false, error: 'No pending registration. Please register again.' });
     }
+
+// Check rate limit - 5 minutes between verification emails
+    const lastSent = verificationEmailsSent.get(emailLower);
+    const RATE_LIMIT_MS = 5 * 60 * 1000; // 5 minutes
+    if (lastSent && Date.now() - lastSent < RATE_LIMIT_MS) {
+      const waitSeconds = Math.ceil((RATE_LIMIT_MS - (Date.now() - lastSent)) / 1000);
+      const waitMinutes = Math.floor(waitSeconds / 60);
+      const waitSecs = waitSeconds % 60;
+      return res.status(429).json({ 
+        ok: false, 
+        error: `Please wait ${waitMinutes}:${waitSecs.toString().padStart(2, '0')} before requesting another code`,
+        retryAfter: waitSeconds
+      });
+    }
     
     // Generate new code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -3024,6 +3055,9 @@ app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
       console.error('[VERIFY] Email resend error:', emailError);
       console.log(`[VERIFY] Fallback - New code for ${emailLower}: ${code}`);
     }
+
+    console.log(`[VERIFY] Resent verification email to ${emailLower}`);
+        verificationEmailsSent.set(emailLower, Date.now()); // Track when email was sent
     
     res.json({
       ok: true,
@@ -3082,6 +3116,20 @@ app.post('/api/auth/send-verification', authLimiter, async (req, res) => {
     if (authData.emailVerified === true) {
       return res.json({ ok: true, alreadyVerified: true, message: 'Email already verified' });
     }
+
+// Check rate limit - 5 minutes between verification emails
+    const lastSent = verificationEmailsSent.get(emailLower);
+    const RATE_LIMIT_MS = 5 * 60 * 1000; // 5 minutes
+    if (lastSent && Date.now() - lastSent < RATE_LIMIT_MS) {
+      const waitSeconds = Math.ceil((RATE_LIMIT_MS - (Date.now() - lastSent)) / 1000);
+      const waitMinutes = Math.floor(waitSeconds / 60);
+      const waitSecs = waitSeconds % 60;
+      return res.status(429).json({ 
+        ok: false, 
+        error: `Please wait ${waitMinutes}:${waitSecs.toString().padStart(2, '0')} before requesting another code`,
+        retryAfter: waitSeconds
+      });
+    }
     
     // Generate 6-digit verification code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -3125,6 +3173,9 @@ app.post('/api/auth/send-verification', authLimiter, async (req, res) => {
       console.error('[VERIFY] Email send error:', emailError);
       console.log(`[VERIFY] Fallback - Code for ${emailLower}: ${code}`);
     }
+
+console.log(`[VERIFY] Sent verification email to existing user ${emailLower}`);
+        verificationEmailsSent.set(emailLower, Date.now()); // Track when email was sent
     
     res.json({
       ok: true,
@@ -3349,6 +3400,7 @@ const RESET_CODE_EXPIRY = 15 * 60 * 1000; // 15 minutes
 
 // NEW: Store email verification codes and pending registrations
 const verificationCodes = new Map(); // email -> { code, expiresAt, userId, passwordHash }
+const verificationEmailsSent = new Map(); // email -> timestamp of last email sent
 const VERIFICATION_CODE_EXPIRY = 15 * 60 * 1000; // 15 minutes
 
 // POST /api/auth/request-reset
