@@ -57,6 +57,29 @@ const rewardsWriteLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+/* --------------------------------------------------------
+   AD-BASED REWARDS CONFIGURATION
+--------------------------------------------------------- */
+const AD_REWARDS_CONFIG = {
+  TOKENS_PER_AD: 1,
+  DAILY_TOKEN_CAP: 300,
+  AD_COOLDOWN_MS: 30 * 1000,
+  MAX_ADS_PER_HOUR: 60,
+  INVITE: {
+    REQUIRED_ADS: 10,
+    BONUS_TOKENS: 1,
+    COMMISSION_RATE: 0.10,
+  }
+};
+
+const adRewardsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'Too many requests' }
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-production';
@@ -291,6 +314,9 @@ const DEVICE_MAP_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 // -------------------- ME ENDPOINT CACHE --------------------
 const ME_CACHE = new Map(); // oduserId -> { data, ts }
 const ME_CACHE_TTL = 2 * 60 * 1000; // 2 minutes (short so users see updates)
+
+// -------------------- AD REWARDS CACHE --------------------
+const AD_TRACKING = new Map(); // userId -> { dayKey, tokensToday, lastAdAt, hourlyTimestamps }
 
 // -------------------- END REWARDS CACHE --------------------
 
@@ -712,7 +738,11 @@ function getWeekKey(d = new Date()) {
   return `${y}-${m}-${da}`;
 }
 
-const REFERRAL_REQUIRED_SECONDS = 10 * 60;     // 10 minutes (CHANGED from 30)
+function getDayKey(d = new Date()) {
+  return d.toISOString().split('T')[0];
+}
+
+const REFERRAL_REQUIRED_SECONDS
 const REFERRAL_INVITE_TOKENS    = 1;
 const REFERRAL_COMMISSION_RATE  = 0.1;        // 10%
 
@@ -733,15 +763,27 @@ async function getOrCreateUser(userId) {
   }
   const now = admin.firestore.FieldValue.serverTimestamp();
   const weekKey = getWeekKey();
+  const dayKey = getDayKey();
   const referralCode = nanoid(7);
   const data = {
     userId, createdAt: now, updatedAt: now,
-    email: null, passwordHash: null, walletAddress: null,
+    email: null, emailVerified: false, walletAddress: null,
     referralCode, referredByCode: null, referredByUserId: null,
-    totalSeconds: 0, weeklySeconds: 0, weekKey,
-    tokensTotal: 0, tokensThisWeek: 0, tokensLastWeek: 0,
-    tokensFromInvites: 0, tokensFromCommission: 0,
-    invitesCompleted: 0, invitesStarted: 0,
+    totalAdsWatched: 0,
+    tokensTotal: 0,
+    tokensToday: 0,
+    tokensThisWeek: 0,
+    tokensLastWeek: 0,
+    tokensFromAds: 0,
+    tokensFromInvites: 0,
+    tokensFromCommission: 0,
+    dayKey,
+    weekKey,
+    lastAdAt: null,
+    invitesCompleted: 0,
+    invitesStarted: 0,
+    totalSeconds: 0,
+    weeklySeconds: 0,
   };
   await docRef.set(data);
   return { ref: docRef, data };
@@ -766,7 +808,184 @@ async function ensureWeek(docRef, data) {
   return updated;
 }
 
-const WRITE_QUEUE = new Map(); // userId -> { updates, scheduledTime }
+async function ensureDay(docRef, data) {
+  const currentDayKey = getDayKey();
+  const currentWeekKey = getWeekKey();
+  const updates = {};
+  let needsUpdate = false;
+  if (data.dayKey !== currentDayKey) {
+    updates.dayKey = currentDayKey;
+    updates.tokensToday = 0;
+    needsUpdate = true;
+  }
+  if (data.weekKey !== currentWeekKey) {
+    updates.weekKey = currentWeekKey;
+    updates.tokensLastWeek = data.tokensThisWeek || 0;
+    updates.tokensThisWeek = 0;
+    needsUpdate = true;
+  }
+  if (needsUpdate) {
+    updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    await docRef.update(updates);
+    USER_CACHE.delete(data.userId);
+    return { ...data, ...updates };
+  }
+  return data;
+}
+
+function getAdTracking(userId) {
+  const dayKey = getDayKey();
+  let tracking = AD_TRACKING.get(userId);
+  if (!tracking || tracking.dayKey !== dayKey) {
+    tracking = { dayKey, tokensToday: 0, lastAdAt: 0, hourlyTimestamps: [] };
+    AD_TRACKING.set(userId, tracking);
+  }
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  tracking.hourlyTimestamps = tracking.hourlyTimestamps.filter(ts => ts > oneHourAgo);
+  return tracking;
+}
+
+async function processAdReward(userId) {
+  if (!db || !USERS_COL) return { ok: false, error: 'Database not configured' };
+  const config = AD_REWARDS_CONFIG;
+  const tracking = getAdTracking(userId);
+  const now = Date.now();
+  if (tracking.hourlyTimestamps.length >= config.MAX_ADS_PER_HOUR) {
+    return { ok: false, error: 'Hourly limit reached', hourlyLimit: true };
+  }
+  if (tracking.lastAdAt && (now - tracking.lastAdAt) < config.AD_COOLDOWN_MS) {
+    const wait = Math.ceil((config.AD_COOLDOWN_MS - (now - tracking.lastAdAt)) / 1000);
+    return { ok: false, error: `Wait ${wait}s`, cooldown: wait };
+  }
+  const docRef = USERS_COL.doc(userId);
+  const snap = await docRef.get();
+  if (!snap.exists) {
+    await getOrCreateUser(userId);
+    return processAdReward(userId);
+  }
+  let userData = snap.data();
+  userData = await ensureDay(docRef, userData);
+  const currentTokensToday = userData.tokensToday || 0;
+  if (currentTokensToday >= config.DAILY_TOKEN_CAP) {
+    return { ok: false, error: 'Daily limit reached', dailyLimit: true, tokensToday: currentTokensToday, dailyCap: config.DAILY_TOKEN_CAP };
+  }
+  const tokensToAward = Math.min(config.TOKENS_PER_AD, config.DAILY_TOKEN_CAP - currentTokensToday);
+  if (tokensToAward <= 0) return { ok: false, error: 'Daily limit reached', dailyLimit: true };
+  tracking.tokensToday += tokensToAward;
+  tracking.lastAdAt = now;
+  tracking.hourlyTimestamps.push(now);
+  AD_TRACKING.set(userId, tracking);
+  const dayKey = getDayKey();
+  await docRef.update({
+    totalAdsWatched: admin.firestore.FieldValue.increment(1),
+    tokensTotal: admin.firestore.FieldValue.increment(tokensToAward),
+    tokensToday: admin.firestore.FieldValue.increment(tokensToAward),
+    tokensThisWeek: admin.firestore.FieldValue.increment(tokensToAward),
+    tokensFromAds: admin.firestore.FieldValue.increment(tokensToAward),
+    lastAdAt: admin.firestore.FieldValue.serverTimestamp(),
+    [`adHistory.${dayKey}`]: admin.firestore.FieldValue.increment(1),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  USER_CACHE.delete(userId);
+  ME_CACHE.delete(userId);
+  DASHBOARD_CACHE.delete(userId);
+  let inviterRewarded = false, inviterBonus = 0, commission = 0;
+  if (userData.referredByUserId) {
+    const result = await handleAdInviteRewards(userId, userData, tokensToAward);
+    inviterRewarded = result.inviterRewarded;
+    inviterBonus = result.inviterBonus;
+    commission = result.commission;
+  }
+  const newTokensToday = currentTokensToday + tokensToAward;
+  console.log(`[AD_REWARD] User ${userId} earned ${tokensToAward} (${newTokensToday}/${config.DAILY_TOKEN_CAP})`);
+  return {
+    ok: true, tokensAwarded: tokensToAward,
+    totalTokens: (userData.tokensTotal || 0) + tokensToAward,
+    totalAdsWatched: (userData.totalAdsWatched || 0) + 1,
+    tokensToday: newTokensToday,
+    tokensRemaining: config.DAILY_TOKEN_CAP - newTokensToday,
+    dailyCap: config.DAILY_TOKEN_CAP,
+    inviterRewarded, inviterBonus, commission,
+  };
+}
+
+async function handleAdInviteRewards(inviteeUserId, inviteeData, tokensEarned) {
+  const config = AD_REWARDS_CONFIG.INVITE;
+  const inviterUserId = inviteeData.referredByUserId;
+  if (!inviterUserId || !REFERRALS_COL) return { inviterRewarded: false, inviterBonus: 0, commission: 0 };
+  const refDoc = REFERRALS_COL.doc(inviteeUserId);
+  const refSnap = await refDoc.get();
+  let refData;
+  if (refSnap.exists) {
+    refData = refSnap.data();
+    if (refData.adsWatched === undefined) refData.adsWatched = 0;
+  } else {
+    refData = {
+      inviteeUserId, inviterUserId,
+      inviterReferralCode: inviteeData.referredByCode || null,
+      adsWatched: 0, completed: false,
+      tokensEarnedByInvitee: 0, commissionPaidToInviter: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+  }
+  const newAdsWatched = (refData.adsWatched || 0) + 1;
+  const newTokensEarned = (refData.tokensEarnedByInvitee || 0) + tokensEarned;
+  let inviterRewarded = false, inviterBonus = 0, commission = 0;
+  const justCompletedInvite = !refData.completed && newAdsWatched >= config.REQUIRED_ADS;
+  const inviterRef = USERS_COL.doc(inviterUserId);
+  const inviterSnap = await inviterRef.get();
+  if (!inviterSnap.exists) {
+    await refDoc.set({ ...refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { inviterRewarded: false, inviterBonus: 0, commission: 0 };
+  }
+  let inviterData = inviterSnap.data();
+  inviterData = await ensureDay(inviterRef, inviterData);
+  const inviterTokensToday = inviterData.tokensToday || 0;
+  const inviterDailyRoom = AD_REWARDS_CONFIG.DAILY_TOKEN_CAP - inviterTokensToday;
+  if (inviterDailyRoom <= 0) {
+    await refDoc.set({ ...refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { inviterRewarded: false, inviterBonus: 0, commission: 0 };
+  }
+  if (justCompletedInvite) {
+    inviterBonus = Math.min(config.BONUS_TOKENS, inviterDailyRoom);
+    inviterRewarded = true;
+    refData.completed = true;
+    refData.completedAt = admin.firestore.FieldValue.serverTimestamp();
+  }
+  if (refData.completed || justCompletedInvite) {
+    const potentialCommission = Math.floor(tokensEarned * config.COMMISSION_RATE * 100) / 100;
+    commission = Math.min(potentialCommission, Math.max(0, inviterDailyRoom - inviterBonus));
+  }
+  if (inviterBonus > 0 || commission > 0) {
+    const totalToAdd = inviterBonus + commission;
+    const inviterUpdate = {
+      tokensTotal: admin.firestore.FieldValue.increment(totalToAdd),
+      tokensToday: admin.firestore.FieldValue.increment(totalToAdd),
+      tokensThisWeek: admin.firestore.FieldValue.increment(totalToAdd),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (inviterBonus > 0) {
+      inviterUpdate.tokensFromInvites = admin.firestore.FieldValue.increment(inviterBonus);
+      inviterUpdate.invitesCompleted = admin.firestore.FieldValue.increment(1);
+    }
+    if (commission > 0) {
+      inviterUpdate.tokensFromCommission = admin.firestore.FieldValue.increment(commission);
+    }
+    await inviterRef.update(inviterUpdate);
+    USER_CACHE.delete(inviterUserId);
+    DASHBOARD_CACHE.delete(inviterUserId);
+    console.log(`[INVITE] Inviter ${inviterUserId}: bonus=${inviterBonus}, commission=${commission}`);
+  }
+  await refDoc.set({
+    ...refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned,
+    commissionPaidToInviter: (refData.commissionPaidToInviter || 0) + commission,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  REFERRAL_CACHE.delete(inviteeUserId);
+  return { inviterRewarded, inviterBonus, commission };
+}
+
+const WRITE_QUEUE = new Map();
 const WRITE_BATCH_DELAY = 30000; // 30 seconds
 
 async function scheduleBatchedWrite(userId, updates) {
@@ -2250,136 +2469,104 @@ return res.json({
   }
 });
 
-// 2) Track usage seconds (home + article + chat) - REQUIRES EMAIL VERIFICATION
-app.post("/api/rewards/track-usage", rewardsWriteLimiter, authenticateTokenOptional, async (req, res) => {
+// 2) Track usage - DISABLED (kept for backwards compatibility)
+app.post("/api/rewards/track-usage", rewardsWriteLimiter, async (req, res) => {
+  return res.json({ ok: true, message: 'Watch ads to earn tokens!', tokensAwarded: 0, minted: 0 });
+});
+
+/* --------------------------------------------------------
+   AD REWARDS API ENDPOINTS
+--------------------------------------------------------- */
+app.post('/api/rewards/ad-watched', adRewardsLimiter, authenticateTokenOptional, async (req, res) => {
   try {
-    if (!db || !USERS_COL) {
-      return res.status(500).json({ ok: false, error: "Firestore not configured" });
-    }
-
-    const { userId: providedUserId, seconds, region, screen } = req.body || {};
-    
-    const tokenUserId = req.user && req.user.userId;
-    const tokenEmail = req.user && req.user.email;
-    const tokenVerified = req.user && req.user.verified;
-    
-    if (!tokenUserId && !providedUserId) {
-      return res.status(400).json({ ok: false, error: "Missing userId (token or body)" });
-    }
-    
-    if (seconds === undefined || seconds === null) {
-      return res.status(400).json({ ok: false, error: "Missing seconds" });
-    }
-
-    const delta = Number(seconds);
-    if (!Number.isFinite(delta) || delta <= 0) {
-      return res.status(400).json({ ok: false, error: "Invalid seconds" });
-    }
-
-    let userId = tokenUserId || providedUserId;
-    let userEmail = tokenEmail;
-    let isVerified = tokenVerified === true;
-    
-    // FAST PATH: JWT says verified = no Firestore read needed
-    if (tokenUserId && tokenVerified === true) {
-      isVerified = true;
-      userEmail = tokenEmail;
-    }
-    // Check memory cache before Firestore
-    else if (tokenUserId) {
-      const cached = VERIFIED_USER_CACHE.get(tokenUserId);
+    const { userId: bodyUserId, adUnitId } = req.body;
+    const userId = req.user?.userId || bodyUserId;
+    if (!userId) return res.status(400).json({ ok: false, error: 'Missing userId' });
+    let isVerified = req.user?.verified === true;
+    if (!isVerified) {
+      const cached = VERIFIED_USER_CACHE.get(userId);
       if (cached && Date.now() - cached.ts < VERIFIED_CACHE_TTL) {
         isVerified = cached.isVerified;
-        userEmail = cached.email;
-      } else {
-        try {
-          const userDoc = await USERS_COL.doc(tokenUserId).get();
-          if (userDoc.exists) {
-            const userData = userDoc.data();
-            isVerified = userData.emailVerified === true;
-            userEmail = userData.email;
-            VERIFIED_USER_CACHE.set(tokenUserId, { isVerified, email: userEmail, ts: Date.now() });
-          }
-        } catch (err) {
-          if (err.message?.includes('RESOURCE_EXHAUSTED')) {
-            return res.status(503).json({ ok: false, error: "Service temporarily busy" });
-          }
-        }
-      }
-    } else {
-      // Not authenticated - check caches first
-      const cachedVerified = VERIFIED_USER_CACHE.get(providedUserId);
-      if (cachedVerified && Date.now() - cachedVerified.ts < VERIFIED_CACHE_TTL) {
-        isVerified = cachedVerified.isVerified;
-        userEmail = cachedVerified.email;
-        userId = providedUserId;
-      } else {
-        const cachedDevice = DEVICE_MAP_CACHE.get(providedUserId);
-        if (cachedDevice && Date.now() - cachedDevice.ts < DEVICE_MAP_CACHE_TTL) {
-          userId = cachedDevice.linkedUserId;
-          const cachedLinked = VERIFIED_USER_CACHE.get(userId);
-          if (cachedLinked && Date.now() - cachedLinked.ts < VERIFIED_CACHE_TTL) {
-            isVerified = cachedLinked.isVerified;
-            userEmail = cachedLinked.email;
-          }
-        } else {
-          try {
-            const userDoc = await USERS_COL.doc(providedUserId).get();
-            if (userDoc.exists) {
-              const userData = userDoc.data();
-              if (userData.email) {
-                userId = providedUserId;
-                userEmail = userData.email;
-                isVerified = userData.emailVerified === true;
-                VERIFIED_USER_CACHE.set(providedUserId, { isVerified, email: userEmail, ts: Date.now() });
-              }
-            } else {
-              const deviceMapCol = db.collection("notifaiDeviceMap");
-              const deviceDoc = await deviceMapCol.doc(providedUserId).get();
-              if (deviceDoc.exists) {
-                const mapping = deviceDoc.data();
-                if (mapping.linkedUserId) {
-                  userId = mapping.linkedUserId;
-                  DEVICE_MAP_CACHE.set(providedUserId, { linkedUserId: userId, ts: Date.now() });
-                  const linkedUserDoc = await USERS_COL.doc(userId).get();
-                  if (linkedUserDoc.exists) {
-                    const linkedUserData = linkedUserDoc.data();
-                    isVerified = linkedUserData.emailVerified === true;
-                    userEmail = linkedUserData.email;
-                    VERIFIED_USER_CACHE.set(userId, { isVerified, email: userEmail, ts: Date.now() });
-                  }
-                }
-              } else {
-                VERIFIED_USER_CACHE.set(providedUserId, { isVerified: false, email: null, ts: Date.now() });
-              }
-            }
-          } catch (lookupErr) {
-            if (lookupErr.message?.includes('RESOURCE_EXHAUSTED')) {
-              return res.status(503).json({ ok: false, error: "Service temporarily busy" });
-            }
-          }
+      } else if (db && USERS_COL) {
+        const userDoc = await USERS_COL.doc(userId).get();
+        if (userDoc.exists) {
+          isVerified = userDoc.data().emailVerified === true;
+          VERIFIED_USER_CACHE.set(userId, { isVerified, ts: Date.now() });
         }
       }
     }
-
     if (!isVerified) {
-      return res.json({ 
-        ok: false, 
-        error: "Email verification required to earn tokens",
-        requiresVerification: true,
-        email: userEmail || null
-      });
+      return res.status(403).json({ ok: false, error: 'Email verification required', requiresVerification: true });
     }
+    const result = await processAdReward(userId);
+    if (result.ok) console.log(`[AD] User ${userId} watched ad`);
+    return res.json(result);
+  } catch (error) {
+    console.error('POST /api/rewards/ad-watched error:', error);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
 
-    await trackUsageForUser(userId, delta, { region, screen });
-    return res.json({ ok: true, verified: true });
-    
-  } catch (err) {
-    console.error("POST /api/rewards/track-usage error", err);
-    if (err.message?.includes('RESOURCE_EXHAUSTED')) {
-      return res.status(503).json({ ok: false, error: "Service temporarily busy" });
+app.get('/api/rewards/ad-status', rewardsLimiter, authenticateTokenOptional, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ ok: false, error: 'Missing userId' });
+    const tracking = getAdTracking(userId);
+    const now = Date.now();
+    const config = AD_REWARDS_CONFIG;
+    const cooldownRemaining = tracking.lastAdAt ? Math.max(0, config.AD_COOLDOWN_MS - (now - tracking.lastAdAt)) : 0;
+    let tokensTotal = 0, tokensToday = 0, tokensFromAds = 0, tokensFromInvites = 0, tokensFromCommission = 0;
+    let totalAdsWatched = 0, invitesCompleted = 0, referralCode = null, emailVerified = false;
+    if (db && USERS_COL) {
+      const userDoc = await USERS_COL.doc(userId).get();
+      if (userDoc.exists) {
+        const data = userDoc.data();
+        tokensToday = data.dayKey !== getDayKey() ? 0 : (data.tokensToday || 0);
+        tokensTotal = data.tokensTotal || 0;
+        tokensFromAds = data.tokensFromAds || 0;
+        tokensFromInvites = data.tokensFromInvites || 0;
+        tokensFromCommission = data.tokensFromCommission || 0;
+        totalAdsWatched = data.totalAdsWatched || 0;
+        invitesCompleted = data.invitesCompleted || 0;
+        referralCode = data.referralCode || null;
+        emailVerified = data.emailVerified === true;
+      }
     }
-    return res.status(500).json({ ok: false, error: "Server error" });
+    const canWatchAd = cooldownRemaining === 0 && tokensToday < config.DAILY_TOKEN_CAP && emailVerified;
+    return res.json({
+      ok: true, canWatchAd, emailVerified,
+      rewards: {
+        tokensPerAd: config.TOKENS_PER_AD, dailyCap: config.DAILY_TOKEN_CAP,
+        tokensToday, tokensRemaining: Math.max(0, config.DAILY_TOKEN_CAP - tokensToday),
+        cooldownMs: cooldownRemaining, cooldownSeconds: Math.ceil(cooldownRemaining / 1000),
+      },
+      totals: { tokensTotal, tokensFromAds, tokensFromInvites, tokensFromCommission, totalAdsWatched, invitesCompleted, referralCode },
+      invite: { requiredAds: config.INVITE.REQUIRED_ADS, bonusTokens: config.INVITE.BONUS_TOKENS, commissionRate: `${config.INVITE.COMMISSION_RATE * 100}%` }
+    });
+  } catch (error) {
+    console.error('GET /api/rewards/ad-status error:', error);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+const SSV_PROCESSED = new Map();
+app.get('/api/admob-ssv', async (req, res) => {
+  try {
+    const { user_id, transaction_id, timestamp } = req.query;
+    if (!user_id || !transaction_id) return res.status(400).send('Invalid');
+    const callbackTime = parseInt(timestamp) || 0;
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - callbackTime) > 86400) return res.status(400).send('Expired');
+    if (SSV_PROCESSED.has(transaction_id)) return res.status(200).send('OK');
+    SSV_PROCESSED.set(transaction_id, Date.now());
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    for (const [txId, ts] of SSV_PROCESSED) { if (ts < oneHourAgo) SSV_PROCESSED.delete(txId); }
+    const result = await processAdReward(user_id);
+    console.log(`[SSV] User ${user_id}: ${result.ok ? '+1' : result.error}`);
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('[SSV] Error:', error);
+    res.status(500).send('Error');
   }
 });
 
@@ -2631,14 +2818,12 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (existingAuth.exists) {
       return res.status(400).json({ ok: false, error: 'Email already registered' });
     }
-    const userDoc = await USERS_COL.doc(userId).get();
+    let userDoc = await USERS_COL.doc(userId).get();
     if (!userDoc.exists) {
-      return res.status(400).json({ ok: false, error: 'User ID not found. Use the app first.' });
+      await getOrCreateUser(userId);
+      userDoc = await USERS_COL.doc(userId).get();
     }
     const userData = userDoc.data();
-    if (userData.email && userData.email !== emailLower) {
-      return res.status(400).json({ ok: false, error: 'User ID linked to another email' });
-    }
     
     // Generate 6-digit verification code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -2851,7 +3036,24 @@ app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
   }
 });
 
-// POST /api/auth/send-verification - Send verification code to EXISTING registered user
+// POST /api/auth/cancel-registration - Allow user to try different email
+app.post('/api/auth/cancel-registration', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ ok: false, error: 'Email required' });
+    const emailLower = email.toLowerCase().trim();
+    if (verificationCodes.has(emailLower)) {
+      verificationCodes.delete(emailLower);
+      console.log(`[AUTH] Cancelled registration for ${emailLower}`);
+    }
+    res.json({ ok: true, message: 'You can now try with a different email.' });
+  } catch (error) {
+    console.error('Cancel registration error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to cancel' });
+  }
+});
+
+// POST /api/auth/send-verification
 app.post('/api/auth/send-verification', authLimiter, async (req, res) => {
   try {
     if (!db || !USERS_COL) {
@@ -3430,10 +3632,10 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
         referralCode: userData.referralCode,
         referredByCode: userData.referredByCode || null,
         email: userData.email || null,
-        totalHours: Math.floor((userData.totalSeconds || 0) / 3600),
-        weeklyHours: Math.floor((userData.weeklySeconds || 0) / 3600),
-        totalSeconds: userData.totalSeconds || 0,
-        weeklySeconds: userData.weeklySeconds || 0,
+        tokensToday: userData.tokensToday || 0,
+        tokensFromAds: userData.tokensFromAds || 0,
+        totalAdsWatched: userData.totalAdsWatched || 0,
+        dailyCap: AD_REWARDS_CONFIG.DAILY_TOKEN_CAP,
         invitees,
         inviteesCount: invitees.length,
         activeInviteesCount: invitees.filter(i => i.status === 'active').length
