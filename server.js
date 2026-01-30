@@ -742,7 +742,7 @@ function getDayKey(d = new Date()) {
   return d.toISOString().split('T')[0];
 }
 
-const REFERRAL_REQUIRED_SECONDS
+const REFERRAL_REQUIRED_SECONDS = 10 * 60;     // 10 minutes
 const REFERRAL_INVITE_TOKENS    = 1;
 const REFERRAL_COMMISSION_RATE  = 0.1;        // 10%
 
