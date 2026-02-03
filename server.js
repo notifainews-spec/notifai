@@ -1081,21 +1081,11 @@ async function trackUsageForUser(userId, seconds, { region, screen }) {
   
   const hoursBefore = Math.floor(prevWeeklySeconds / 3600);
   const hoursAfter = Math.floor(weeklySeconds / 3600);
-  const deltaUsageTokens = Math.max(0, hoursAfter - hoursBefore);
+  const deltaUsageTokens = 0; // DISABLED: No tokens from time tracking - rewards are ad-based only
   
   let tokensTotal = data.tokensTotal || 0;
   let tokensThisWeek = data.tokensThisWeek || 0;
   let tokensEarnedThisCall = 0;
-  
-  if (deltaUsageTokens > 0) {
-    const remaining = Math.max(0, MAX_TOKENS_PER_WEEK - tokensThisWeek);
-    const mint = Math.min(deltaUsageTokens, remaining);
-    if (mint > 0) {
-      tokensTotal += mint;
-      tokensThisWeek += mint;
-      tokensEarnedThisCall += mint;
-    }
-  }
   
   const updatePayload = {
     totalSeconds, weeklySeconds, lastUsageAtMs: nowMs,
@@ -3986,8 +3976,10 @@ app.get('/api/admin/users', async (req, res) => {
             tokensTotal: data.tokensTotal || 0,
             tokensThisWeek: data.tokensThisWeek || 0,
             tokensLastWeek: data.tokensLastWeek || 0,
+            tokensFromAds: data.tokensFromAds || 0,
             tokensFromInvites: data.tokensFromInvites || 0,
             tokensFromCommission: data.tokensFromCommission || 0,
+            totalAdsWatched: data.totalAdsWatched || 0,
             invitesCompleted: data.invitesCompleted || 0,
             invitesStarted: data.invitesStarted || 0,
             totalHours: Math.floor((data.totalSeconds || 0) / 3600),
@@ -4027,8 +4019,10 @@ app.get('/api/admin/users', async (req, res) => {
           tokensTotal: data.tokensTotal || 0,
           tokensThisWeek: data.tokensThisWeek || 0,
           tokensLastWeek: data.tokensLastWeek || 0,
+          tokensFromAds: data.tokensFromAds || 0,
           tokensFromInvites: data.tokensFromInvites || 0,
           tokensFromCommission: data.tokensFromCommission || 0,
+          totalAdsWatched: data.totalAdsWatched || 0,
           invitesCompleted: data.invitesCompleted || 0,
           invitesStarted: data.invitesStarted || 0,
           totalHours: Math.floor((data.totalSeconds || 0) / 3600),
@@ -4387,6 +4381,10 @@ app.get('/api/admin/dashboard', (req, res) => {
         <div class="stat-label">This Week</div>
         <div class="stat-value" id="tokensThisWeek">-</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Ads Watched</div>
+        <div class="stat-value" id="totalAdsWatched">-</div>
+      </div>
     </div>
 
     <div class="filters">
@@ -4418,12 +4416,13 @@ app.get('/api/admin/dashboard', (req, res) => {
             <th>Referral Code</th>
             <th>Invited By</th>
             <th>Tokens Total</th>
+            <th>From Ads</th>
+            <th>Ads Watched</th>
             <th>This Week</th>
             <th>Last Week</th>
             <th>Invites Done</th>
             <th>From Invites</th>
             <th>From Commission</th>
-            <th>Hours</th>
           </tr>
         </thead>
         <tbody id="usersBody"></tbody>
@@ -4492,12 +4491,13 @@ app.get('/api/admin/dashboard', (req, res) => {
               \${user.tokensTotal >= 100 ? 'VIP' : user.tokensTotal >= 20 ? 'Active' : 'New'}
             </span>
           </td>
+          <td>\${user.tokensFromAds || 0}</td>
+          <td>\${user.totalAdsWatched || 0}</td>
           <td>\${user.tokensThisWeek}</td>
           <td>\${user.tokensLastWeek}</td>
           <td>\${user.invitesCompleted}</td>
           <td>\${user.tokensFromInvites || 0}</td>
           <td>\${user.tokensFromCommission || 0}</td>
-          <td>\${user.totalHours}h</td>
         \`;
         
         tbody.appendChild(row);
@@ -4511,16 +4511,18 @@ app.get('/api/admin/dashboard', (req, res) => {
       const registered = users.filter(u => u.email).length;
       const totalTokens = users.reduce((sum, u) => sum + u.tokensTotal, 0);
       const tokensThisWeek = users.reduce((sum, u) => sum + u.tokensThisWeek, 0);
+      const totalAds = users.reduce((sum, u) => sum + (u.totalAdsWatched || 0), 0);
       
       document.getElementById('totalUsers').textContent = users.length;
       document.getElementById('registeredUsers').textContent = registered;
       document.getElementById('totalTokens').textContent = totalTokens.toFixed(0);
       document.getElementById('tokensThisWeek').textContent = tokensThisWeek.toFixed(0);
+      document.getElementById('totalAdsWatched').textContent = totalAds.toFixed(0);
     }
 
     function exportCSV() {
       const csv = [
-        ['Email', 'Email Verified', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Hours', 'Total Seconds', 'Created At'].join(','),
+        ['Email', 'Email Verified', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'From Ads', 'Ads Watched', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Created At'].join(','),
         ...allUsers.map(u => [
           '"' + (u.email || 'Anonymous') + '"',
           u.emailVerified ? 'Yes' : 'No',
@@ -4528,14 +4530,14 @@ app.get('/api/admin/dashboard', (req, res) => {
           u.referralCode || '-',
           u.referredByCode || '-',
           u.tokensTotal,
+          u.tokensFromAds || 0,
+          u.totalAdsWatched || 0,
           u.tokensThisWeek,
           u.tokensLastWeek,
           u.invitesCompleted,
           u.invitesStarted || 0,
           u.tokensFromInvites || 0,
           u.tokensFromCommission || 0,
-          u.totalHours,
-          u.totalSeconds || 0,
           u.createdAt || '-'
         ].join(','))
       ].join('\\n');
@@ -4570,7 +4572,7 @@ app.get('/api/admin/dashboard', (req, res) => {
         btn.textContent = \`⏳ Generating CSV (\${data.users.length} users)...\`;
         
         const csv = [
-          ['Email', 'Email Verified', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Hours', 'Total Seconds', 'Created At'].join(','),
+          ['Email', 'Email Verified', 'Wallet', 'Referral Code', 'Invited By', 'Tokens Total', 'From Ads', 'Ads Watched', 'This Week', 'Last Week', 'Invites Done', 'Invites Started', 'From Invites', 'From Commission', 'Created At'].join(','),
           ...data.users.map(u => [
             '"' + (u.email || 'Anonymous') + '"',
             u.emailVerified ? 'Yes' : 'No',
@@ -4578,14 +4580,14 @@ app.get('/api/admin/dashboard', (req, res) => {
             u.referralCode || '-',
             u.referredByCode || '-',
             u.tokensTotal,
+            u.tokensFromAds || 0,
+            u.totalAdsWatched || 0,
             u.tokensThisWeek,
             u.tokensLastWeek,
             u.invitesCompleted,
             u.invitesStarted || 0,
             u.tokensFromInvites || 0,
             u.tokensFromCommission || 0,
-            u.totalHours,
-            u.totalSeconds || 0,
             u.createdAt || '-'
           ].join(','))
         ].join('\\n');
