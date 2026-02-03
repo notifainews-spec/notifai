@@ -63,6 +63,7 @@ const rewardsWriteLimiter = rateLimit({
 const AD_REWARDS_CONFIG = {
   TOKENS_PER_AD: 1,
   DAILY_TOKEN_CAP: 15,             // Was 100 — AdMob safety
+  DAILY_REFERRAL_CAP: 100,         // Separate cap for commission + invite earnings
   AD_COOLDOWN_MS: 5 * 60 * 1000,   // Was 3 min → 5 min
   MAX_ADS_PER_HOUR: 8,             // Was 20 → 8
   INVITE: {
@@ -1045,8 +1046,8 @@ async function handleAdInviteRewards(inviteeUserId, inviteeData, tokensEarned) {
   }
   let inviterData = inviterSnap.data();
   inviterData = await ensureDay(inviterRef, inviterData);
-  const inviterTokensToday = inviterData.tokensToday || 0;
-  const inviterDailyRoom = AD_REWARDS_CONFIG.DAILY_TOKEN_CAP - inviterTokensToday;
+    const inviterTokensToday = inviterData.tokensToday || 0;
+  const inviterDailyRoom = AD_REWARDS_CONFIG.DAILY_REFERRAL_CAP - inviterTokensToday;
   if (inviterDailyRoom <= 0) {
     await refDoc.set({ ...refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     return { inviterRewarded: false, inviterBonus: 0, commission: 0 };
