@@ -62,9 +62,9 @@ const rewardsWriteLimiter = rateLimit({
 --------------------------------------------------------- */
 const AD_REWARDS_CONFIG = {
   TOKENS_PER_AD: 1,
-  DAILY_TOKEN_CAP: 300,
-  AD_COOLDOWN_MS: 30 * 1000,
-  MAX_ADS_PER_HOUR: 60,
+  DAILY_TOKEN_CAP: 100,
+  AD_COOLDOWN_MS: 3 * 60 * 1000,
+  MAX_ADS_PER_HOUR: 20,
   INVITE: {
     REQUIRED_ADS: 10,
     BONUS_TOKENS: 1,
