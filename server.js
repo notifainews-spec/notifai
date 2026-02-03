@@ -3618,18 +3618,18 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
       const refData = doc.data();
       
       // Calculate everything from referral progress data only
-      const isActive = refData.totalSeconds >= 600;
-      const status = isActive ? 'active' : 'pending';
+      const adsWatched = refData.adsWatched || 0;
+      const isActive = adsWatched > 0;
+      const status = refData.completed ? 'completed' : isActive ? 'active' : 'pending';
       const inviteCompletionToken = refData.completed ? 1 : 0;
       const commissionEarned = refData.commissionPaidToInviter || 0;
       const totalEarnedFromInvitee = inviteCompletionToken + commissionEarned;
       
       invitees.push({
-        userId: refData.userId,
+        userId: refData.inviteeUserId || doc.id,
         referralCode: userData.referralCode,
         joinedAt: refData.createdAt ? refData.createdAt.toDate().toISOString() : null,
-        totalSeconds: refData.totalSeconds || 0,
-        totalHours: Math.floor((refData.totalSeconds || 0) / 3600),
+        adsWatched,
         tokensEarned: refData.tokensEarnedByInvitee || 0,
         yourEarnings: totalEarnedFromInvitee,
         inviteBonus: inviteCompletionToken,
@@ -3704,8 +3704,7 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     }
     res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
   }
-});;
-
+});
 
 // PUT /api/rewards/wallet
 app.put('/api/rewards/wallet', authenticateToken, async (req, res) => {
