@@ -82,6 +82,111 @@ const adRewardsLimiter = rateLimit({
 
 app.use(express.static(path.join(__dirname, "public")));
 
+/* --------------------------------------------------------
+   REFERRAL INVITE LANDING PAGE
+--------------------------------------------------------- */
+app.get('/invite/:code', async (req, res) => {
+  const code = (req.params.code || '').trim();
+  const ua = (req.headers['user-agent'] || '').toLowerCase();
+  const isIOS = /iphone|ipad|ipod/.test(ua);
+  const isAndroid = /android/.test(ua);
+  
+  const iosLink = 'https://apps.apple.com/us/app/notifai-news/id6755790910';
+  const androidLink = 'https://play.google.com/store/apps/details?id=com.MCDuyJUZlEDU.natively';
+  const storeLink = isIOS ? iosLink : isAndroid ? androidLink : iosLink;
+  
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join NotifAi News</title>
+  <meta property="og:title" content="Join NotifAi News & Earn Crypto Rewards">
+  <meta property="og:description" content="Your friend invited you to NotifAi News! Download the app, sign up, and enter code ${code} to start earning tokens together.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://notifainews1.onrender.com/invite/${code}">
+  <meta name="apple-itunes-app" content="app-id=6755790910">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #000; color: #fff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+    .card { max-width: 400px; width: 100%; text-align: center; }
+    .logo { font-size: 48px; margin-bottom: 16px; }
+    h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: #9ca3af; font-size: 16px; margin-bottom: 32px; line-height: 1.5; }
+    .code-box { background: #1a1a1a; border: 2px solid #333; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+    .code-label { color: #9ca3af; font-size: 13px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .code { font-size: 32px; font-weight: 700; letter-spacing: 4px; color: #fff; user-select: all; }
+    .steps { text-align: left; margin-bottom: 32px; }
+    .step { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+    .step-num { background: #fff; color: #000; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+    .step-text { color: #d1d5db; font-size: 15px; line-height: 1.5; padding-top: 3px; }
+    .btn { display: block; width: 100%; padding: 16px; background: #fff; color: #000; font-size: 17px; font-weight: 700; border-radius: 12px; text-decoration: none; margin-bottom: 12px; transition: opacity 0.2s; }
+    .btn:hover { opacity: 0.9; }
+    .btn-secondary { background: transparent; border: 2px solid #333; color: #fff; }
+    .copy-btn { background: #333; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 8px; }
+    .copy-btn.copied { background: #22c55e; }
+    .footer { color: #6b7280; font-size: 12px; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">📰</div>
+    <h1>You're Invited!</h1>
+    <p class="subtitle">A friend invited you to earn crypto rewards on NotifAi News</p>
+    
+    <div class="code-box">
+      <div class="code-label">Your Invite Code</div>
+      <div class="code" id="code">${code}</div>
+      <button class="copy-btn" id="copyBtn" onclick="copyCode()">📋 Copy Code</button>
+    </div>
+    
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">Download NotifAi News from the app store</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">Create an account and verify your email</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">Go to <strong>Rewards</strong> and enter the invite code <strong>${code}</strong></div>
+      </div>
+    </div>
+    
+    <a href="${storeLink}" class="btn" id="downloadBtn">Download NotifAi News</a>
+    ${!isIOS && !isAndroid ? `<a href="${androidLink}" class="btn btn-secondary">Android (Google Play)</a>` : ''}
+    
+    <p class="footer">NotifAi News — Earn crypto for reading the news</p>
+  </div>
+  <script>
+    function copyCode() {
+      const code = document.getElementById('code').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = '✅ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = '📋 Copy Code'; btn.classList.remove('copied'); }, 2000);
+      }).catch(() => {
+        // Fallback for older browsers
+        const el = document.createElement('textarea');
+        el.value = code;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = '✅ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = '📋 Copy Code'; btn.classList.remove('copied'); }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>`);
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-production';
 const JWT_EXPIRY = '7d';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -2783,7 +2888,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (!db || !USERS_COL) {
       return res.status(500).json({ ok: false, error: 'Firestore not configured' });
     }
-    const { email, password, userId } = req.body;
+    const { email, password, userId, inviteCode } = req.body;
     if (!email || !password || !userId) {
       return res.status(400).json({ ok: false, error: 'Email, password, and userId required' });
     }
@@ -2839,7 +2944,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       code,
       expiresAt,
       userId,
-      passwordHash
+      passwordHash,
+      inviteCode: inviteCode ? inviteCode.trim() : null
     });
     
     // Send verification email
@@ -2918,7 +3024,7 @@ app.post('/api/auth/verify-email', authLimiter, async (req, res) => {
     }
     
     // Code is valid - complete registration
-    const { userId, passwordHash } = pending;
+    const { userId, passwordHash, inviteCode } = pending;
     
     const authCol = db.collection('notifaiUserAuth');
     
@@ -2946,6 +3052,35 @@ app.post('/api/auth/verify-email', authLimiter, async (req, res) => {
       emailVerified: true,
       updatedAt: new Date()
     });
+    
+    // Auto-link invite code if provided during registration
+    if (inviteCode) {
+      try {
+        const userDoc2 = await USERS_COL.doc(userId).get();
+        const userData2 = userDoc2.data();
+        // Only link if not already linked and not own code
+        if (!userData2.referredByCode && userData2.referralCode !== inviteCode) {
+          const inviterSnap = await USERS_COL.where('referralCode', '==', inviteCode).limit(1).get();
+          if (!inviterSnap.empty) {
+            const inviterDoc = inviterSnap.docs[0];
+            await USERS_COL.doc(userId).update({
+              referredByCode: inviteCode,
+              referredByUserId: inviterDoc.id,
+              updatedAt: new Date()
+            });
+            await USERS_COL.doc(inviterDoc.id).update({
+              invitesStarted: admin.firestore.FieldValue.increment(1),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[INVITE] Auto-linked ${emailLower} to inviter ${inviterDoc.id} via code ${inviteCode}`);
+          } else {
+            console.log(`[INVITE] Invalid invite code ${inviteCode} during registration for ${emailLower}`);
+          }
+        }
+      } catch (inviteErr) {
+        console.error('[INVITE] Auto-link error (non-fatal):', inviteErr.message);
+      }
+    }
     
     // Clear pending registration
     verificationCodes.delete(emailLower);
@@ -3618,18 +3753,18 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
       const refData = doc.data();
       
       // Calculate everything from referral progress data only
-      const adsWatched = refData.adsWatched || 0;
-      const isActive = adsWatched > 0;
-      const status = refData.completed ? 'completed' : isActive ? 'active' : 'pending';
+      const isActive = refData.totalSeconds >= 600;
+      const status = isActive ? 'active' : 'pending';
       const inviteCompletionToken = refData.completed ? 1 : 0;
       const commissionEarned = refData.commissionPaidToInviter || 0;
       const totalEarnedFromInvitee = inviteCompletionToken + commissionEarned;
       
       invitees.push({
-        userId: refData.inviteeUserId || doc.id,
+        userId: refData.userId,
         referralCode: userData.referralCode,
         joinedAt: refData.createdAt ? refData.createdAt.toDate().toISOString() : null,
-        adsWatched,
+        totalSeconds: refData.totalSeconds || 0,
+        totalHours: Math.floor((refData.totalSeconds || 0) / 3600),
         tokensEarned: refData.tokensEarnedByInvitee || 0,
         yourEarnings: totalEarnedFromInvitee,
         inviteBonus: inviteCompletionToken,
@@ -3704,7 +3839,8 @@ app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
     }
     res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
   }
-});
+});;
+
 
 // PUT /api/rewards/wallet
 app.put('/api/rewards/wallet', authenticateToken, async (req, res) => {
