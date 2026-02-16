@@ -401,6 +401,14 @@ import crypto from "crypto";
 const TRANSLATION_MEM = new Map(); // key -> { text, ts }
 const TRANSLATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+// Response-level cache for translated article lists (region:lang -> { data, ts })
+const TRANSLATED_RESPONSE_CACHE = new Map();
+const TRANSLATED_RESPONSE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// Cache for translate-ui responses (lang:hash -> { map, ts })
+const UI_TRANSLATE_CACHE = new Map();
+const UI_TRANSLATE_TTL = 60 * 60 * 1000; // 1 hour
+
 // -------------------- REWARDS CACHE --------------------
 const USER_CACHE = new Map(); // userId -> { data, ts }
 const USER_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
@@ -551,26 +559,17 @@ async function translateTextCached(db, targetLang, text) {
 
   const key = `${target}:${sha1(raw)}`;
 
-  // memory cache
+  // memory cache only — no Firestore reads/writes for translations
   const m = TRANSLATION_MEM.get(key);
   if (m && Date.now() - m.ts < TRANSLATION_TTL_MS) return m.text;
-
-  // firestore cache
-  const fromFs = await firestoreGetTranslation(db, key);
-  if (fromFs) {
-    TRANSLATION_MEM.set(key, { text: fromFs, ts: Date.now() });
-    return fromFs;
-  }
 
   // translate with error handling - never crash the server
   try {
     const translated = await googleTranslateText(raw, target);
     TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
-    await firestoreSetTranslation(db, key, translated);
     return translated;
   } catch (err) {
     console.error(`[TRANSLATE] Failed for "${raw.slice(0, 50)}..." to ${target}:`, err.message);
-    // CRITICAL: Return original English text as fallback - don't crash the server
     return raw;
   }
 }
@@ -1892,10 +1891,20 @@ app.get("/api/articles", async (req, res) => {
 
   // STEP 2: Now translate ONLY what we're sending (if not English)
   if (lang !== "en") {
+    // Response-level cache: same region+lang within TTL = zero translation calls
+    const totalArticles = Object.values(out).reduce((s, arr) => s + arr.length, 0);
+    const latestId = Object.values(out).flat()[0]?.id || '';
+    const cacheKey = `${reg}:${lang}:${totalArticles}:${latestId}`;
+    const cached = TRANSLATED_RESPONSE_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < TRANSLATED_RESPONSE_TTL) {
+      console.log(`[API] Serving cached translated response for ${cacheKey}`);
+      return res.json(cached.data);
+    }
+
     console.log(`[API] Starting translation to ${lang}...`);
     const startTime = Date.now();
 
-    // Collect all texts that need translation
+    // Collect all texts that need translation (title + summary only, NOT debates)
     const translationTasks = [];
     const taskMeta = [];
 
@@ -1930,6 +1939,11 @@ app.get("/api/articles", async (req, res) => {
 
     const elapsed = Date.now() - startTime;
     console.log(`[API] Translation completed in ${elapsed}ms`);
+
+    // Cache the translated response
+    const responseData = { site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out };
+    TRANSLATED_RESPONSE_CACHE.set(cacheKey, { data: responseData, ts: Date.now() });
+    return res.json(responseData);
   }
   
   res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
@@ -1942,6 +1956,15 @@ app.post("/api/translate-ui", async (req, res) => {
     if (!target || target === "en") return res.json({ ok: true, map: {} });
 
     const inItems = Array.isArray(items) ? items : [];
+    
+    // Cache key based on lang + sorted item keys
+    const itemKeys = inItems.map(it => String(it?.key || "")).sort().join(",");
+    const uiCacheKey = `${target}:${sha1(itemKeys)}`;
+    const cached = UI_TRANSLATE_CACHE.get(uiCacheKey);
+    if (cached && Date.now() - cached.ts < UI_TRANSLATE_TTL) {
+      return res.json({ ok: true, map: cached.map });
+    }
+
     const out = {};
 
     for (const it of inItems) {
@@ -1951,6 +1974,7 @@ app.post("/api/translate-ui", async (req, res) => {
       out[k] = await translateTextCached(db, target, v);
     }
 
+    UI_TRANSLATE_CACHE.set(uiCacheKey, { map: out, ts: Date.now() });
     return res.json({ ok: true, map: out });
   } catch (e) {
     console.error("/api/translate-ui error", e?.message || e);
@@ -2051,15 +2075,23 @@ app.get("/api/blogs", async (req, res) => {
     const blogs = await getBlogsForToday();
     const today = new Date().toISOString().slice(0, 10);
 
-    // Translate blogs if not English
+    // Translate blogs if not English (with response-level cache)
+    const blogCacheKey = `blogs:${lang}:${today}`;
+    const cachedBlogs = TRANSLATED_RESPONSE_CACHE.get(blogCacheKey);
+    if (cachedBlogs && Date.now() - cachedBlogs.ts < TRANSLATED_RESPONSE_TTL) {
+      return res.json(cachedBlogs.data);
+    }
+
     const translatedBlogs = await Promise.all(
       blogs.map((b) => translateBlogForLang(db, lang, b))
     );
 
-    res.json({
-      date: today,
-      blogs: translatedBlogs,  // ← CHANGED from 'blogs'
-    });
+    const blogResponse = { date: today, blogs: translatedBlogs };
+    if (lang !== "en") {
+      TRANSLATED_RESPONSE_CACHE.set(blogCacheKey, { data: blogResponse, ts: Date.now() });
+    }
+
+    res.json(blogResponse);
   } catch (e) {
     console.error("Error in /api/blogs", e);
     res.status(500).json({ error: "Failed to generate blogs" });
@@ -4581,6 +4613,8 @@ app.get('/api/admin/cache-stats', async (req, res) => {
       users: USER_CACHE.size,
       referrals: REFERRAL_CACHE.size,
       translations: TRANSLATION_MEM.size,
+      translatedResponses: TRANSLATED_RESPONSE_CACHE.size,
+      uiTranslations: UI_TRANSLATE_CACHE.size,
       dashboards: DASHBOARD_CACHE.size,
       writeQueue: WRITE_QUEUE.size,
       pendingRequests: PENDING_REQUESTS.size,
