@@ -61,15 +61,17 @@ const rewardsWriteLimiter = rateLimit({
    AD-BASED REWARDS CONFIGURATION
 --------------------------------------------------------- */
 const AD_REWARDS_CONFIG = {
-  TOKENS_PER_AD: 1,
-  DAILY_TOKEN_CAP: 15,             // Was 100 — AdMob safety
-  DAILY_REFERRAL_CAP: 100,         // Separate cap for commission + invite earnings
-  AD_COOLDOWN_MS: 5 * 60 * 1000,   // Was 3 min → 5 min
-  MAX_ADS_PER_HOUR: 8,             // Was 20 → 8
+  TOKENS_PER_AD: 5,
+  DAILY_TOKEN_CAP: 100,            // Max 100 tokens/day from ads (20 ads × 5 tokens)
+  MAX_ADS_PER_DAY: 20,
+  AD_COOLDOWN_MS: 5 * 60 * 1000,
+  MAX_ADS_PER_HOUR: 20,
   INVITE: {
     REQUIRED_ADS: 10,
-    BONUS_TOKENS: 1,
+    BONUS_TOKENS: 10,
     COMMISSION_RATE: 0.10,
+    DAILY_INVITE_CAP: 1000,        // Max 1000 tokens/day from invite bonuses
+    DAILY_COMMISSION_CAP: 1000,    // Max 1000 tokens/day from commission
   }
 };
 
@@ -422,7 +424,8 @@ const ME_CACHE = new Map(); // oduserId -> { data, ts }
 const ME_CACHE_TTL = 2 * 60 * 1000; // 2 minutes (short so users see updates)
 
 // -------------------- AD REWARDS CACHE --------------------
-const AD_TRACKING = new Map(); // userId -> { dayKey, tokensToday, lastAdAt, hourlyTimestamps }
+const AD_TRACKING = new Map(); // userId -> { dayKey, tokensToday, adsToday, lastAdAt, hourlyTimestamps }
+const INVITER_TRACKING = new Map(); // userId -> { dayKey, inviteTokensToday, commissionTokensToday }
 
 // -------------------- END REWARDS CACHE --------------------
 
@@ -849,7 +852,7 @@ function getDayKey(d = new Date()) {
 }
 
 const REFERRAL_REQUIRED_SECONDS = 10 * 60;     // 10 minutes
-const REFERRAL_INVITE_TOKENS    = 1;
+const REFERRAL_INVITE_TOKENS    = 10;          // Match ad-based invite reward
 const REFERRAL_COMMISSION_RATE  = 0.1;        // 10%
 
 const MAX_INVITES_PER_WEEK = 200;
@@ -943,7 +946,7 @@ function getAdTracking(userId) {
   const dayKey = getDayKey();
   let tracking = AD_TRACKING.get(userId);
   if (!tracking || tracking.dayKey !== dayKey) {
-    tracking = { dayKey, tokensToday: 0, lastAdAt: 0, hourlyTimestamps: [] };
+    tracking = { dayKey, tokensToday: 0, adsToday: 0, lastAdAt: 0, hourlyTimestamps: [] };
     AD_TRACKING.set(userId, tracking);
   }
   const oneHourAgo = Date.now() - 60 * 60 * 1000;
@@ -958,6 +961,9 @@ async function processAdReward(userId) {
   const now = Date.now();
   if (tracking.hourlyTimestamps.length >= config.MAX_ADS_PER_HOUR) {
     return { ok: false, error: 'Hourly limit reached', hourlyLimit: true };
+  }
+  if (config.MAX_ADS_PER_DAY && tracking.adsToday >= config.MAX_ADS_PER_DAY) {
+    return { ok: false, error: 'Daily ad limit reached', dailyAdLimit: true, adsToday: tracking.adsToday, maxAdsPerDay: config.MAX_ADS_PER_DAY };
   }
   if (tracking.lastAdAt && (now - tracking.lastAdAt) < config.AD_COOLDOWN_MS) {
     const wait = Math.ceil((config.AD_COOLDOWN_MS - (now - tracking.lastAdAt)) / 1000);
@@ -978,6 +984,7 @@ async function processAdReward(userId) {
   const tokensToAward = Math.min(config.TOKENS_PER_AD, config.DAILY_TOKEN_CAP - currentTokensToday);
   if (tokensToAward <= 0) return { ok: false, error: 'Daily limit reached', dailyLimit: true };
   tracking.tokensToday += tokensToAward;
+  tracking.adsToday += 1;
   tracking.lastAdAt = now;
   tracking.hourlyTimestamps.push(now);
   AD_TRACKING.set(userId, tracking);
@@ -1046,21 +1053,28 @@ async function handleAdInviteRewards(inviteeUserId, inviteeData, tokensEarned) {
   }
   let inviterData = inviterSnap.data();
   inviterData = await ensureDay(inviterRef, inviterData);
-    const inviterTokensToday = inviterData.tokensToday || 0;
-  const inviterDailyRoom = AD_REWARDS_CONFIG.DAILY_REFERRAL_CAP - inviterTokensToday;
-  if (inviterDailyRoom <= 0) {
+  // Track inviter's daily invite + commission earnings separately
+  const dayKey = getDayKey();
+  let inviterTrack = INVITER_TRACKING.get(inviterUserId);
+  if (!inviterTrack || inviterTrack.dayKey !== dayKey) {
+    inviterTrack = { dayKey, inviteTokensToday: 0, commissionTokensToday: 0 };
+    INVITER_TRACKING.set(inviterUserId, inviterTrack);
+  }
+  const inviteRoom = config.DAILY_INVITE_CAP - inviterTrack.inviteTokensToday;
+  const commissionRoom = config.DAILY_COMMISSION_CAP - inviterTrack.commissionTokensToday;
+  if (inviteRoom <= 0 && commissionRoom <= 0) {
     await refDoc.set({ ...refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     return { inviterRewarded: false, inviterBonus: 0, commission: 0 };
   }
   if (justCompletedInvite) {
-    inviterBonus = Math.min(config.BONUS_TOKENS, inviterDailyRoom);
+    inviterBonus = Math.min(config.BONUS_TOKENS, Math.max(0, inviteRoom));
     inviterRewarded = true;
     refData.completed = true;
     refData.completedAt = admin.firestore.FieldValue.serverTimestamp();
   }
   if (refData.completed || justCompletedInvite) {
     const potentialCommission = Math.floor(tokensEarned * config.COMMISSION_RATE * 100) / 100;
-    commission = Math.min(potentialCommission, Math.max(0, inviterDailyRoom - inviterBonus));
+    commission = Math.min(potentialCommission, Math.max(0, commissionRoom));
   }
   if (inviterBonus > 0 || commission > 0) {
     const totalToAdd = inviterBonus + commission;
@@ -1078,6 +1092,10 @@ async function handleAdInviteRewards(inviteeUserId, inviteeData, tokensEarned) {
       inviterUpdate.tokensFromCommission = admin.firestore.FieldValue.increment(commission);
     }
     await inviterRef.update(inviterUpdate);
+    // Update in-memory daily tracking for inviter
+    inviterTrack.inviteTokensToday += inviterBonus;
+    inviterTrack.commissionTokensToday += commission;
+    INVITER_TRACKING.set(inviterUserId, inviterTrack);
     USER_CACHE.delete(inviterUserId);
     DASHBOARD_CACHE.delete(inviterUserId);
     console.log(`[INVITE] Inviter ${inviterUserId}: bonus=${inviterBonus}, commission=${commission}`);
@@ -2628,16 +2646,18 @@ app.get('/api/rewards/ad-status', rewardsLimiter, authenticateTokenOptional, asy
         emailVerified = data.emailVerified === true;
       }
     }
-    const canWatchAd = cooldownRemaining === 0 && tokensToday < config.DAILY_TOKEN_CAP && emailVerified;
+    const adsToday = tracking.adsToday || 0;
+    const canWatchAd = cooldownRemaining === 0 && tokensToday < config.DAILY_TOKEN_CAP && adsToday < config.MAX_ADS_PER_DAY && emailVerified;
     return res.json({
       ok: true, canWatchAd, emailVerified,
       rewards: {
         tokensPerAd: config.TOKENS_PER_AD, dailyCap: config.DAILY_TOKEN_CAP,
+        maxAdsPerDay: config.MAX_ADS_PER_DAY, adsToday,
         tokensToday, tokensRemaining: Math.max(0, config.DAILY_TOKEN_CAP - tokensToday),
         cooldownMs: cooldownRemaining, cooldownSeconds: Math.ceil(cooldownRemaining / 1000),
       },
       totals: { tokensTotal, tokensFromAds, tokensFromInvites, tokensFromCommission, totalAdsWatched, invitesCompleted, referralCode },
-      invite: { requiredAds: config.INVITE.REQUIRED_ADS, bonusTokens: config.INVITE.BONUS_TOKENS, commissionRate: `${config.INVITE.COMMISSION_RATE * 100}%` }
+      invite: { requiredAds: config.INVITE.REQUIRED_ADS, bonusTokens: config.INVITE.BONUS_TOKENS, commissionRate: `${config.INVITE.COMMISSION_RATE * 100}%`, dailyInviteCap: config.INVITE.DAILY_INVITE_CAP, dailyCommissionCap: config.INVITE.DAILY_COMMISSION_CAP }
     });
   } catch (error) {
     console.error('GET /api/rewards/ad-status error:', error);
