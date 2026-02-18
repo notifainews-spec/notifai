@@ -68,7 +68,7 @@ const AD_REWARDS_CONFIG = {
   MAX_ADS_PER_HOUR: 20,
   INVITE: {
     REQUIRED_ADS: 10,
-    BONUS_TOKENS: 10,
+    BONUS_TOKENS: 20,
     COMMISSION_RATE: 0.10,
     DAILY_INVITE_CAP: 1000,        // Max 1000 tokens/day from invite bonuses
     DAILY_COMMISSION_CAP: 1000,    // Max 1000 tokens/day from commission
