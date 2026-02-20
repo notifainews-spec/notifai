@@ -3562,6 +3562,97 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
+/* ─────────────────────────────────────────────────────────────
+   COMMENTS
+───────────────────────────────────────────────────────────── */
+const COMMENTS_COL = db ? db.collection("articleComments") : null;
+
+const commentsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'Too many requests' }
+});
+
+// GET /api/comments/:articleId — public, no auth needed
+app.get('/api/comments/:articleId', async (req, res) => {
+  if (!COMMENTS_COL) return res.json({ ok: true, comments: [] });
+  try {
+    const snap = await COMMENTS_COL
+      .where('articleId', '==', req.params.articleId)
+      .where('deleted', '==', false)
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    const comments = snap.docs.map(d => {
+      const c = d.data();
+      return {
+        id: d.id,
+        text: c.text,
+        username: c.username,
+        userId: c.userId,
+        createdAt: c.createdAt?.toDate?.()?.toISOString() || null,
+        likes: c.likes || 0,
+      };
+    });
+    res.json({ ok: true, comments });
+  } catch (e) {
+    console.error('GET comments error', e);
+    res.status(500).json({ ok: false, error: 'Could not load comments' });
+  }
+});
+
+// POST /api/comments/:articleId — requires login
+app.post('/api/comments/:articleId', commentsLimiter, authenticateToken, async (req, res) => {
+  if (!COMMENTS_COL) return res.status(503).json({ ok: false, error: 'DB unavailable' });
+
+  const text = (req.body.text || '').trim();
+  if (!text || text.length > 500) {
+    return res.status(400).json({ ok: false, error: 'Comment must be 1–500 characters' });
+  }
+
+  try {
+    const userDoc = await USERS_COL.doc(req.user.userId).get();
+    const username = userDoc.exists
+      ? (userDoc.data().username || userDoc.data().email?.split('@')[0] || 'Anonymous')
+      : 'Anonymous';
+
+    const ref = await COMMENTS_COL.add({
+      articleId: req.params.articleId,
+      userId: req.user.userId,
+      username,
+      text,
+      likes: 0,
+      deleted: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    res.json({ ok: true, id: ref.id, username, text });
+  } catch (e) {
+    console.error('POST comment error', e);
+    res.status(500).json({ ok: false, error: 'Could not post comment' });
+  }
+});
+
+// DELETE /api/comments/:commentId — only comment owner can delete
+app.delete('/api/comments/:commentId', authenticateToken, async (req, res) => {
+  if (!COMMENTS_COL) return res.status(503).json({ ok: false, error: 'DB unavailable' });
+  try {
+    const doc = await COMMENTS_COL.doc(req.params.commentId).get();
+    if (!doc.exists) return res.status(404).json({ ok: false, error: 'Not found' });
+    if (doc.data().userId !== req.user.userId) {
+      return res.status(403).json({ ok: false, error: 'Not your comment' });
+    }
+    await COMMENTS_COL.doc(req.params.commentId).update({ deleted: true });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE comment error', e);
+    res.status(500).json({ ok: false, error: 'Could not delete' });
+  }
+});
+
 // GET /api/rewards/dashboard
 app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
   try {
