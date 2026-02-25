@@ -138,7 +138,6 @@ res.send(`<!DOCTYPE html>
     <h1>You're Invited!</h1>
     <p class="subtitle">A friend invited you to earn crypto rewards on NotifAi News</p>
 
-```
 <div class="code-box">
   <div class="code-label">Your Invite Code</div>
   <div class="code" id="code">${code}</div>
@@ -164,7 +163,6 @@ res.send(`<!DOCTYPE html>
 ${!isIOS && !isAndroid ? `<a href="${androidLink}" class="btn btn-secondary">Android (Google Play)</a>` : ''}
 
 <p class="footer">NotifAi News — Earn crypto for reading the news</p>
-```
 
   </div>
   <script>
@@ -286,7 +284,6 @@ politics: [
 "https://www.scmp.com/rss/4/feed",     // SCMP – China (English)
 ],
 
-```
 finance: [
   "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
   "https://rss.dw.com/rdf/rss-chi-all",
@@ -298,7 +295,6 @@ entertainment: [
   "https://www.scmp.com/rss/82/feed",   // SCMP – Culture / entertainment
   "https://www.scmp.com/rss/94/feed",   // SCMP – Lifestyle (lots of entertainment topics)
 ],
-```
 
 },
 
@@ -314,7 +310,6 @@ politics: [
 "https://thecurrent.pk/feed",                   // The Current – young, English, mix of news
 ],
 
-```
 finance: [
   "https://www.brecorder.com/rss",                // Business Recorder – main RSS
   "https://profit.pakistantoday.com.pk/feed/",    // Profit – works and has images
@@ -327,7 +322,6 @@ entertainment: [
   "https://www.pakshowbiz.com/feed",                 // PakShowbiz – pure showbiz
   // You can re-add more once you confirm their XML is valid.
 ],
-```
 
 },
 
@@ -341,7 +335,6 @@ politics: [
 "https://thenationonlineng.net/feed/",
 ],
 
-```
 // Business / finance-focused Nigeria feeds
 finance: [
   "https://businessday.ng/feed/",
@@ -357,7 +350,6 @@ entertainment: [
   "https://www.legit.ng/rss/all.rss",              // Legit.ng – big mix incl. entertainment & Nollywood
   "https://www.yohaig.ng/author/gistlover/feed",   // Gistlover via Yohaig – Naija entertainment & celebrity gist
 ],
-```
 
 },
 
@@ -466,7 +458,6 @@ async function firestoreGetTranslation(db, key) {
 try {
 if (!db) return null;
 
-```
 // Deduplicate concurrent requests
 const pendingKey = `translate:${key}`;
 if (PENDING_REQUESTS.has(pendingKey)) {
@@ -489,7 +480,6 @@ const result = await promise;
 PENDING_REQUESTS.delete(pendingKey);
 
 return result;
-```
 
 } catch {
 return null;
@@ -532,7 +522,6 @@ body: JSON.stringify(body),
 }
 );
 
-```
   if (!res.ok) {
     const t = await res.text().catch(() => "");
     
@@ -563,7 +552,6 @@ body: JSON.stringify(body),
   }
   throw err;
 }
-```
 
 }
 
@@ -607,7 +595,6 @@ if (article.debateJson) {
 try {
 const debate = JSON.parse(article.debateJson);
 
-```
   // Translate each persona's perspective
   if (debate.socialist?.open) {
     debate.socialist.open = await translateTextCached(db, lang, debate.socialist.open);
@@ -624,12 +611,11 @@ const debate = JSON.parse(article.debateJson);
   console.error("Error translating debate:", e);
   // Keep original if translation fails
 }
-```
 
 }
 
 return {
-…article,
+...article,
 title,
 summary,
 debateJson,
@@ -641,7 +627,7 @@ async function translateBlogForLang(db, lang, blog) {
 if (!blog || !lang || lang === "en") return blog;
 
 return {
-…blog,
+...blog,
 title: await translateTextCached(db, lang, blog.title || ""),
 body: await translateTextCached(db, lang, blog.body || ""),
 };
@@ -650,8 +636,8 @@ body: await translateTextCached(db, lang, blog.body || ""),
 /* ––––––––––––––––––––––––––––
 HELPERS
 ——————————————————— */
-function looksLikeUrl(u = "") { return typeof u === "string" && /^https?:///i.test(u); }
-function upgradeHttps(u) { try { return new URL(u).toString().replace(/^http:///i, "https://"); } catch { return ""; } }
+function looksLikeUrl(u = "") { return typeof u === "string" && /^https?:\/\//i.test(u); }
+function upgradeHttps(u) { try { return new URL(u).toString().replace(/^http:\/\//i, "https://"); } catch { return ""; } }
 function absoluteUrlMaybe(src, pageUrl) { try { return new URL(src, pageUrl).toString(); } catch { return src; } }
 
 function getImageReferer(u) {
@@ -660,7 +646,6 @@ const url = new URL(u);
 const host = url.hostname;
 const origin = url.origin; // e.g. "https://static.rfi.fr"
 
-```
 // 1) Known picky sites where we prefer a canonical referer
 if (host.endsWith("theguardian.com") || host.endsWith("guim.co.uk")) {
   return "https://www.theguardian.com/";
@@ -719,7 +704,6 @@ if (
 
 // 4) Default: use the image's own origin
 return origin;
-```
 
 } catch {
 // last-resort fallback
@@ -928,7 +912,7 @@ const currentWeekKey = getWeekKey();
 if (data.weekKey === currentWeekKey) return data;
 const lastWeekTokens = data.tokensThisWeek || 0;
 const updated = {
-…data, weekKey: currentWeekKey,
+...data, weekKey: currentWeekKey,
 weeklySeconds: 0, tokensThisWeek: 0, tokensLastWeek: lastWeekTokens,
 invitesCompletedLastWeek: data.invitesCompletedThisWeek || 0,
 invitesCompletedThisWeek: 0,
@@ -974,7 +958,7 @@ if (needsUpdate) {
 updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
 await docRef.update(updates);
 USER_CACHE.delete(data.userId);
-return { …data, …updates };
+return { ...data, ...updates };
 }
 return data;
 }
@@ -1085,7 +1069,7 @@ const justCompletedInvite = !refData.completed && newAdsWatched >= config.REQUIR
 const inviterRef = USERS_COL.doc(inviterUserId);
 const inviterSnap = await inviterRef.get();
 if (!inviterSnap.exists) {
-await refDoc.set({ …refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+await refDoc.set({ ...refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
 return { inviterRewarded: false, inviterBonus: 0, commission: 0 };
 }
 let inviterData = inviterSnap.data();
@@ -1100,7 +1084,7 @@ INVITER_TRACKING.set(inviterUserId, inviterTrack);
 const inviteRoom = config.DAILY_INVITE_CAP - inviterTrack.inviteTokensToday;
 const commissionRoom = config.DAILY_COMMISSION_CAP - inviterTrack.commissionTokensToday;
 if (inviteRoom <= 0 && commissionRoom <= 0) {
-await refDoc.set({ …refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+await refDoc.set({ ...refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
 return { inviterRewarded: false, inviterBonus: 0, commission: 0 };
 }
 if (justCompletedInvite) {
@@ -1140,7 +1124,7 @@ DASHBOARD_CACHE.delete(inviterUserId);
 console.log(`[INVITE] Inviter ${inviterUserId}: bonus=${inviterBonus}, commission=${commission}`);
 }
 await refDoc.set({
-…refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned,
+...refData, adsWatched: newAdsWatched, tokensEarnedByInvitee: newTokensEarned,
 commissionPaidToInviter: (refData.commissionPaidToInviter || 0) + commission,
 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
 }, { merge: true });
@@ -1176,7 +1160,6 @@ setTimeout(async () => {
 const queued = WRITE_QUEUE.get(userId);
 if (!queued) return;
 
-```
 WRITE_QUEUE.delete(userId);
 
 try {
@@ -1187,7 +1170,6 @@ try {
 } catch (err) {
   console.error(`[BATCH] ❌ Write failed for ${userId}:`, err.message);
 }
-```
 
 }, WRITE_BATCH_DELAY);
 }
@@ -1623,7 +1605,6 @@ const idHosts = ["cnnindonesia.com", "kompas.com"];
 return items.filter(it => keepHost(it.url, idHosts));
 }
 
-```
 if (region === "cn") {
 // For CN politics + finance we keep only trusted sources
 const cnHosts = [
@@ -1643,7 +1624,6 @@ if (lane === "entertainment") {
 }
 
 return items.filter(it => keepHost(it.url, cnHosts));
-```
 
 }
 
@@ -1690,7 +1670,6 @@ const items = (feed.items || [])
 .filter((i) => i.link && i.title)
 .slice(0, takeN);
 
-```
 const out = [];
 
 for (let i = 0; i < items.length; i += FETCH_CONCURRENCY) {
@@ -1742,7 +1721,6 @@ for (let i = 0; i < items.length; i += FETCH_CONCURRENCY) {
 }
 
 return out;
-```
 
 } catch (e) {
 console.error("Feed error", feedUrl, e.message || e);
@@ -1779,12 +1757,12 @@ console.warn(`No CN ${lane} items found – falling back to world lane`);
 const worldItems = await ingestGlobalLane("world", FEEDS_GLOBAL.world);
 return worldItems
 .slice(0, INGEST_MAX_PER_CAT)
-.map(x => ({ …x, category: `${region}:${lane}` }));
+.map(x => ({ ...x, category: `${region}:${lane}` }));
 }
 
 return filtered
 .slice(0, INGEST_MAX_PER_CAT)
-.map(x => ({ …x, category: `${region}:${lane}` }));
+.map(x => ({ ...x, category: `${region}:${lane}` }));
 }
 async function ingestGlobalLane(lane, feeds) {
 let collected = [];
@@ -1794,7 +1772,7 @@ collected = collected.concat(list);
 if (collected.length >= INGEST_MAX_PER_CAT) break;
 }
 return uniqBy(collected, x => x.url).slice(0, INGEST_MAX_PER_CAT)
-.map(x => ({ …x, category: lane }));
+.map(x => ({ ...x, category: lane }));
 }
 
 async function ingestOnce() {
@@ -1807,7 +1785,6 @@ const many = await ingestGlobalLane(lane, feeds);
 for (const art of many) {
 if (all.find(x => x.url === art.url)) continue;
 
-```
   const summary = await summarizeWithOpenAI(art.title, art.text, "en");
   const debate  = await personaDebate(art.title, art.text, "en");
 
@@ -1825,7 +1802,6 @@ if (all.find(x => x.url === art.url)) continue;
   });
   created.push(1);
 }
-```
 
 }
 
@@ -1835,7 +1811,6 @@ const conf = FEEDS_REGIONAL[region];
 if (!conf) continue;
 const lang = langForRegion(region);
 
-```
 for (const lane of ["politics", "finance", "entertainment"]) {
   const feeds = conf[lane] || [];
   const many = await ingestRegionalLane(region, lane, feeds);
@@ -1860,7 +1835,6 @@ for (const lane of ["politics", "finance", "entertainment"]) {
     created.push(1);
   }
 }
-```
 
 }
 
@@ -1872,7 +1846,7 @@ const seed = JSON.parse(fs.readFileSync(SEED, "utf-8"));
 let added = 0;
 for (const s of seed) {
 if (!all.find(x => x.url === s.url)) {
-all.push({ id: nanoid(), …s, createdAt: new Date().toISOString() });
+all.push({ id: nanoid(), ...s, createdAt: new Date().toISOString() });
 added++;
 }
 }
@@ -1929,7 +1903,6 @@ if (out.crypto.length < limit) out.crypto.push(a);
 continue;
 }
 
-```
 const [catRegion, lane] = String(a.category || "").split(":");
 if (!catRegion || !lane) continue;
 if (catRegion !== reg) continue;
@@ -1937,7 +1910,6 @@ if (catRegion !== reg) continue;
 if (lane === "politics" && out.us.length < limit) out.us.push(a);
 if (lane === "finance" && out.finance.length < limit) out.finance.push(a);
 if (lane === "entertainment" && out.entertainment.length < limit) out.entertainment.push(a);
-```
 
 }
 
@@ -1953,7 +1925,6 @@ console.log(`[API] Serving cached translated response for ${cacheKey}`);
 return res.json(cached.data);
 }
 
-```
 console.log(`[API] Starting translation to ${lang}...`);
 const startTime = Date.now();
 
@@ -1997,7 +1968,6 @@ console.log(`[API] Translation completed in ${elapsed}ms`);
 const responseData = { site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out };
 TRANSLATED_RESPONSE_CACHE.set(cacheKey, { data: responseData, ts: Date.now() });
 return res.json(responseData);
-```
 
 }
 
@@ -2010,7 +1980,6 @@ const { lang, items } = req.body || {};
 const target = normLang(lang);
 if (!target || target === "en") return res.json({ ok: true, map: {} });
 
-```
 const inItems = Array.isArray(items) ? items : [];
 
 // Cache key based on lang + sorted item keys
@@ -2032,7 +2001,6 @@ for (const it of inItems) {
 
 UI_TRANSLATE_CACHE.set(uiCacheKey, { map: out, ts: Date.now() });
 return res.json({ ok: true, map: out });
-```
 
 } catch (e) {
 console.error("/api/translate-ui error", e?.message || e);
@@ -2047,7 +2015,7 @@ Shape:
 {
 region: "us",
 lanes: { politics, world, finance, crypto, entertainment },
-headlineKey: "politics" | "world" | …
+headlineKey: "politics" | "world" | ...
 }
 ——————————————————— */
 app.get("/api/newspaper", (req, res) => {
@@ -2075,7 +2043,6 @@ entertainment: null,
 for (const a of all) {
 const cat = a.category || "";
 
-```
 // Global lanes
 if (cat === "world" && !lanes.world) {
   lanes.world = a;
@@ -2113,7 +2080,6 @@ if (
 ) {
   break;
 }
-```
 
 }
 
@@ -2133,7 +2099,6 @@ app.get("/api/blogs", async (req, res) => {
 try {
 const lang = normLang(req.query.lang || "en");  // ← ADD THIS LINE
 
-```
 const blogs = await getBlogsForToday();
 const today = new Date().toISOString().slice(0, 10);
 
@@ -2154,7 +2119,6 @@ if (lang !== "en") {
 }
 
 res.json(blogResponse);
-```
 
 } catch (e) {
 console.error("Error in /api/blogs", e);
@@ -2170,7 +2134,6 @@ const all = loadArticles();
 const found = all.find((x) => x.id === id);
 if (!found) return res.status(404).json({ error: "not found" });
 
-```
 const cat = found?.category || "";
 const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
 const fallbackLang = langForRegion(regionCode || "us");
@@ -2178,7 +2141,6 @@ const lang = getRequestedLang(req, fallbackLang);
 
 const out = lang === "en" ? found : await translateArticleForLang(db, lang, found);
 return res.json(out);
-```
 
 } catch (e) {
 console.error("GET /api/article/:id error", e?.message || e);
@@ -2191,7 +2153,6 @@ app.post("/api/ask-ai", async (req, res) => {
 try {
 const { articleId, persona, question, basePerspective, title } = req.body || {};
 
-```
 if (!question || !persona) {
   return res.status(400).json({ error: "Missing persona or question" });
 }
@@ -2204,7 +2165,6 @@ const articleTitle =
   title || article?.title || "Untitled story from NotifAi News";
 const articleSummary = article?.summary || "";
 const cat = article?.category || "";
-```
 
 const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
 const fallbackLang = langForRegion(regionCode || "us");
@@ -2214,9 +2174,7 @@ const lang = getRequestedLang(req, fallbackLang);
 
 const system = personaChatSystem(persona, lang);
 
-```
 const userPrompt = `
-```
 
 Story title: ${articleTitle}
 
@@ -2243,7 +2201,6 @@ Do not repeat the earlier paragraph word-for-word; move the conversation forward
 Stay focused on this specific story and the user's question.
 `;
 
-```
 const completion = await openai.chat.completions.create({
   model: "gpt-4o-mini",
   messages: [
@@ -2259,7 +2216,6 @@ const answer =
   "I'm having trouble answering right now, please try again.";
 
 res.json({ answer });
-```
 
 } catch (e) {
 console.error("ask-ai error", e?.message || e);
@@ -2320,7 +2276,6 @@ if (!u || typeof u !== "string") return res.status(400).send("missing u");
 if (!looksLikeUrl(u)) return res.status(400).send("bad url");
 const referer = getImageReferer(u);
 
-```
 const upstream = await fetch(u, {
   redirect: "follow",
   headers: {
@@ -2343,7 +2298,6 @@ const buf = Buffer.from(await upstream.arrayBuffer());
 res.setHeader("Content-Type", ct);
 res.setHeader("Cache-Control", "public, max-age=86400");
 res.send(buf);
-```
 
 } catch {
 res.status(500).send("proxy error");
@@ -2368,7 +2322,7 @@ if (!a) { res.status(404).send('Article not found'); return; }
 const origin   = getOrigin(req);
 const pageUrl  = `${origin}/article.html?id=${encodeURIComponent(id)}`;
 const shareUrl = `${origin}/share/${encodeURIComponent(id)}`;
-const rawImg   = a.image && /^https?:///i.test(a.image) ? a.image : `${origin}/cover.jpg`;
+const rawImg   = a.image && /^https?:\/\//i.test(a.image) ? a.image : `${origin}/cover.jpg`;
 const ogImg    = `${origin}/img?u=${encodeURIComponent(rawImg)}&w=1200`;
 const title    = a.title || 'NotifAi News';
 const desc     = firstLine(a.summary || `${a.source || ''} • ${a.title || ''}`, 240);
@@ -2392,7 +2346,7 @@ res.end(`<!doctype html>
 <meta name="twitter:description" content="${htmlesc(desc)}">
 <meta name="twitter:image" content="${ogImg}">
 <meta http-equiv="refresh" content="0; url=${pageUrl}"></head>
-<body><p>Redirecting to <a href="${pageUrl}">article</a>…</p></body>
+<body><p>Redirecting to <a href="${pageUrl}">article</a>...</p></body>
 </html>`);
 });
 
@@ -2407,7 +2361,6 @@ if (!db || !USERS_COL) {
 return res.status(500).json({ ok: false, error: "Firestore not configured" });
 }
 
-```
 const { userId: providedUserId, walletAddress, invitedByCode } = req.body || {};
 if (!providedUserId) {
   return res.status(400).json({ ok: false, error: "Missing userId" });
@@ -2428,7 +2381,6 @@ const updates = {
 };
 
 // Wallet update (no validation beyond "starts with 0x")
-```
 
 if (walletAddress && walletAddress !== data.walletAddress) {
 // archive old stats into walletHistory array
@@ -2447,7 +2399,6 @@ updates.walletHistory = admin.firestore.FieldValue.arrayUnion(historyEntry);
 // temporary: do not reset reward counters on wallet change
 }
 
-```
 // If new user enters "invitedByCode" and they don't already have one
 if (invitedByCode && !data.referredByCode) {
   const inviterSnap = await USERS_COL.where("referralCode", "==", invitedByCode)
@@ -2474,7 +2425,6 @@ const updatedSnap = await ref.get();
 const updated = updatedSnap.data();
 
 // Return updated user properly
-```
 
 const fresh = (await ref.get()).data();
 return res.json({
@@ -2611,7 +2561,6 @@ return res
 .json({ ok: false, error: "Firestore not configured" });
 }
 
-```
 const providedUserId = req.query.userId;
 if (!providedUserId) {
   return res
@@ -2653,7 +2602,6 @@ const responseData = {
 ME_CACHE.set(userId, { data: responseData, ts: Date.now() });
 
 return res.json(responseData);
-```
 
 } catch (err) {
 console.error("GET /api/rewards/me error", err);
@@ -2707,7 +2655,6 @@ const batch = db.batch();
 let deleteCount = 0;
 const BATCH_SIZE = 500;
 
-```
 for (const doc of allUsers.docs) {
   const data = doc.data();
   
@@ -2765,7 +2712,6 @@ res.json({
   deletedUsers: deleteCount,
   message: `Cleaned up ${deleteCount} ghost users`
 });
-```
 
 } catch (error) {
 console.error('Cleanup error:', error);
@@ -2840,7 +2786,6 @@ if (password.length < 8) {
 return res.status(400).json({ ok: false, error: 'Password must be 8+ characters' });
 }
 
-```
 const emailLower = email.toLowerCase().trim();
 
 // Block disposable email domains
@@ -2930,7 +2875,6 @@ res.json({
   message: 'Verification code sent to your email',
   requiresVerification: true
 });
-```
 
 } catch (error) {
 console.error('Register error:', error);
@@ -2945,7 +2889,6 @@ if (!db || !USERS_COL) {
 return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
-```
 const { email, code } = req.body;
 if (!email || !code) {
   return res.status(400).json({ ok: false, error: 'Email and code required' });
@@ -3050,7 +2993,6 @@ res.json({
     tokensTotal: userData.tokensTotal || 0
   }
 });
-```
 
 } catch (error) {
 console.error('Verify email error:', error);
@@ -3066,14 +3008,12 @@ if (!email) {
 return res.status(400).json({ ok: false, error: 'Email required' });
 }
 
-```
 const emailLower = email.toLowerCase().trim();
 const pending = verificationCodes.get(emailLower);
 
 if (!pending) {
   return res.status(400).json({ ok: false, error: 'No pending registration. Please register again.' });
 }
-```
 
 // Check rate limit - 5 minutes between verification emails
 const lastSent = verificationEmailsSent.get(emailLower);
@@ -3089,7 +3029,6 @@ retryAfter: waitSeconds
 });
 }
 
-```
 // Generate new code
 const code = Math.floor(100000 + Math.random() * 900000).toString();
 const expiresAt = Date.now() + VERIFICATION_CODE_EXPIRY;
@@ -3137,7 +3076,6 @@ res.json({
   ok: true,
   message: 'New verification code sent'
 });
-```
 
 } catch (error) {
 console.error('Resend verification error:', error);
@@ -3169,7 +3107,6 @@ if (!db || !USERS_COL) {
 return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
-```
 const { email } = req.body;
 if (!email) {
   return res.status(400).json({ ok: false, error: 'Email required' });
@@ -3192,7 +3129,6 @@ const authData = authDoc.data();
 if (authData.emailVerified === true) {
   return res.json({ ok: true, alreadyVerified: true, message: 'Email already verified' });
 }
-```
 
 // Check rate limit - 5 minutes between verification emails
 const lastSent = verificationEmailsSent.get(emailLower);
@@ -3208,7 +3144,6 @@ retryAfter: waitSeconds
 });
 }
 
-```
 // Generate 6-digit verification code
 const code = Math.floor(100000 + Math.random() * 900000).toString();
 const expiresAt = Date.now() + VERIFICATION_CODE_EXPIRY;
@@ -3251,17 +3186,14 @@ try {
   console.error('[VERIFY] Email send error:', emailError);
   console.log(`[VERIFY] Fallback - Code for ${emailLower}: ${code}`);
 }
-```
 
 console.log(`[VERIFY] Sent verification email to existing user ${emailLower}`);
 verificationEmailsSent.set(emailLower, Date.now()); // Track when email was sent
 
-```
 res.json({
   ok: true,
   message: 'Verification code sent to your email'
 });
-```
 
 } catch (error) {
 console.error('Send verification error:', error);
@@ -3276,7 +3208,6 @@ if (!db || !USERS_COL) {
 return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
-```
 const { email, code } = req.body;
 if (!email || !code) {
   return res.status(400).json({ ok: false, error: 'Email and code required' });
@@ -3329,7 +3260,6 @@ res.json({
   token,
   message: 'Email verified successfully! You can now earn tokens.'
 });
-```
 
 } catch (error) {
 console.error('Verify existing error:', error);
@@ -3344,7 +3274,6 @@ if (!db || !USERS_COL) {
 return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
-```
 const { userId, email } = req.user;
 
 const userDoc = await USERS_COL.doc(userId).get();
@@ -3360,7 +3289,6 @@ res.json({
   emailVerified: userData.emailVerified === true,
   verifiedAt: userData.verifiedAt || null
 });
-```
 
 } catch (error) {
 console.error('Verification status error:', error);
@@ -3390,7 +3318,6 @@ if (!isValid) {
 return res.status(401).json({ ok: false, error: 'Invalid email or password' });
 }
 
-```
 // SERVER-ONLY FIX: Link deviceUserId to this account if provided
 if (deviceUserId && deviceUserId !== authData.userId) {
   // Store device mapping so track-usage can find the right account
@@ -3419,7 +3346,6 @@ res.json({
     emailVerified: isVerified
   }
 });
-```
 
 } catch (error) {
 console.error('Login error:', error);
@@ -3498,7 +3424,6 @@ if (!db) {
 return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
-```
 const { email } = req.body;
 if (!email) {
   return res.status(400).json({ ok: false, error: 'Email required' });
@@ -3564,7 +3489,6 @@ res.json({
   // ONLY FOR DEVELOPMENT - remove in production
   devCode: process.env.NODE_ENV === 'development' ? code : undefined
 });
-```
 
 } catch (error) {
 console.error('Request reset error:', error);
@@ -3580,7 +3504,6 @@ if (!email || !code) {
 return res.status(400).json({ ok: false, error: 'Email and code required' });
 }
 
-```
 const emailLower = email.toLowerCase().trim();
 const resetData = resetCodes.get(emailLower);
 
@@ -3609,7 +3532,6 @@ res.json({
   resetToken,
   message: 'Code verified. You can now reset your password.'
 });
-```
 
 } catch (error) {
 console.error('Verify code error:', error);
@@ -3624,7 +3546,6 @@ if (!db || !USERS_COL) {
 return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
-```
 const { resetToken, newPassword } = req.body;
 if (!resetToken || !newPassword) {
   return res.status(400).json({ ok: false, error: 'Reset token and new password required' });
@@ -3674,7 +3595,6 @@ res.json({
   ok: true,
   message: 'Password reset successfully. You can now login.'
 });
-```
 
 } catch (error) {
 console.error('Reset password error:', error);
@@ -3690,7 +3610,6 @@ return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 const { userId } = req.user;
 
-```
 // Check cache first
 const cached = DASHBOARD_CACHE.get(userId);
 if (cached && Date.now() - cached.ts < DASHBOARD_CACHE_TTL) {
@@ -3799,13 +3718,12 @@ console.log(`[CACHE] 📊 Dashboard cached for ${userId} (${invitees.length} inv
 
 // Send response ONCE
 res.json(responseData);
-```
 
 } catch (error) {
 console.error('Dashboard error:', error);
 if (error.message?.includes('RESOURCE_EXHAUSTED')) {
 const cached = DASHBOARD_CACHE.get(req.user?.userId);
-if (cached) return res.json({ …cached.data, _stale: true });
+if (cached) return res.json({ ...cached.data, _stale: true });
 return res.status(503).json({ ok: false, error: 'Service temporarily busy' });
 }
 res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
@@ -3872,7 +3790,6 @@ return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 const { userId } = req.user;
 const { inviteCode } = req.body;
 
-```
 if (!inviteCode) {
   return res.status(400).json({ ok: false, error: 'Invite code required' });
 }
@@ -3945,7 +3862,6 @@ res.json({
   message: 'Invite code linked successfully!',
   inviteCode: trimmedCode
 });
-```
 
 } catch (error) {
 console.error('Link invite code error:', error);
@@ -4015,7 +3931,6 @@ if (adminSecret !== process.env.ADMIN_SECRET) {
 return res.status(403).json({ ok: false, error: 'Forbidden' });
 }
 
-```
 if (!db || !USERS_COL) {
   return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
@@ -4158,7 +4073,6 @@ res.json({
   count: users.length,
   users
 });
-```
 
 } catch (error) {
 console.error('Admin users error:', error);
@@ -4175,7 +4089,6 @@ if (adminSecret !== process.env.ADMIN_SECRET) {
 return res.status(403).json({ error: 'Forbidden' });
 }
 
-```
 if (!db) {
   return res.status(500).json({ error: 'Firestore not configured' });
 }
@@ -4238,7 +4151,6 @@ res.json({
   totalAuthRecords: authUsers.length,
   users: fullData
 });
-```
 
 } catch (error) {
 console.error('Check registered error:', error);
@@ -4254,7 +4166,6 @@ if (adminSecret !== process.env.ADMIN_SECRET) {
 return res.status(403).json({ error: 'Forbidden' });
 }
 
-```
 if (!db || !USERS_COL) {
   return res.status(500).json({ error: 'Firestore not configured' });
 }
@@ -4300,7 +4211,6 @@ res.json({
   synced,
   errors: errors.length > 0 ? errors : undefined
 });
-```
 
 } catch (error) {
 console.error('Sync emails error:', error);
@@ -4492,7 +4402,6 @@ res.send(`
       <p style="color: #666; margin-top: 10px;">User management and rewards tracking</p>
     </div>
 
-```
 <div class="stats" id="stats">
   <div class="stat-card">
     <div class="stat-label">Total Users</div>
@@ -4557,7 +4466,6 @@ res.send(`
     <tbody id="usersBody"></tbody>
   </table>
 </div>
-```
 
   </div>
 
@@ -4800,11 +4708,11 @@ const RUN_FIRST_INGEST = process.env.RUN_FIRST_INGEST === "true";
 (async () => {
 try {
 if (RUN_FIRST_INGEST) {
-console.log("Scheduling first ingest in background…");
+console.log("Scheduling first ingest in background...");
 // run AFTER startup, and don't block boot
 setTimeout(() => {
 console.time("first-ingest");
-console.log("Background first ingest…");
+console.log("Background first ingest...");
 ingestOnce()
 .then(() => console.timeEnd("first-ingest"))
 .catch((e) =>
@@ -4815,12 +4723,11 @@ console.error("First ingest failed:", e?.message || e)
 console.log("Skipping first ingest at startup (RUN_FIRST_INGEST != 'true').");
 }
 
-```
 console.log(`Auto-ingest interval set to ${INGEST_MINUTES} minute(s).`);
 if (INGEST_MINUTES > 0) {
   setInterval(() => {
     console.time("auto-ingest");
-    console.log("Auto-ingest tick…");
+    console.log("Auto-ingest tick...");
     ingestOnce()
       .then(() => console.timeEnd("auto-ingest"))
       .catch((err) =>
@@ -4828,7 +4735,6 @@ if (INGEST_MINUTES > 0) {
       );
   }, INGEST_MINUTES * 60 * 1000);
 }
-```
 
 } catch (e) {
 console.error("Ingest scheduler init failed:", e?.message || e);
