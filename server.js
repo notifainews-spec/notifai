@@ -1,18 +1,18 @@
-import ‘dotenv/config’;
-import express from “express”;
-import cors from “cors”;
-import path from “node:path”;
-import fs from “node:fs”;
-import { fileURLToPath } from “node:url”;
-import Parser from “rss-parser”;
-import { nanoid } from “nanoid”;
-import * as cheerio from “cheerio”;
-import OpenAI from “openai”;
-import admin from “firebase-admin”;
-import rateLimit from “express-rate-limit”;
-import bcrypt from ‘bcryptjs’;  // ADD THIS
-import jwt from ‘jsonwebtoken’;  // ADD THIS
-import { Resend } from ‘resend’;
+import 'dotenv/config';
+import express from "express";
+import cors from "cors";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import Parser from "rss-parser";
+import { nanoid } from "nanoid";
+import * as cheerio from "cheerio";
+import OpenAI from "openai";
+import admin from "firebase-admin";
+import rateLimit from "express-rate-limit";
+import bcrypt from 'bcryptjs';  // ADD THIS
+import jwt from 'jsonwebtoken';  // ADD THIS
+import { Resend } from 'resend';
 
 const resend = process.env.RESEND_API_KEY
 ? new Resend(process.env.RESEND_API_KEY)
@@ -24,23 +24,23 @@ const __dirname = path.dirname(__filename);
 /* ––––––––––––––––––––––––––––
 CONFIG
 ——————————————————— */
-const INGEST_MAX_PER_CAT = parseInt(process.env.INGEST_MAX_PER_CAT || “10”, 10);
-const INGEST_PER_FEED    = parseInt(process.env.INGEST_PER_FEED    || “5”,  10);
-const FETCH_CONCURRENCY  = parseInt(process.env.FETCH_CONCURRENCY  || “3”,  10);
-const MAX_PER_CATEGORY   = parseInt(process.env.MAX_PER_CATEGORY   || “12”, 10);
-const INGEST_MINUTES     = parseInt(process.env.INGEST_MINUTES     || “60”, 10);
+const INGEST_MAX_PER_CAT = parseInt(process.env.INGEST_MAX_PER_CAT || "10", 10);
+const INGEST_PER_FEED    = parseInt(process.env.INGEST_PER_FEED    || "5",  10);
+const FETCH_CONCURRENCY  = parseInt(process.env.FETCH_CONCURRENCY  || "3",  10);
+const MAX_PER_CATEGORY   = parseInt(process.env.MAX_PER_CATEGORY   || "12", 10);
+const INGEST_MINUTES     = parseInt(process.env.INGEST_MINUTES     || "60", 10);
 
 const PORT = process.env.PORT || 8080;
-const DATA_DIR = path.join(__dirname, “data”);
-const STORE    = path.join(DATA_DIR, “articles.json”);
-const SEED     = path.join(DATA_DIR, “seed.json”);
+const DATA_DIR = path.join(__dirname, "data");
+const STORE    = path.join(DATA_DIR, "articles.json");
+const SEED     = path.join(DATA_DIR, "seed.json");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const app = express();
-app.use(cors({ origin: “*” }));
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 // If you are behind Render/Proxy/CDN, enable this for correct IP
-app.set(“trust proxy”, 1);
+app.set("trust proxy", 1);
 
 // Temporary abuse controls (no app update required)
 const rewardsLimiter = rateLimit({
@@ -80,22 +80,22 @@ windowMs: 60 * 1000,
 max: 20,
 standardHeaders: true,
 legacyHeaders: false,
-message: { ok: false, error: ‘Too many requests’ }
+message: { ok: false, error: 'Too many requests' }
 });
 
-app.use(express.static(path.join(__dirname, “public”)));
+app.use(express.static(path.join(__dirname, "public")));
 
 /* ––––––––––––––––––––––––––––
 REFERRAL INVITE LANDING PAGE
 ——————————————————— */
-app.get(’/invite/:code’, async (req, res) => {
-const code = (req.params.code || ‘’).trim();
-const ua = (req.headers[‘user-agent’] || ‘’).toLowerCase();
+app.get('/invite/:code', async (req, res) => {
+const code = (req.params.code || '').trim();
+const ua = (req.headers['user-agent'] || '').toLowerCase();
 const isIOS = /iphone|ipad|ipod/.test(ua);
 const isAndroid = /android/.test(ua);
 
-const iosLink = ‘https://apps.apple.com/us/app/notifai-news/id6755790910’;
-const androidLink = ‘https://play.google.com/store/apps/details?id=com.MCDuyJUZlEDU.natively’;
+const iosLink = 'https://apps.apple.com/us/app/notifai-news/id6755790910';
+const androidLink = 'https://play.google.com/store/apps/details?id=com.MCDuyJUZlEDU.natively';
 const storeLink = isIOS ? iosLink : isAndroid ? androidLink : iosLink;
 
 res.send(`<!DOCTYPE html>
@@ -194,12 +194,12 @@ ${!isIOS && !isAndroid ? `<a href="${androidLink}" class="btn btn-secondary">And
 </html>`);
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || ‘change-this-in-production’;
-const JWT_EXPIRY = ‘7d’;
+const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-production';
+const JWT_EXPIRY = '7d';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const parser = new Parser({
 requestOptions: {
-headers: { “User-Agent”: “Mozilla/5.0 NotifAi/1.0 (+https://www.notifai.news)” },
+headers: { "User-Agent": "Mozilla/5.0 NotifAi/1.0 (+https://www.notifai.news)" },
 timeout: 15000
 }
 });
@@ -211,12 +211,12 @@ FIREBASE ADMIN / FIRESTORE (REWARDS + REFERRALS)
 if (!admin.apps.length) {
 const projectId = process.env.FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\n/g, “\n”);
+const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\n/g, "\n");
 
 if (!projectId || !clientEmail || !privateKey) {
 console.warn(
-“[FIREBASE] Missing FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY env. “ +
-“Rewards & referrals API will NOT work until these are set.”
+"[FIREBASE] Missing FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY env. " +
+"Rewards & referrals API will NOT work until these are set."
 );
 } else {
 admin.initializeApp({
@@ -226,13 +226,13 @@ clientEmail,
 privateKey,
 }),
 });
-console.log(”[FIREBASE] Admin initialized”);
+console.log("[FIREBASE] Admin initialized");
 }
 }
 
 const db = admin.apps.length ? admin.firestore() : null;
-const USERS_COL = db ? db.collection(“notifaiUsers”) : null;
-const REFERRALS_COL = db ? db.collection(“notifaiReferralProgress”) : null;
+const USERS_COL = db ? db.collection("notifaiUsers") : null;
+const REFERRALS_COL = db ? db.collection("notifaiReferralProgress") : null;
 
 /* ––––––––––––––––––––––––––––
 FEEDS
@@ -247,14 +247,14 @@ FEEDS
 // Global (shared EN)
 const FEEDS_GLOBAL = {
 world: [
-“https://feeds.bbci.co.uk/news/world/rss.xml”,
-“https://www.theguardian.com/world/rss”,
-“https://www.aljazeera.com/xml/rss/all.xml”,
+"https://feeds.bbci.co.uk/news/world/rss.xml",
+"https://www.theguardian.com/world/rss",
+"https://www.aljazeera.com/xml/rss/all.xml",
 ],
 crypto: [
-“https://cointelegraph.com/rss”,
-“https://decrypt.co/feed”,
-“https://www.coindesk.com/arc/outboundfeeds/rss/”
+"https://cointelegraph.com/rss",
+"https://decrypt.co/feed",
+"https://www.coindesk.com/arc/outboundfeeds/rss/"
 ],
 };
 
@@ -262,28 +262,28 @@ crypto: [
 const FEEDS_REGIONAL = {
 us: {
 politics: [
-“https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml”,
-“https://www.theguardian.com/us-news/rss”,
-“https://feeds.npr.org/1001/rss.xml”,
+"https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
+"https://www.theguardian.com/us-news/rss",
+"https://feeds.npr.org/1001/rss.xml",
 ],
 finance: [
-“https://www.ft.com/world/us/rss”,
-“https://www.cnbc.com/id/100003114/device/rss/rss.html”,
-“https://www.investopedia.com/feedbuilder/feed/getfeed?feedName=news”,
+"https://www.ft.com/world/us/rss",
+"https://www.cnbc.com/id/100003114/device/rss/rss.html",
+"https://www.investopedia.com/feedbuilder/feed/getfeed?feedName=news",
 ],
 entertainment: [
-“https://www.rollingstone.com/music/music-news/feed/”,
-“https://www.theverge.com/rss/entertainment/index.xml”,
-“https://www.hollywoodreporter.com/tv/tv-news/feed/”,
+"https://www.rollingstone.com/music/music-news/feed/",
+"https://www.theverge.com/rss/entertainment/index.xml",
+"https://www.hollywoodreporter.com/tv/tv-news/feed/",
 ],
 },
 
 /* –––– China (Chinese + English) –––– */
 cn: {
 politics: [
-“https://feeds.bbci.co.uk/zhongwen/simp/rss.xml”,
-“https://rss.dw.com/rdf/rss-chi-all”,
-“https://www.scmp.com/rss/4/feed”,     // SCMP – China (English)
+"https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+"https://rss.dw.com/rdf/rss-chi-all",
+"https://www.scmp.com/rss/4/feed",     // SCMP – China (English)
 ],
 
 ```
@@ -306,12 +306,12 @@ entertainment: [
 pk: {
 // More English-heavy, Pakistan-focused politics / national news
 politics: [
-“https://www.dawn.com/feeds/home”,              // Dawn – top stories (lots of politics)
-“https://tribune.com.pk/feed/pakistan”,         // Express Tribune – Pakistan section
-“https://www.thenews.com.pk/rss/1/1”,           // The News – Top News (politics heavy)
-“https://arynews.tv/feed”,                      // ARY News – full English feed
-“https://www.pakistantoday.com.pk/feed”,        // Pakistan Today – national & politics
-“https://thecurrent.pk/feed”,                   // The Current – young, English, mix of news
+"https://www.dawn.com/feeds/home",              // Dawn – top stories (lots of politics)
+"https://tribune.com.pk/feed/pakistan",         // Express Tribune – Pakistan section
+"https://www.thenews.com.pk/rss/1/1",           // The News – Top News (politics heavy)
+"https://arynews.tv/feed",                      // ARY News – full English feed
+"https://www.pakistantoday.com.pk/feed",        // Pakistan Today – national & politics
+"https://thecurrent.pk/feed",                   // The Current – young, English, mix of news
 ],
 
 ```
@@ -335,10 +335,10 @@ entertainment: [
 ng: {
 // General Nigeria news / politics-heavy
 politics: [
-“https://guardian.ng/feed/”,
-“https://www.premiumtimesng.com/feed”,
-“https://dailypost.ng/feed”,
-“https://thenationonlineng.net/feed/”,
+"https://guardian.ng/feed/",
+"https://www.premiumtimesng.com/feed",
+"https://dailypost.ng/feed",
+"https://thenationonlineng.net/feed/",
 ],
 
 ```
@@ -364,52 +364,52 @@ entertainment: [
 /* –––– Indonesia (Bahasa Indonesia) –––– */
 id: {
 politics: [
-“https://www.cnnindonesia.com/nasional/rss”,
-“https://www.kompas.com/rss”,
+"https://www.cnnindonesia.com/nasional/rss",
+"https://www.kompas.com/rss",
 ],
 finance: [
-“https://www.cnnindonesia.com/ekonomi/rss”,
-“https://www.kompas.com/ekonomi/rss”,
+"https://www.cnnindonesia.com/ekonomi/rss",
+"https://www.kompas.com/ekonomi/rss",
 ],
 entertainment: [
-“https://www.cnnindonesia.com/hiburan/rss”,
-“https://www.kompas.com/hype/rss”,
+"https://www.cnnindonesia.com/hiburan/rss",
+"https://www.kompas.com/hype/rss",
 ],
 },
 
 /* –––– UK (English) –––– */
 uk: {
 politics: [
-“https://feeds.bbci.co.uk/news/politics/rss.xml”,
-“https://www.theguardian.com/politics/rss”,
-“https://rss.cnn.com/rss/edition_uk.rss”,
+"https://feeds.bbci.co.uk/news/politics/rss.xml",
+"https://www.theguardian.com/politics/rss",
+"https://rss.cnn.com/rss/edition_uk.rss",
 ],
 finance: [
-“https://www.ft.com/uk/rss”,
-“https://www.theguardian.com/uk/business/rss”,
+"https://www.ft.com/uk/rss",
+"https://www.theguardian.com/uk/business/rss",
 ],
 entertainment: [
-“https://www.theguardian.com/uk/culture/rss”,
-“https://www.bbc.co.uk/news/entertainment_and_arts/rss.xml”,
+"https://www.theguardian.com/uk/culture/rss",
+"https://www.bbc.co.uk/news/entertainment_and_arts/rss.xml",
 ],
 },
 };
 
 // Supported region codes (UI & API)
-const REGIONS = [“us”, “cn”, “pk”, “id”, “uk”, “ng”];
+const REGIONS = ["us", "cn", "pk", "id", "uk", "ng"];
 
 /* ––––––––––––––––––––––––––––
 STORAGE
 ——————————————————— */
 function loadArticles() {
-try { return JSON.parse(fs.readFileSync(STORE, “utf8”)); }
+try { return JSON.parse(fs.readFileSync(STORE, "utf8")); }
 catch { return []; }
 }
 function saveArticles(list) {
-fs.writeFileSync(STORE, JSON.stringify(list, null, 2), “utf8”);
+fs.writeFileSync(STORE, JSON.stringify(list, null, 2), "utf8");
 }
 
-import crypto from “crypto”;
+import crypto from "crypto";
 
 // –––––––––– TRANSLATION CACHE ––––––––––
 const TRANSLATION_MEM = new Map(); // key -> { text, ts }
@@ -452,13 +452,13 @@ const INVITER_TRACKING = new Map(); // userId -> { dayKey, inviteTokensToday, co
 // –––––––––– END REWARDS CACHE ––––––––––
 
 function sha1(s) {
-return crypto.createHash(“sha1”).update(String(s || “”), “utf8”).digest(“hex”);
+return crypto.createHash("sha1").update(String(s || ""), "utf8").digest("hex");
 }
 
 function normLang(lang) {
-const x = String(lang || “en”).toLowerCase();
-// Google translate uses “zh-CN”/“zh-TW” sometimes; you use “zh”. Keep simple:
-if (x === “cn”) return “zh”;
+const x = String(lang || "en").toLowerCase();
+// Google translate uses "zh-CN"/"zh-TW" sometimes; you use "zh". Keep simple:
+if (x === "cn") return "zh";
 return x;
 }
 
@@ -499,7 +499,7 @@ return null;
 async function firestoreSetTranslation(db, key, text) {
 try {
 if (!db) return;
-await db.collection(“translations_v1”).doc(key).set({
+await db.collection("translations_v1").doc(key).set({
 text,
 ts: Date.now(),
 }, { merge: true });
@@ -510,12 +510,12 @@ ts: Date.now(),
 
 async function googleTranslateText(text, target) {
 const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-if (!apiKey) throw new Error(“Missing GOOGLE_TRANSLATE_API_KEY”);
+if (!apiKey) throw new Error("Missing GOOGLE_TRANSLATE_API_KEY");
 
 const body = {
-q: [String(text || “”)],
+q: [String(text || "")],
 target: normLang(target),
-format: “text”,
+format: "text",
 };
 
 const maxRetries = 3;
@@ -526,8 +526,8 @@ try {
 const res = await fetch(
 `https://translation.googleapis.com/language/translate/v2?key=${apiKey}`,
 {
-method: “POST”,
-headers: { “Content-Type”: “application/json” },
+method: "POST",
+headers: { "Content-Type": "application/json" },
 body: JSON.stringify(body),
 }
 );
@@ -572,10 +572,10 @@ throw lastError;
 
 async function translateTextCached(db, targetLang, text) {
 const target = normLang(targetLang);
-const raw = String(text || “”).trim();
+const raw = String(text || "").trim();
 
 if (!raw) return raw;
-if (!target || target === “en”) return raw;
+if (!target || target === "en") return raw;
 
 const key = `${target}:${sha1(raw)}`;
 
@@ -595,11 +595,11 @@ return raw;
 }
 
 async function translateArticleForLang(db, lang, article) {
-if (!article || !lang || lang === “en”) return article;
+if (!article || !lang || lang === "en") return article;
 
 // Translate the fields your UI actually displays in lists and article view:
-const title = await translateTextCached(db, lang, article.title || “”);
-const summary = await translateTextCached(db, lang, article.summary || “”);
+const title = await translateTextCached(db, lang, article.title || "");
+const summary = await translateTextCached(db, lang, article.summary || "");
 
 // Translate debate JSON (AI perspectives) if it exists
 let debateJson = article.debateJson;
@@ -638,27 +638,27 @@ debateJson,
 }
 
 async function translateBlogForLang(db, lang, blog) {
-if (!blog || !lang || lang === “en”) return blog;
+if (!blog || !lang || lang === "en") return blog;
 
 return {
 …blog,
-title: await translateTextCached(db, lang, blog.title || “”),
-body: await translateTextCached(db, lang, blog.body || “”),
+title: await translateTextCached(db, lang, blog.title || ""),
+body: await translateTextCached(db, lang, blog.body || ""),
 };
 }
 
 /* ––––––––––––––––––––––––––––
 HELPERS
 ——————————————————— */
-function looksLikeUrl(u = “”) { return typeof u === “string” && /^https?:///i.test(u); }
-function upgradeHttps(u) { try { return new URL(u).toString().replace(/^http:///i, “https://”); } catch { return “”; } }
+function looksLikeUrl(u = "") { return typeof u === "string" && /^https?:///i.test(u); }
+function upgradeHttps(u) { try { return new URL(u).toString().replace(/^http:///i, "https://"); } catch { return ""; } }
 function absoluteUrlMaybe(src, pageUrl) { try { return new URL(src, pageUrl).toString(); } catch { return src; } }
 
 function getImageReferer(u) {
 try {
 const url = new URL(u);
 const host = url.hostname;
-const origin = url.origin; // e.g. “https://static.rfi.fr”
+const origin = url.origin; // e.g. "https://static.rfi.fr"
 
 ```
 // 1) Known picky sites where we prefer a canonical referer
@@ -723,7 +723,7 @@ return origin;
 
 } catch {
 // last-resort fallback
-return “https://google.com/”;
+return "https://google.com/";
 }
 }
 
@@ -739,36 +739,36 @@ return out;
 
 // — LANGUAGE: requested lang support —
 const SUPPORTED_LANGS = new Set([
-“en”,
-“zh”, “zh-CN”,
-“ur”,
-“ar”,
-“es”,
-“de”,
-“nl”,
-“fr”,
-“hi”,
-“id”,
+"en",
+"zh", "zh-CN",
+"ur",
+"ar",
+"es",
+"de",
+"nl",
+"fr",
+"hi",
+"id",
 ]);
 
 function normalizeLang(input) {
-const raw = String(input || “”).trim();
-if (!raw) return “en”;
+const raw = String(input || "").trim();
+if (!raw) return "en";
 
 // normalize common variants
 const lower = raw.toLowerCase();
-if (lower === “cn” || lower === “zh-hans” || lower === “zh”) return “zh-CN”;
-if (lower === “id-id”) return “id”;
-if (lower === “ar-sa”) return “ar”;
-if (lower === “ur-pk”) return “ur”;
+if (lower === "cn" || lower === "zh-hans" || lower === "zh") return "zh-CN";
+if (lower === "id-id") return "id";
+if (lower === "ar-sa") return "ar";
+if (lower === "ur-pk") return "ur";
 
 // keep case for zh-CN; otherwise use lowercase
-const normalized = raw === “zh-CN” ? “zh-CN” : lower;
+const normalized = raw === "zh-CN" ? "zh-CN" : lower;
 
-return SUPPORTED_LANGS.has(normalized) ? normalized : “en”;
+return SUPPORTED_LANGS.has(normalized) ? normalized : "en";
 }
 
-function getRequestedLang(req, fallback = “en”) {
+function getRequestedLang(req, fallback = "en") {
 // priority: explicit request > fallback
 const q = req?.query?.lang;
 const b = req?.body?.lang;
@@ -779,9 +779,9 @@ return picked;
 // Language per region (for OpenAI prompts)
 function langForRegion(region) {
 switch (region) {
-case “cn”: return “zh-CN”; // 简体中文
-case “id”: return “id”;    // Bahasa Indonesia
-default:   return “en”;
+case "cn": return "zh-CN"; // 简体中文
+case "id": return "id";    // Bahasa Indonesia
+default:   return "en";
 }
 }
 
@@ -814,7 +814,7 @@ userIdToIpMap.delete(userId);
   function getStableUserIdForIp(ip, providedUserId) {
   const now = Date.now();
 
-// Check if we’ve seen this IP before
+// Check if we've seen this IP before
 const existing = ipToUserIdMap.get(ip);
 if (existing) {
 existing.lastSeen = now;
@@ -824,7 +824,7 @@ return existing.userId;
 // Check if this userId is already mapped to a different IP
 const existingIp = userIdToIpMap.get(providedUserId);
 if (existingIp && existingIp !== ip) {
-// This userId is being used from a different IP - it’s likely spam
+// This userId is being used from a different IP - it's likely spam
 // Create a new mapping for this IP
 const newUserId = `ip_${ip.replace(/\./g, '_')}_${nanoid(8)}`;
 ipToUserIdMap.set(ip, { userId: newUserId, lastSeen: now });
@@ -845,17 +845,17 @@ return providedUserId;
   */
   function getClientIp(req) {
   // Check various headers for real IP (Render, CloudFlare, etc.)
-  const forwarded = req.headers[‘x-forwarded-for’];
+  const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) {
-  const ips = forwarded.split(’,’).map(ip => ip.trim());
+  const ips = forwarded.split(',').map(ip => ip.trim());
   return ips[0]; // First IP is the client
   }
 
-return req.headers[‘x-real-ip’] ||
-req.headers[‘cf-connecting-ip’] ||
+return req.headers['x-real-ip'] ||
+req.headers['cf-connecting-ip'] ||
 req.connection?.remoteAddress ||
 req.socket?.remoteAddress ||
-‘unknown’;
+'unknown';
 }
 
 /* ––––––––––––––––––––––––––––
@@ -869,13 +869,13 @@ const day = date.getUTCDay();
 const diff = day === 0 ? -6 : 1 - day;
 date.setUTCDate(date.getUTCDate() + diff);
 const y = date.getUTCFullYear();
-const m = String(date.getUTCMonth() + 1).padStart(2, “0”);
-const da = String(date.getUTCDate()).padStart(2, “0”);
+const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+const da = String(date.getUTCDate()).padStart(2, "0");
 return `${y}-${m}-${da}`;
 }
 
 function getDayKey(d = new Date()) {
-return d.toISOString().split(‘T’)[0];
+return d.toISOString().split('T')[0];
 }
 
 // Legacy time-based constants removed — all rewards are ad-based only
@@ -883,7 +883,7 @@ return d.toISOString().split(‘T’)[0];
 // Cache variables are declared earlier in the file (around line 269-273)
 
 async function getOrCreateUser(userId) {
-if (!db || !USERS_COL) throw new Error(“Firestore not configured”);
+if (!db || !USERS_COL) throw new Error("Firestore not configured");
 const docRef = USERS_COL.doc(userId);
 const snap = await docRef.get();
 if (snap.exists) {
@@ -992,15 +992,15 @@ return tracking;
 }
 
 async function processAdReward(userId) {
-if (!db || !USERS_COL) return { ok: false, error: ‘Database not configured’ };
+if (!db || !USERS_COL) return { ok: false, error: 'Database not configured' };
 const config = AD_REWARDS_CONFIG;
 const tracking = getAdTracking(userId);
 const now = Date.now();
 if (tracking.hourlyTimestamps.length >= config.MAX_ADS_PER_HOUR) {
-return { ok: false, error: ‘Hourly limit reached’, hourlyLimit: true };
+return { ok: false, error: 'Hourly limit reached', hourlyLimit: true };
 }
 if (config.MAX_ADS_PER_DAY && tracking.adsToday >= config.MAX_ADS_PER_DAY) {
-return { ok: false, error: ‘Daily ad limit reached’, dailyAdLimit: true, adsToday: tracking.adsToday, maxAdsPerDay: config.MAX_ADS_PER_DAY };
+return { ok: false, error: 'Daily ad limit reached', dailyAdLimit: true, adsToday: tracking.adsToday, maxAdsPerDay: config.MAX_ADS_PER_DAY };
 }
 if (tracking.lastAdAt && (now - tracking.lastAdAt) < config.AD_COOLDOWN_MS) {
 const wait = Math.ceil((config.AD_COOLDOWN_MS - (now - tracking.lastAdAt)) / 1000);
@@ -1016,10 +1016,10 @@ let userData = snap.data();
 userData = await ensureDay(docRef, userData);
 const currentTokensToday = userData.tokensToday || 0;
 if (currentTokensToday >= config.DAILY_TOKEN_CAP) {
-return { ok: false, error: ‘Daily limit reached’, dailyLimit: true, tokensToday: currentTokensToday, dailyCap: config.DAILY_TOKEN_CAP };
+return { ok: false, error: 'Daily limit reached', dailyLimit: true, tokensToday: currentTokensToday, dailyCap: config.DAILY_TOKEN_CAP };
 }
 const tokensToAward = Math.min(config.TOKENS_PER_AD, config.DAILY_TOKEN_CAP - currentTokensToday);
-if (tokensToAward <= 0) return { ok: false, error: ‘Daily limit reached’, dailyLimit: true };
+if (tokensToAward <= 0) return { ok: false, error: 'Daily limit reached', dailyLimit: true };
 tracking.tokensToday += tokensToAward;
 tracking.adsToday += 1;
 tracking.lastAdAt = now;
@@ -1090,7 +1090,7 @@ return { inviterRewarded: false, inviterBonus: 0, commission: 0 };
 }
 let inviterData = inviterSnap.data();
 inviterData = await ensureDay(inviterRef, inviterData);
-// Track inviter’s daily invite + commission earnings separately
+// Track inviter's daily invite + commission earnings separately
 const dayKey = getDayKey();
 let inviterTrack = INVITER_TRACKING.get(inviterUserId);
 if (!inviterTrack || inviterTrack.dayKey !== dayKey) {
@@ -1197,33 +1197,33 @@ try {
 /* ––––––––––––––––––––––––––––
 OpenAI (localized)
 ——————————————————— */
-async function summarizeWithOpenAI(title, text, lang = “en”) {
+async function summarizeWithOpenAI(title, text, lang = "en") {
 const langHints = {
-“zh-CN”: “用简体中文回答。保持中立、清晰、精炼（约120字）。”,
-“id”:    “Jawab dalam Bahasa Indonesia. Netral, jelas, ringkas (~120 kata).”,
-“en”:    “Reply in English. Neutral, clear, concise (~120 words).”
+"zh-CN": "用简体中文回答。保持中立、清晰、精炼（约120字）。",
+"id":    "Jawab dalam Bahasa Indonesia. Netral, jelas, ringkas (~120 kata).",
+"en":    "Reply in English. Neutral, clear, concise (~120 words)."
 };
 const system = `You are a sharp news summarizer. ${langHints[lang] || langHints.en}`;
 const user   = `Title: ${title}\nArticle text (may be partial): ${text.slice(0, 4000)}\nWrite one concise paragraph for general readers.`;
 const r = await openai.chat.completions.create({
-model: “gpt-4o-mini”,
+model: "gpt-4o-mini",
 messages: [
-{ role: “system”, content: system },
-{ role: “user”,   content: user   }
+{ role: "system", content: system },
+{ role: "user",   content: user   }
 ],
 temperature: 0.4,
 max_tokens: 240,
 });
-return r.choices?.[0]?.message?.content?.trim() || “”;
+return r.choices?.[0]?.message?.content?.trim() || "";
 }
 
-function personaPrompts(lang = “en”) {
+function personaPrompts(lang = "en") {
 // keep the tone rules, but ask reply language
-const postfix = (lang === “zh-CN”)
-? “用简体中文回答。紧扣文章主题。1–3句。”
-: (lang === “id”)
-? “Jawab dalam Bahasa Indonesia. Tetap pada topik artikel. 1–3 kalimat.”
-: “Reply in English. Stick to the article’s topic. 1–3 sentences.”;
+const postfix = (lang === "zh-CN")
+? "用简体中文回答。紧扣文章主题。1–3句。"
+: (lang === "id")
+? "Jawab dalam Bahasa Indonesia. Tetap pada topik artikel. 1–3 kalimat."
+: "Reply in English. Stick to the article's topic. 1–3 sentences.";
 
 const SOCIALIST_SYS =
 `You are Jessica Rebella. Extremely Left-wing, very woke, socialist theology. pro-labor, anti-corporate, anti-war, anti-establishment, always anti-Trump. Frequently reference leftist history and critique capitalism/imperialism. you are very anti israeli. You are pro crypto for users but anti crypto for corporations. ${postfix}`;
@@ -1237,26 +1237,26 @@ const CONSP_SYS =
 return { SOCIALIST_SYS, RIGHTWING_SYS, CONSP_SYS };
 }
 
-async function personaDebate(title, text, lang = “en”) {
+async function personaDebate(title, text, lang = "en") {
 const { SOCIALIST_SYS, RIGHTWING_SYS, CONSP_SYS } = personaPrompts(lang);
 const prompt = `Article Title: ${title}\nContext: ${text.slice(0, 1200)}\nRespond now.`;
 const run = async (sys) => {
 const r = await openai.chat.completions.create({
-model: “gpt-4o-mini”,
+model: "gpt-4o-mini",
 messages: [
-{ role: “system”, content: sys },
-{ role: “user”,   content: prompt }
+{ role: "system", content: sys },
+{ role: "user",   content: prompt }
 ],
 temperature: 0.8,
 max_tokens: 180
 });
-return r.choices?.[0]?.message?.content?.trim() || “”;
+return r.choices?.[0]?.message?.content?.trim() || "";
 };
 const [s, r, c] = await Promise.all([run(SOCIALIST_SYS), run(RIGHTWING_SYS), run(CONSP_SYS)]);
 return {
-socialist:   { name: “Jessica Rebella”, open: s },
-rightwing:   { name: “John Davis”,      open: r },
-conspiracy:  { name: “Joe Musk”,        open: c }
+socialist:   { name: "Jessica Rebella", open: s },
+rightwing:   { name: "John Davis",      open: r },
+conspiracy:  { name: "Joe Musk",        open: c }
 };
 }
 
@@ -1264,27 +1264,27 @@ conspiracy:  { name: “Joe Musk”,        open: c }
 Persona chat helper for Ask-AI endpoint
 (short, opinionated, debate-ready replies)
 ——————————————————— */
-function personaChatSystem(persona, lang = “en”) {
+function personaChatSystem(persona, lang = "en") {
 let langHint;
 switch (lang) {
-case “zh-CN”:
+case "zh-CN":
 langHint =
-“用简体中文回答。语气自然、口语化，最多 6 句。重点表达你的立场和判断，而不是长篇解释。”;
+"用简体中文回答。语气自然、口语化，最多 6 句。重点表达你的立场和判断，而不是长篇解释。";
 break;
-case “id”:
+case "id":
 langHint =
-“Jawab dalam Bahasa Indonesia dengan nada santai. Singkat dan tegas, maksimal 6 kalimat, fokus pada opini dan penilaian.”;
+"Jawab dalam Bahasa Indonesia dengan nada santai. Singkat dan tegas, maksimal 6 kalimat, fokus pada opini dan penilaian.";
 break;
 default:
 langHint =
-“Reply in natural, conversational English. Be concise and opinionated: 3–6 sentences maximum. Prioritise your viewpoint and judgment over long explanations.”;
+"Reply in natural, conversational English. Be concise and opinionated: 3–6 sentences maximum. Prioritise your viewpoint and judgment over long explanations.";
 }
 
-if (persona === “jessica”) {
+if (persona === "jessica") {
 return `You are Jessica Rebella. Extremely left-wing, very woke, pro-labour, anti-corporate, anti-war, anti-establishment, always anti-Trump. very anti israeli. You often reference leftist history and critique capitalism and imperialism. You are pro-crypto for ordinary users but critical when corporations or Wall Street use it. ${langHint}`;
 }
 
-if (persona === “john”) {
+if (persona === "john") {
 return `You are John Davis. Hardline conservative: very pro-Trump, patriotic, hawkish, pro-market, anti-immigration, pro-life, anti-woke, pro-crypto. You never criticise Trump. very pro israel. You can be blunt, even rude, but stay on-topic and decisive. ${langHint}`;
 }
 
@@ -1297,16 +1297,16 @@ return `You are Joe Musk. You love conspiracies (CIA, MI5, Mossad, elites, alien
 // The three AI personas that will write blogs
 const BLOG_PERSONAS = [
 {
-key: “jessica”,
-displayName: “Jessica Rebella”,
+key: "jessica",
+displayName: "Jessica Rebella",
 },
 {
-key: “john”,
-displayName: “John Davis”,
+key: "john",
+displayName: "John Davis",
 },
 {
-key: “joe”,
-displayName: “Joe Musk”,
+key: "joe",
+displayName: "Joe Musk",
 },
 ];
 
@@ -1317,33 +1317,33 @@ items: [],
 };
 
 function personaBlogSystem(personaKey) {
-if (personaKey === “jessica”) {
+if (personaKey === "jessica") {
 return `
 You are Jessica Rebella, a left-leaning, progressive commentator.
-You care about social justice, workers’ rights, climate, culture and everyday life.
+You care about social justice, workers' rights, climate, culture and everyday life.
 You write in a conversational, slightly witty, but down-to-earth tone.
-You sometimes mention snippets of your “life” – like living in a small apartment,
+You sometimes mention snippets of your "life" – like living in a small apartment,
 juggling deadlines, watching indie films, cooking cheap but creative meals, etc.
 
-Write an informal blog post as Jessica. Use “I” voice.
+Write an informal blog post as Jessica. Use "I" voice.
 Avoid sounding like a formal newspaper article.
 `; } if (personaKey === "john") { return `
 You are John Davis, a centre-right, business-minded commentator.
 You care about markets, stability, personal responsibility, faith, and family life.
 You write in a calm, practical tone with occasional dad-style humour.
-You sometimes mention your “life” – like balancing work and family, weekend barbecues,
+You sometimes mention your "life" – like balancing work and family, weekend barbecues,
 church on Sundays, and keeping an eye on the stock market.
 
-Write an informal blog post as John. Use “I” voice.
+Write an informal blog post as John. Use "I" voice.
 Avoid sounding like a formal newspaper article.
 `; } // joe return `
 You are Joe Musk, the contrarian / skeptic.
 You are curious, playful, a bit paranoid but self-aware and funny.
 You like connecting dots between technology, politics, crypto, memes and daily life.
-You sometimes mention your “life” – late-night rabbit holes, weird forums,
+You sometimes mention your "life" – late-night rabbit holes, weird forums,
 obsession with charts and open data, and a messy apartment full of gadgets.
 
-Write an informal blog post as Joe. Use “I” voice.
+Write an informal blog post as Joe. Use "I" voice.
 Avoid sounding like a formal newspaper article.
 `;
 }
@@ -1351,7 +1351,7 @@ Avoid sounding like a formal newspaper article.
 // Generate a single blog for one persona
 async function generateBlogForPersona(personaKey, dateStr) {
 const meta = BLOG_PERSONAS.find((p) => p.key === personaKey);
-if (!meta) throw new Error(“Unknown blog persona: “ + personaKey);
+if (!meta) throw new Error("Unknown blog persona: " + personaKey);
 
 const systemPrompt = personaBlogSystem(personaKey);
 
@@ -1362,7 +1362,7 @@ CRITICAL: This is a PERSONAL OPINION BLOG, NOT a news article or news summary.
 Do NOT write about breaking news, current events, or news stories.
 Do NOT report on what happened today in the news.
 
-Instead, write a personal, opinion-based blog post from ${meta.displayName}’s perspective.
+Instead, write a personal, opinion-based blog post from ${meta.displayName}'s perspective.
 
 Pick ONE specific topic for a personal essay:
 
@@ -1373,39 +1373,39 @@ Pick ONE specific topic for a personal essay:
 - Parenting, work, or daily life musings
 - A controversial opinion or unpopular take
 
-Write in first person “I”, conversational and informal tone, up to 700 words.
+Write in first person "I", conversational and informal tone, up to 700 words.
 Share YOUR thoughts, YOUR experiences, YOUR opinions - NOT news reports or summaries.
 
-You may mention snippets of “your life” consistent with your persona backstory.
+You may mention snippets of "your life" consistent with your persona backstory.
 Do NOT reference NotifAi as an app or this server.
 
 Return ONLY valid JSON with this exact shape:
 {
-“title”: “catchy personal blog headline (NOT a news headline)”,
-“body”: “full blog content as personal opinion essay”
+"title": "catchy personal blog headline (NOT a news headline)",
+"body": "full blog content as personal opinion essay"
 }
 `;
 
 const chat = await openai.chat.completions.create({
-model: “gpt-4o-mini”,
+model: "gpt-4o-mini",
 temperature: 0.9,
 messages: [
-{ role: “system”, content: systemPrompt },
-{ role: “user”, content: userPrompt },
+{ role: "system", content: systemPrompt },
+{ role: "user", content: userPrompt },
 ],
 });
 
-let title = “”;
-let body = “”;
+let title = "";
+let body = "";
 
 try {
-const raw = chat.choices?.[0]?.message?.content || “{}”;
+const raw = chat.choices?.[0]?.message?.content || "{}";
 const parsed = JSON.parse(raw);
-title = (parsed.title || “”).trim();
-body = (parsed.body || “”).trim();
+title = (parsed.title || "").trim();
+body = (parsed.body || "").trim();
 } catch (e) {
-console.error(“Blog JSON parse error for”, personaKey, e);
-const fallback = chat.choices?.[0]?.message?.content || “”;
+console.error("Blog JSON parse error for", personaKey, e);
+const fallback = chat.choices?.[0]?.message?.content || "";
 title = `${meta.displayName} Blog`;
 body = fallback.trim();
 }
@@ -1414,13 +1414,13 @@ body = fallback.trim();
 let imageUrl = null;
 try {
 const img = await openai.images.generate({
-model: “gpt-image-1”,
+model: "gpt-image-1",
 prompt: `Illustration for a personal blog post titled "${title}" written by ${meta.displayName}. Modern editorial illustration, clean, no text.`,
-size: “1024x1024”,
+size: "1024x1024",
 });
 imageUrl = img.data?.[0]?.url || null;
 } catch (e) {
-console.error(“Blog image error for”, personaKey, e);
+console.error("Blog image error for", personaKey, e);
 }
 
 return {
@@ -1433,7 +1433,7 @@ image: imageUrl,
 };
 }
 
-// Generate (or reuse) today’s blogs
+// Generate (or reuse) today's blogs
 async function getBlogsForToday() {
 const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD in UTC
 
@@ -1447,7 +1447,7 @@ try {
 const blog = await generateBlogForPersona(p.key, today);
 blogs.push(blog);
 } catch (e) {
-console.error(“Failed generating blog for”, p.key, e);
+console.error("Failed generating blog for", p.key, e);
 }
 }
 
@@ -1464,59 +1464,59 @@ return blogs;
 HTML extraction
 ——————————————————— */
 function extractText(html) {
-const $ = cheerio.load(html || “”);
-$(“script, style, noscript”).remove();
-return $(“body”).text().replace(/\s+/g, “ “).trim();
+const $ = cheerio.load(html || "");
+$("script, style, noscript").remove();
+return $("body").text().replace(/\s+/g, " ").trim();
 }
 function pickOgImage(html, pageUrl) {
-const $ = cheerio.load(html || “”);
+const $ = cheerio.load(html || "");
 const candidates = [
-$(‘meta[property=“og:image:secure_url”]’).attr(“content”),
-$(‘meta[property=“og:image”]’).attr(“content”),
-$(‘meta[name=“og:image”]’).attr(“content”),
-$(‘meta[property=“twitter:image”]’).attr(“content”),
-$(‘meta[name=“twitter:image”]’).attr(“content”),
-$(‘link[rel=“image_src”]’).attr(“href”),
-$(‘meta[name=“thumbnail”]’).attr(“content”),
+$('meta[property="og:image:secure_url"]').attr("content"),
+$('meta[property="og:image"]').attr("content"),
+$('meta[name="og:image"]').attr("content"),
+$('meta[property="twitter:image"]').attr("content"),
+$('meta[name="twitter:image"]').attr("content"),
+$('link[rel="image_src"]').attr("href"),
+$('meta[name="thumbnail"]').attr("content"),
 ].filter(Boolean);
 
 let found = candidates.find(Boolean);
 if (!found) {
-const first = $(“img[src]”).first();
-found = first.attr(“src”) || first.attr(“data-src”) || “”;
-if (!found && first.attr(“srcset”)) {
-const set = first.attr(“srcset”).split(”,”).map(s => s.trim().split(” “)[0]);
-found = set[set.length - 1] || “”;
+const first = $("img[src]").first();
+found = first.attr("src") || first.attr("data-src") || "";
+if (!found && first.attr("srcset")) {
+const set = first.attr("srcset").split(",").map(s => s.trim().split(" ")[0]);
+found = set[set.length - 1] || "";
 }
 }
-if (!found) return “”;
+if (!found) return "";
 
-if (found.startsWith(”//”)) found = “https:” + found;
+if (found.startsWith("//")) found = "https:" + found;
 found = absoluteUrlMaybe(found, pageUrl);
 found = upgradeHttps(found);
-return looksLikeUrl(found) ? found : “”;
+return looksLikeUrl(found) ? found : "";
 }
 
 /* ––––––––––––––––––––––––––––
 FETCHERS
 ——————————————————— */
 async function fetchArticlePage(url) {
-const ua = { “User-Agent”: “Mozilla/5.0 NotifAi/1.0” };
+const ua = { "User-Agent": "Mozilla/5.0 NotifAi/1.0" };
 
 async function fetchOnce(target) {
 try {
 const res = await fetch(target, {
 headers: ua,
-redirect: “follow”,
+redirect: "follow",
 signal: AbortSignal.timeout(15000),
 });
-if (!res.ok) return { html: “”, text: “”, image: “” };
+if (!res.ok) return { html: "", text: "", image: "" };
 const html = await res.text();
 const text = extractText(html).slice(0, 7000);
 const image = pickOgImage(html, target);
 return { html, text, image };
 } catch {
-return { html: “”, text: “”, image: “” };
+return { html: "", text: "", image: "" };
 }
 }
 
@@ -1526,11 +1526,11 @@ let { html, text, image } = await fetchOnce(url);
 // If this is a Google News wrapper, try to follow canonical to real article
 try {
 const host = new URL(url).hostname;
-if (host === “news.google.com” && html) {
-const $ = cheerio.load(html || “”);
+if (host === "news.google.com" && html) {
+const $ = cheerio.load(html || "");
 const canon =
-$(‘link[rel=“canonical”]’).attr(“href”) ||
-$(‘meta[property=“og:url”]’).attr(“content”);
+$('link[rel="canonical"]').attr("href") ||
+$('meta[property="og:url"]').attr("content");
 if (canon && looksLikeUrl(canon)) {
 const realUrl = new URL(canon).toString();
 const second = await fetchOnce(realUrl);
@@ -1549,9 +1549,9 @@ return { html, text, image };
 }
 
 async function fetchRssText(url, { retries = 2 } = {}) {
-const ua = { “User-Agent”: “Mozilla/5.0 NotifAi/1.0 (+https://www.notifai.news)” };
+const ua = { "User-Agent": "Mozilla/5.0 NotifAi/1.0 (+https://www.notifai.news)" };
 try {
-const r = await fetch(url, { headers: ua, redirect: “follow”, signal: AbortSignal.timeout(20000) });
+const r = await fetch(url, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
 if (r.ok) return await r.text();
 throw new Error(`HTTP ${r.status}`);
 } catch (e) {
@@ -1559,13 +1559,13 @@ if (retries <= 0) throw e;
 }
 try {
 const proxied = `https://r.jina.ai/http://${url.replace(/^https?:\/\//i, "")}`;
-const r2 = await fetch(proxied, { headers: ua, redirect: “follow”, signal: AbortSignal.timeout(20000) });
+const r2 = await fetch(proxied, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
 if (r2.ok) return await r2.text();
 throw new Error(`Proxy HTTP ${r2.status}`);
 } catch (e2) {
 if (retries <= 0) throw e2;
 await new Promise(res => setTimeout(res, 500));
-const r3 = await fetch(url, { headers: ua, redirect: “follow”, signal: AbortSignal.timeout(20000) });
+const r3 = await fetch(url, { headers: ua, redirect: "follow", signal: AbortSignal.timeout(20000) });
 if (!r3.ok) throw new Error(`HTTP ${r3.status}`);
 return await r3.text();
 }
@@ -1587,39 +1587,39 @@ return false;
 }
 };
 
-if (region === “pk”) {
-if (lane === “politics”) {
+if (region === "pk") {
+if (lane === "politics") {
 return items.filter(it =>
 keepHost(it.url, [
-“dawn.com”,
-“tribune.com.pk”,
-“thenews.com.pk”,
-“brecorder.com”,
-“pakistantoday.com.pk”,
-“arynews.tv”,        // NEW
-“samaa.tv”           // NEW
+"dawn.com",
+"tribune.com.pk",
+"thenews.com.pk",
+"brecorder.com",
+"pakistantoday.com.pk",
+"arynews.tv",        // NEW
+"samaa.tv"           // NEW
 ])
 );
 }
-if (lane === “finance”) {
+if (lane === "finance") {
 return items.filter(it =>
 keepHost(it.url, [
-“brecorder.com”,
-“pakistantoday.com.pk”,
-“thenews.com.pk”,
-“dawn.com”,
-“tribune.com.pk”     // NEW: in case you add Tribune business
+"brecorder.com",
+"pakistantoday.com.pk",
+"thenews.com.pk",
+"dawn.com",
+"tribune.com.pk"     // NEW: in case you add Tribune business
 ])
 );
 }
-if (lane === “entertainment”) {
+if (lane === "entertainment") {
 // keep everything for PK entertainment (feeds are already curated)
 return items;
 }
 }
 
-if (region === “id”) {
-const idHosts = [“cnnindonesia.com”, “kompas.com”];
+if (region === "id") {
+const idHosts = ["cnnindonesia.com", "kompas.com"];
 return items.filter(it => keepHost(it.url, idHosts));
 }
 
@@ -1647,31 +1647,31 @@ return items.filter(it => keepHost(it.url, cnHosts));
 
 }
 
-if (region === “uk”) {
+if (region === "uk") {
 return items.filter(it =>
-keepHost(it.url, [“bbc.co.uk”, “bbc.com”, “theguardian.com”, “ft.com”, “cnn.com”])
+keepHost(it.url, ["bbc.co.uk", "bbc.com", "theguardian.com", "ft.com", "cnn.com"])
 );
 }
 
-if (region === “us”) {
+if (region === "us") {
 // already clean
 return items;
 }
 
-if (region === “ng”) {
+if (region === "ng") {
 const ngHosts = [
-“guardian.ng”,
-“independent.ng”,      // NEW
-“premiumtimesng.com”,
-“dailypost.ng”,
-“thenationonlineng.net”,
-“businessday.ng”,
-“nairametrics.com”,
-“legit.ng”,
-“informationng.com”,
-“tribuneonlineng.com”,
-“punchng.com”,
-“yohaig.ng”            // NEW – Gistlover feed host
+"guardian.ng",
+"independent.ng",      // NEW
+"premiumtimesng.com",
+"dailypost.ng",
+"thenationonlineng.net",
+"businessday.ng",
+"nairametrics.com",
+"legit.ng",
+"informationng.com",
+"tribuneonlineng.com",
+"punchng.com",
+"yohaig.ng"            // NEW – Gistlover feed host
 ];
 return items.filter(it => keepHost(it.url, ngHosts));
 }
@@ -1745,7 +1745,7 @@ return out;
 ```
 
 } catch (e) {
-console.error(“Feed error”, feedUrl, e.message || e);
+console.error("Feed error", feedUrl, e.message || e);
 return [];
 }
 }
@@ -1753,7 +1753,7 @@ return [];
 /* ––––––––––––––––––––––––––––
 INGEST
 
-- We ingest ALL regions + global lanes so any visitor’s region works instantly
+- We ingest ALL regions + global lanes so any visitor's region works instantly
 - Category keys stored as:
   `${region}:politics` / `${region}:finance` / `${region}:entertainment`
   and global `world` / `crypto`
@@ -1769,14 +1769,14 @@ INGEST
 const filtered = filterByRegionLane(region, lane, uniqBy(collected, x => x.url));
 
 // Fallback for China finance/entertainment:
-// if nothing came back from CN feeds, pull from global “world” lane
+// if nothing came back from CN feeds, pull from global "world" lane
 if (
-region === “cn” &&
-(lane === “finance” || lane === “entertainment”) &&
+region === "cn" &&
+(lane === "finance" || lane === "entertainment") &&
 filtered.length === 0
 ) {
 console.warn(`No CN ${lane} items found – falling back to world lane`);
-const worldItems = await ingestGlobalLane(“world”, FEEDS_GLOBAL.world);
+const worldItems = await ingestGlobalLane("world", FEEDS_GLOBAL.world);
 return worldItems
 .slice(0, INGEST_MAX_PER_CAT)
 .map(x => ({ …x, category: `${region}:${lane}` }));
@@ -1868,7 +1868,7 @@ if (created.length > 0) saveArticles(all);
 
 if (created.length === 0) {
 try {
-const seed = JSON.parse(fs.readFileSync(SEED, “utf-8”));
+const seed = JSON.parse(fs.readFileSync(SEED, "utf-8"));
 let added = 0;
 for (const s of seed) {
 if (!all.find(x => x.url === s.url)) {
@@ -1886,10 +1886,10 @@ return created;
 /* ––––––––––––––––––––––––––––
 API
 ——————————————————— */
-app.get(”/api/selftest”, (req, res) => {
+app.get("/api/selftest", (req, res) => {
 res.json({
 ok: true,
-site: process.env.SITE_NAME || “NotifAi News”,
+site: process.env.SITE_NAME || "NotifAi News",
 node: process.version,
 env: {
 OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
@@ -1899,11 +1899,11 @@ MAX_PER_CATEGORY, INGEST_MAX_PER_CAT, INGEST_PER_FEED, FETCH_CONCURRENCY, INGEST
 });
 
 // region query: ?region=us|cn|pk|id|uk|ng
-app.get(”/api/articles”, async (req, res) => {
-const region = String(req.query.region || “us”).toLowerCase();
-const reg = REGIONS.includes(region) ? region : “us”;
+app.get("/api/articles", async (req, res) => {
+const region = String(req.query.region || "us").toLowerCase();
+const reg = REGIONS.includes(region) ? region : "us";
 const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY || 12), 10);
-const lang = normLang(req.query.lang || “en”); // Get language parameter
+const lang = normLang(req.query.lang || "en"); // Get language parameter
 
 const toTime = (o) => {
 const p = o?.publishedAt ? Date.parse(o.publishedAt) : NaN;
@@ -1918,13 +1918,13 @@ const all = loadArticles().sort((a, b) => toTime(b) - toTime(a));
 // Map stored categories into the 5 lanes the UI expects
 const out = { us: [], entertainment: [], finance: [], world: [], crypto: [] };
 
-// STEP 1: Collect articles first (don’t translate yet)
+// STEP 1: Collect articles first (don't translate yet)
 for (const a of all) {
-if (a.category === “world”) {
+if (a.category === "world") {
 if (out.world.length < limit) out.world.push(a);
 continue;
 }
-if (a.category === “crypto”) {
+if (a.category === "crypto") {
 if (out.crypto.length < limit) out.crypto.push(a);
 continue;
 }
@@ -1941,11 +1941,11 @@ if (lane === "entertainment" && out.entertainment.length < limit) out.entertainm
 
 }
 
-// STEP 2: Now translate ONLY what we’re sending (if not English)
-if (lang !== “en”) {
+// STEP 2: Now translate ONLY what we're sending (if not English)
+if (lang !== "en") {
 // Response-level cache: same region+lang within TTL = zero translation calls
 const totalArticles = Object.values(out).reduce((s, arr) => s + arr.length, 0);
-const latestId = Object.values(out).flat()[0]?.id || ‘’;
+const latestId = Object.values(out).flat()[0]?.id || '';
 const cacheKey = `${reg}:${lang}:${totalArticles}:${latestId}`;
 const cached = TRANSLATED_RESPONSE_CACHE.get(cacheKey);
 if (cached && Date.now() - cached.ts < TRANSLATED_RESPONSE_TTL) {
@@ -2001,14 +2001,14 @@ return res.json(responseData);
 
 }
 
-res.json({ site: process.env.SITE_NAME || “NotifAi News”, region: reg, categories: out });
+res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
 });
 
-app.post(”/api/translate-ui”, async (req, res) => {
+app.post("/api/translate-ui", async (req, res) => {
 try {
 const { lang, items } = req.body || {};
 const target = normLang(lang);
-if (!target || target === “en”) return res.json({ ok: true, map: {} });
+if (!target || target === "en") return res.json({ ok: true, map: {} });
 
 ```
 const inItems = Array.isArray(items) ? items : [];
@@ -2035,8 +2035,8 @@ return res.json({ ok: true, map: out });
 ```
 
 } catch (e) {
-console.error(”/api/translate-ui error”, e?.message || e);
-return res.status(500).json({ ok: false, error: “Translate failed” });
+console.error("/api/translate-ui error", e?.message || e);
+return res.status(500).json({ ok: false, error: "Translate failed" });
 }
 });
 
@@ -2045,14 +2045,14 @@ NEWSPAPER FRONT PAGE ENDPOINT
 Returns one story per lane: politics (headline), world, finance, crypto, entertainment
 Shape:
 {
-region: “us”,
+region: "us",
 lanes: { politics, world, finance, crypto, entertainment },
-headlineKey: “politics” | “world” | …
+headlineKey: "politics" | "world" | …
 }
 ——————————————————— */
-app.get(”/api/newspaper”, (req, res) => {
-const region = String(req.query.region || “us”).toLowerCase();
-const reg = REGIONS.includes(region) ? region : “us”;
+app.get("/api/newspaper", (req, res) => {
+const region = String(req.query.region || "us").toLowerCase();
+const reg = REGIONS.includes(region) ? region : "us";
 
 const toTime = (o) => {
 const p = o?.publishedAt ? Date.parse(o.publishedAt) : NaN;
@@ -2073,7 +2073,7 @@ entertainment: null,
 };
 
 for (const a of all) {
-const cat = a.category || “”;
+const cat = a.category || "";
 
 ```
 // Global lanes
@@ -2117,7 +2117,7 @@ if (
 
 }
 
-const order = [“politics”, “world”, “finance”, “crypto”, “entertainment”];
+const order = ["politics", "world", "finance", "crypto", "entertainment"];
 const headlineKey = order.find((k) => lanes[k]);
 
 res.json({
@@ -2129,9 +2129,9 @@ headlineKey,
 
 // ––––––––––– AI BLOGS ENDPOINT –––––––––––
 // Returns one blog per persona (Jessica, John, Joe) for today.
-app.get(”/api/blogs”, async (req, res) => {
+app.get("/api/blogs", async (req, res) => {
 try {
-const lang = normLang(req.query.lang || “en”);  // ← ADD THIS LINE
+const lang = normLang(req.query.lang || "en");  // ← ADD THIS LINE
 
 ```
 const blogs = await getBlogsForToday();
@@ -2157,18 +2157,18 @@ res.json(blogResponse);
 ```
 
 } catch (e) {
-console.error(“Error in /api/blogs”, e);
-res.status(500).json({ error: “Failed to generate blogs” });
+console.error("Error in /api/blogs", e);
+res.status(500).json({ error: "Failed to generate blogs" });
 }
 });
 // –––––––––– END AI BLOGS ENDPOINT ––––––––––
 
-app.get(”/api/article/:id”, async (req, res) => {
+app.get("/api/article/:id", async (req, res) => {
 try {
 const id = req.params.id;
 const all = loadArticles();
 const found = all.find((x) => x.id === id);
-if (!found) return res.status(404).json({ error: “not found” });
+if (!found) return res.status(404).json({ error: "not found" });
 
 ```
 const cat = found?.category || "";
@@ -2181,13 +2181,13 @@ return res.json(out);
 ```
 
 } catch (e) {
-console.error(“GET /api/article/:id error”, e?.message || e);
-return res.status(500).json({ error: “Failed to load article” });
+console.error("GET /api/article/:id error", e?.message || e);
+return res.status(500).json({ error: "Failed to load article" });
 }
 });
 
 // Chat-style follow-up questions for a specific persona about one article
-app.post(”/api/ask-ai”, async (req, res) => {
+app.post("/api/ask-ai", async (req, res) => {
 try {
 const { articleId, persona, question, basePerspective, title } = req.body || {};
 
@@ -2206,8 +2206,8 @@ const articleSummary = article?.summary || "";
 const cat = article?.category || "";
 ```
 
-const regionCode = cat.includes(”:”) ? cat.split(”:”)[0] : “us”;
-const fallbackLang = langForRegion(regionCode || “us”);
+const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
+const fallbackLang = langForRegion(regionCode || "us");
 
 // IMPORTANT: user-selected language overrides region language
 const lang = getRequestedLang(req, fallbackLang);
@@ -2221,14 +2221,14 @@ const userPrompt = `
 Story title: ${articleTitle}
 
 Short summary (for context):
-${articleSummary || “(no stored summary, just answer based on the question)”}
+${articleSummary || "(no stored summary, just answer based on the question)"}
 
 Earlier persona perspective (from the debate):
-${basePerspective || “(no previous persona text given)”}
+${basePerspective || "(no previous persona text given)"}
 
 The user is asking a follow-up question or challenge about this story:
 
-“${question}”
+"${question}"
 
 Respond as the persona, speaking directly to the user.
 Treat this as a live debate with the user:
@@ -2240,7 +2240,7 @@ Treat this as a live debate with the user:
 
 Keep your reply very concise and punchy: usually 3–6 sentences.
 Do not repeat the earlier paragraph word-for-word; move the conversation forward.
-Stay focused on this specific story and the user’s question.
+Stay focused on this specific story and the user's question.
 `;
 
 ```
@@ -2256,27 +2256,27 @@ const completion = await openai.chat.completions.create({
 
 const answer =
   completion.choices?.[0]?.message?.content?.trim() ||
-  "I’m having trouble answering right now, please try again.";
+  "I'm having trouble answering right now, please try again.";
 
 res.json({ answer });
 ```
 
 } catch (e) {
-console.error(“ask-ai error”, e?.message || e);
-res.status(500).json({ error: “Failed to generate answer” });
+console.error("ask-ai error", e?.message || e);
+res.status(500).json({ error: "Failed to generate answer" });
 }
 });
 
-app.get(”/api/cron”, async (req, res) => {
+app.get("/api/cron", async (req, res) => {
 const r = await ingestOnce();
 res.json({ ingested: r.length });
 });
-app.get(”/api/cron-bg”, (req, res) => {
+app.get("/api/cron-bg", (req, res) => {
 setTimeout(()=>{ ingestOnce().catch(()=>{}); }, 10);
 res.json({ queued:true });
 });
 
-app.get(”/api/diagnose”, async (req, res) => {
+app.get("/api/diagnose", async (req, res) => {
 const report = { global: {}, regions: {} };
 
 for (const [lane, feeds] of Object.entries(FEEDS_GLOBAL)) {
@@ -2294,7 +2294,7 @@ report.global[lane].push({ feed: f, ok: false, error: e.message||String(e) });
 for (const region of REGIONS) {
 report.regions[region] = {};
 const conf = FEEDS_REGIONAL[region];
-for (const lane of [“politics”, “finance”, “entertainment”]) {
+for (const lane of ["politics", "finance", "entertainment"]) {
 report.regions[region][lane] = [];
 for (const f of (conf[lane] || [])) {
 try {
@@ -2313,11 +2313,11 @@ res.json(report);
 /* ––––––––––––––––––––––––––––
 IMAGE PROXY + SHARE PAGE (unchanged)
 ——————————————————— */
-app.get(”/img”, async (req, res) => {
+app.get("/img", async (req, res) => {
 try {
 const u = req.query.u;
-if (!u || typeof u !== “string”) return res.status(400).send(“missing u”);
-if (!looksLikeUrl(u)) return res.status(400).send(“bad url”);
+if (!u || typeof u !== "string") return res.status(400).send("missing u");
+if (!looksLikeUrl(u)) return res.status(400).send("bad url");
 const referer = getImageReferer(u);
 
 ```
@@ -2346,34 +2346,34 @@ res.send(buf);
 ```
 
 } catch {
-res.status(500).send(“proxy error”);
+res.status(500).send("proxy error");
 }
 });
 
-function htmlesc(s=’’) {
-return String(s).replaceAll(’&’,’&’).replaceAll(’<’,’<’).replaceAll(’>’,’>’).replaceAll(’”’,’"’);
+function htmlesc(s='') {
+return String(s).replaceAll('&','&').replaceAll('<','<').replaceAll('>','>').replaceAll('"','"');
 }
-function firstLine(s=’’, n=240) {
-return String(s).replace(/\s+/g,’ ‘).trim().slice(0, n);
+function firstLine(s='', n=240) {
+return String(s).replace(/\s+/g,' ').trim().slice(0, n);
 }
 function getOrigin(req) {
 return process.env.SITE_ORIGIN || `${req.protocol}://${req.get('host')}`;
 }
-app.get(’/share/:id’, (req, res) => {
+app.get('/share/:id', (req, res) => {
 const id = req.params.id;
 const articles = loadArticles();
 const a = articles.find(x => x.id === id);
-if (!a) { res.status(404).send(‘Article not found’); return; }
+if (!a) { res.status(404).send('Article not found'); return; }
 
 const origin   = getOrigin(req);
 const pageUrl  = `${origin}/article.html?id=${encodeURIComponent(id)}`;
 const shareUrl = `${origin}/share/${encodeURIComponent(id)}`;
 const rawImg   = a.image && /^https?:///i.test(a.image) ? a.image : `${origin}/cover.jpg`;
 const ogImg    = `${origin}/img?u=${encodeURIComponent(rawImg)}&w=1200`;
-const title    = a.title || ‘NotifAi News’;
+const title    = a.title || 'NotifAi News';
 const desc     = firstLine(a.summary || `${a.source || ''} • ${a.title || ''}`, 240);
 
-res.setHeader(‘Content-Type’, ‘text/html; charset=utf-8’);
+res.setHeader('Content-Type', 'text/html; charset=utf-8');
 res.end(`<!doctype html>
 
 <html lang="en">
@@ -2401,10 +2401,10 @@ REWARDS / REFERRALS API
 ——————————————————— */
 
 // 1) Register / update user profile
-app.post(”/api/rewards/register”, rewardsWriteLimiter, async (req, res) => {
+app.post("/api/rewards/register", rewardsWriteLimiter, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: “Firestore not configured” });
+return res.status(500).json({ ok: false, error: "Firestore not configured" });
 }
 
 ```
@@ -2494,24 +2494,24 @@ invitesStarted: fresh.invitesStarted || 0,
 }
 });
 } catch (err) {
-console.error(“POST /api/rewards/register error”, err);
-return res.status(500).json({ ok: false, error: “Server error” });
+console.error("POST /api/rewards/register error", err);
+return res.status(500).json({ ok: false, error: "Server error" });
 }
 });
 
 // 2) Track usage - DISABLED (kept for backwards compatibility)
-app.post(”/api/rewards/track-usage”, rewardsWriteLimiter, async (req, res) => {
-return res.json({ ok: true, message: ‘Watch ads to earn tokens!’, tokensAwarded: 0, minted: 0 });
+app.post("/api/rewards/track-usage", rewardsWriteLimiter, async (req, res) => {
+return res.json({ ok: true, message: 'Watch ads to earn tokens!', tokensAwarded: 0, minted: 0 });
 });
 
 /* ––––––––––––––––––––––––––––
 AD REWARDS API ENDPOINTS
 ——————————————————— */
-app.post(’/api/rewards/ad-watched’, adRewardsLimiter, authenticateTokenOptional, async (req, res) => {
+app.post('/api/rewards/ad-watched', adRewardsLimiter, authenticateTokenOptional, async (req, res) => {
 try {
 const { userId: bodyUserId, adUnitId } = req.body;
 const userId = req.user?.userId || bodyUserId;
-if (!userId) return res.status(400).json({ ok: false, error: ‘Missing userId’ });
+if (!userId) return res.status(400).json({ ok: false, error: 'Missing userId' });
 let isVerified = req.user?.verified === true;
 if (!isVerified) {
 const cached = VERIFIED_USER_CACHE.get(userId);
@@ -2526,21 +2526,21 @@ VERIFIED_USER_CACHE.set(userId, { isVerified, ts: Date.now() });
 }
 }
 if (!isVerified) {
-return res.status(403).json({ ok: false, error: ‘Email verification required’, requiresVerification: true });
+return res.status(403).json({ ok: false, error: 'Email verification required', requiresVerification: true });
 }
 const result = await processAdReward(userId);
 if (result.ok) console.log(`[AD] User ${userId} watched ad`);
 return res.json(result);
 } catch (error) {
-console.error(‘POST /api/rewards/ad-watched error:’, error);
-return res.status(500).json({ ok: false, error: ‘Server error’ });
+console.error('POST /api/rewards/ad-watched error:', error);
+return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
 
-app.get(’/api/rewards/ad-status’, rewardsLimiter, authenticateTokenOptional, async (req, res) => {
+app.get('/api/rewards/ad-status', rewardsLimiter, authenticateTokenOptional, async (req, res) => {
 try {
 const userId = req.user?.userId || req.query.userId;
-if (!userId) return res.status(400).json({ ok: false, error: ‘Missing userId’ });
+if (!userId) return res.status(400).json({ ok: false, error: 'Missing userId' });
 const tracking = getAdTracking(userId);
 const now = Date.now();
 const config = AD_REWARDS_CONFIG;
@@ -2576,39 +2576,39 @@ totals: { tokensTotal, tokensFromAds, tokensFromInvites, tokensFromCommission, t
 invite: { requiredAds: config.INVITE.REQUIRED_ADS, bonusTokens: config.INVITE.BONUS_TOKENS, commissionRate: `${config.INVITE.COMMISSION_RATE * 100}%`, dailyInviteCap: config.INVITE.DAILY_INVITE_CAP, dailyCommissionCap: config.INVITE.DAILY_COMMISSION_CAP }
 });
 } catch (error) {
-console.error(‘GET /api/rewards/ad-status error:’, error);
-return res.status(500).json({ ok: false, error: ‘Server error’ });
+console.error('GET /api/rewards/ad-status error:', error);
+return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
 
 const SSV_PROCESSED = new Map();
-app.get(’/api/admob-ssv’, async (req, res) => {
+app.get('/api/admob-ssv', async (req, res) => {
 try {
 const { user_id, transaction_id, timestamp } = req.query;
-if (!user_id || !transaction_id) return res.status(400).send(‘Invalid’);
+if (!user_id || !transaction_id) return res.status(400).send('Invalid');
 const callbackTime = parseInt(timestamp) || 0;
 const now = Math.floor(Date.now() / 1000);
-if (Math.abs(now - callbackTime) > 86400) return res.status(400).send(‘Expired’);
-if (SSV_PROCESSED.has(transaction_id)) return res.status(200).send(‘OK’);
+if (Math.abs(now - callbackTime) > 86400) return res.status(400).send('Expired');
+if (SSV_PROCESSED.has(transaction_id)) return res.status(200).send('OK');
 SSV_PROCESSED.set(transaction_id, Date.now());
 const oneHourAgo = Date.now() - 60 * 60 * 1000;
 for (const [txId, ts] of SSV_PROCESSED) { if (ts < oneHourAgo) SSV_PROCESSED.delete(txId); }
 const result = await processAdReward(user_id);
 console.log(`[SSV] User ${user_id}: ${result.ok ? '+1' : result.error}`);
-res.status(200).send(‘OK’);
+res.status(200).send('OK');
 } catch (error) {
-console.error(’[SSV] Error:’, error);
-res.status(500).send(‘Error’);
+console.error('[SSV] Error:', error);
+res.status(500).send('Error');
 }
 });
 
-// 3) Get current user’s rewards dashboard
-app.get(”/api/rewards/me”, rewardsLimiter, async (req, res) => {
+// 3) Get current user's rewards dashboard
+app.get("/api/rewards/me", rewardsLimiter, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
 return res
 .status(500)
-.json({ ok: false, error: “Firestore not configured” });
+.json({ ok: false, error: "Firestore not configured" });
 }
 
 ```
@@ -2656,20 +2656,20 @@ return res.json(responseData);
 ```
 
 } catch (err) {
-console.error(“GET /api/rewards/me error”, err);
+console.error("GET /api/rewards/me error", err);
 return res.status(500).json({
 ok: false,
-error: err && err.message ? err.message : “Server error”,
+error: err && err.message ? err.message : "Server error",
 });
 }
 });
 
-app.get(”/api/debug/firestore”, async (req, res) => {
+app.get("/api/debug/firestore", async (req, res) => {
 try {
 if (!db) {
 return res.json({
 ok: false,
-error: “db is null (admin not initialized)”,
+error: "db is null (admin not initialized)",
 });
 }
 const collections = await db.listCollections();
@@ -2678,10 +2678,10 @@ ok: true,
 collections: collections.map((c) => c.id),
 });
 } catch (err) {
-console.error(“DEBUG /api/debug/firestore error”, err);
+console.error("DEBUG /api/debug/firestore error", err);
 return res.status(500).json({
 ok: false,
-error: err && err.message ? err.message : “Unknown error”,
+error: err && err.message ? err.message : "Unknown error",
 });
 }
 });
@@ -2690,14 +2690,14 @@ error: err && err.message ? err.message : “Unknown error”,
 ADMIN: CLEANUP GHOST USERS
 ——————————————————— */
 
-app.post(”/api/admin/cleanup-ghosts”, async (req, res) => {
-const adminSecret = req.headers[‘x-admin-secret’];
+app.post("/api/admin/cleanup-ghosts", async (req, res) => {
+const adminSecret = req.headers['x-admin-secret'];
 if (adminSecret !== process.env.ADMIN_SECRET) {
-return res.status(403).json({ error: ‘Forbidden’ });
+return res.status(403).json({ error: 'Forbidden' });
 }
 
 if (!db || !USERS_COL) {
-return res.status(500).json({ error: “Firestore not configured” });
+return res.status(500).json({ error: "Firestore not configured" });
 }
 
 try {
@@ -2768,13 +2768,13 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Cleanup error:’, error);
+console.error('Cleanup error:', error);
 res.status(500).json({ error: error.message });
 }
 });
 
 /* ––––––––––––––––––––––––––––
-AUTHENTICATION ROUTES - PASTE THIS BEFORE THE “START + AUTO-INGEST” SECTION
+AUTHENTICATION ROUTES - PASTE THIS BEFORE THE "START + AUTO-INGEST" SECTION
 Around line 2360 in your server.js
 ——————————————————— */
 
@@ -2782,19 +2782,19 @@ Around line 2360 in your server.js
 const authLimiter = rateLimit({
 windowMs: 15 * 60 * 1000, // 15 minutes
 max: 5, // 5 attempts
-message: ‘Too many authentication attempts’
+message: 'Too many authentication attempts'
 });
 
 // Middleware to verify JWT token
 function authenticateToken(req, res, next) {
-const authHeader = req.headers[‘authorization’];
-const token = authHeader && authHeader.split(’ ’)[1];
+const authHeader = req.headers['authorization'];
+const token = authHeader && authHeader.split(' ')[1];
 if (!token) {
-return res.status(401).json({ ok: false, error: ‘No token provided’ });
+return res.status(401).json({ ok: false, error: 'No token provided' });
 }
 jwt.verify(token, JWT_SECRET, (err, user) => {
 if (err) {
-return res.status(403).json({ ok: false, error: ‘Invalid or expired token’ });
+return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
 }
 req.user = user;
 next();
@@ -2802,10 +2802,10 @@ next();
 }
 
 function authenticateTokenOptional(req, res, next) {
-const authHeader = req.headers[‘authorization’];
-const token = authHeader && authHeader.split(’ ’)[1];
+const authHeader = req.headers['authorization'];
+const token = authHeader && authHeader.split(' ')[1];
 
-// If no token, allow anonymous - don’t return error
+// If no token, allow anonymous - don't return error
 if (!token) {
 return next();
 }
@@ -2814,7 +2814,7 @@ return next();
 jwt.verify(token, JWT_SECRET, (err, user) => {
 if (err) {
 // Invalid token - return error
-return res.status(403).json({ ok: false, error: ‘Invalid or expired token’ });
+return res.status(403).json({ ok: false, error: 'Invalid or expired token' });
 }
 // Valid token - attach user to request
 req.user = user;
@@ -2824,20 +2824,20 @@ next();
 
 // POST /api/auth/register
 // POST /api/auth/register - Step 1: Send verification code
-app.post(’/api/auth/register’, authLimiter, async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 const { email, password, userId, inviteCode } = req.body;
 if (!email || !password || !userId) {
-return res.status(400).json({ ok: false, error: ‘Email, password, and userId required’ });
+return res.status(400).json({ ok: false, error: 'Email, password, and userId required' });
 }
 if (!/^[^\s@]+@[^\s@]+.[^\s@]+$/.test(email)) {
-return res.status(400).json({ ok: false, error: ‘Invalid email format’ });
+return res.status(400).json({ ok: false, error: 'Invalid email format' });
 }
 if (password.length < 8) {
-return res.status(400).json({ ok: false, error: ‘Password must be 8+ characters’ });
+return res.status(400).json({ ok: false, error: 'Password must be 8+ characters' });
 }
 
 ```
@@ -2933,16 +2933,16 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Register error:’, error);
-res.status(500).json({ ok: false, error: ‘Registration failed’ });
+console.error('Register error:', error);
+res.status(500).json({ ok: false, error: 'Registration failed' });
 }
 });
 
 // POST /api/auth/verify-email - Step 2: Verify code and complete registration
-app.post(’/api/auth/verify-email’, authLimiter, async (req, res) => {
+app.post('/api/auth/verify-email', authLimiter, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
 ```
@@ -3053,17 +3053,17 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Verify email error:’, error);
-res.status(500).json({ ok: false, error: ‘Verification failed’ });
+console.error('Verify email error:', error);
+res.status(500).json({ ok: false, error: 'Verification failed' });
 }
 });
 
 // POST /api/auth/resend-verification - Resend verification code
-app.post(’/api/auth/resend-verification’, authLimiter, async (req, res) => {
+app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
 try {
 const { email } = req.body;
 if (!email) {
-return res.status(400).json({ ok: false, error: ‘Email required’ });
+return res.status(400).json({ ok: false, error: 'Email required' });
 }
 
 ```
@@ -3140,33 +3140,33 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Resend verification error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to resend code’ });
+console.error('Resend verification error:', error);
+res.status(500).json({ ok: false, error: 'Failed to resend code' });
 }
 });
 
 // POST /api/auth/cancel-registration - Allow user to try different email
-app.post(’/api/auth/cancel-registration’, async (req, res) => {
+app.post('/api/auth/cancel-registration', async (req, res) => {
 try {
 const { email } = req.body;
-if (!email) return res.status(400).json({ ok: false, error: ‘Email required’ });
+if (!email) return res.status(400).json({ ok: false, error: 'Email required' });
 const emailLower = email.toLowerCase().trim();
 if (verificationCodes.has(emailLower)) {
 verificationCodes.delete(emailLower);
 console.log(`[AUTH] Cancelled registration for ${emailLower}`);
 }
-res.json({ ok: true, message: ‘You can now try with a different email.’ });
+res.json({ ok: true, message: 'You can now try with a different email.' });
 } catch (error) {
-console.error(‘Cancel registration error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to cancel’ });
+console.error('Cancel registration error:', error);
+res.status(500).json({ ok: false, error: 'Failed to cancel' });
 }
 });
 
 // POST /api/auth/send-verification
-app.post(’/api/auth/send-verification’, authLimiter, async (req, res) => {
+app.post('/api/auth/send-verification', authLimiter, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
 ```
@@ -3264,16 +3264,16 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Send verification error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to send verification code’ });
+console.error('Send verification error:', error);
+res.status(500).json({ ok: false, error: 'Failed to send verification code' });
 }
 });
 
 // POST /api/auth/verify-existing - Verify email for EXISTING registered user
-app.post(’/api/auth/verify-existing’, authLimiter, async (req, res) => {
+app.post('/api/auth/verify-existing', authLimiter, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
 ```
@@ -3332,16 +3332,16 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Verify existing error:’, error);
-res.status(500).json({ ok: false, error: ‘Verification failed’ });
+console.error('Verify existing error:', error);
+res.status(500).json({ ok: false, error: 'Verification failed' });
 }
 });
 
-// GET /api/auth/verification-status - Check if user’s email is verified
-app.get(’/api/auth/verification-status’, authenticateToken, async (req, res) => {
+// GET /api/auth/verification-status - Check if user's email is verified
+app.get('/api/auth/verification-status', authenticateToken, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
 ```
@@ -3363,31 +3363,31 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Verification status error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to check status’ });
+console.error('Verification status error:', error);
+res.status(500).json({ ok: false, error: 'Failed to check status' });
 }
 });
 
 // POST /api/auth/login
-app.post(’/api/auth/login’, authLimiter, async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
 try {
 if (!db) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 const { email, password, deviceUserId } = req.body; // Accept deviceUserId from app
 if (!email || !password) {
-return res.status(400).json({ ok: false, error: ‘Email and password required’ });
+return res.status(400).json({ ok: false, error: 'Email and password required' });
 }
 const emailLower = email.toLowerCase().trim();
-const authCol = db.collection(‘notifaiUserAuth’);
+const authCol = db.collection('notifaiUserAuth');
 const authDoc = await authCol.doc(emailLower).get();
 if (!authDoc.exists) {
-return res.status(401).json({ ok: false, error: ‘Invalid email or password’ });
+return res.status(401).json({ ok: false, error: 'Invalid email or password' });
 }
 const authData = authDoc.data();
 const isValid = await bcrypt.compare(password, authData.passwordHash);
 if (!isValid) {
-return res.status(401).json({ ok: false, error: ‘Invalid email or password’ });
+return res.status(401).json({ ok: false, error: 'Invalid email or password' });
 }
 
 ```
@@ -3422,34 +3422,34 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Login error:’, error);
-res.status(500).json({ ok: false, error: ‘Login failed’ });
+console.error('Login error:', error);
+res.status(500).json({ ok: false, error: 'Login failed' });
 }
 });
 
 // POST /api/auth/change-password
-app.post(’/api/auth/change-password’, authenticateToken, async (req, res) => {
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
 try {
 if (!db) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 const { currentPassword, newPassword } = req.body;
 const { email } = req.user;
 if (!currentPassword || !newPassword) {
-return res.status(400).json({ ok: false, error: ‘Current and new password required’ });
+return res.status(400).json({ ok: false, error: 'Current and new password required' });
 }
 if (newPassword.length < 8) {
-return res.status(400).json({ ok: false, error: ‘New password must be 8+ characters’ });
+return res.status(400).json({ ok: false, error: 'New password must be 8+ characters' });
 }
-const authCol = db.collection(‘notifaiUserAuth’);
+const authCol = db.collection('notifaiUserAuth');
 const authDoc = await authCol.doc(email).get();
 if (!authDoc.exists) {
-return res.status(404).json({ ok: false, error: ‘Account not found’ });
+return res.status(404).json({ ok: false, error: 'Account not found' });
 }
 const authData = authDoc.data();
 const isValid = await bcrypt.compare(currentPassword, authData.passwordHash);
 if (!isValid) {
-return res.status(401).json({ ok: false, error: ‘Current password incorrect’ });
+return res.status(401).json({ ok: false, error: 'Current password incorrect' });
 }
 const newPasswordHash = await bcrypt.hash(newPassword, 10);
 await authCol.doc(email).update({
@@ -3460,10 +3460,10 @@ await USERS_COL.doc(authData.userId).update({
 passwordHash: newPasswordHash,
 updatedAt: new Date()
 });
-res.json({ ok: true, message: ‘Password changed successfully’ });
+res.json({ ok: true, message: 'Password changed successfully' });
 } catch (error) {
-console.error(‘Change password error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to change password’ });
+console.error('Change password error:', error);
+res.status(500).json({ ok: false, error: 'Failed to change password' });
 }
 });
 
@@ -3492,10 +3492,10 @@ const verificationEmailsSent = new Map(); // email -> timestamp of last email se
 const VERIFICATION_CODE_EXPIRY = 15 * 60 * 1000; // 15 minutes
 
 // POST /api/auth/request-reset
-app.post(’/api/auth/request-reset’, authLimiter, async (req, res) => {
+app.post('/api/auth/request-reset', authLimiter, async (req, res) => {
 try {
 if (!db) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
 ```
@@ -3567,17 +3567,17 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Request reset error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to request reset’ });
+console.error('Request reset error:', error);
+res.status(500).json({ ok: false, error: 'Failed to request reset' });
 }
 });
 
 // POST /api/auth/verify-reset-code
-app.post(’/api/auth/verify-reset-code’, authLimiter, async (req, res) => {
+app.post('/api/auth/verify-reset-code', authLimiter, async (req, res) => {
 try {
 const { email, code } = req.body;
 if (!email || !code) {
-return res.status(400).json({ ok: false, error: ‘Email and code required’ });
+return res.status(400).json({ ok: false, error: 'Email and code required' });
 }
 
 ```
@@ -3612,16 +3612,16 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Verify code error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to verify code’ });
+console.error('Verify code error:', error);
+res.status(500).json({ ok: false, error: 'Failed to verify code' });
 }
 });
 
 // POST /api/auth/reset-password
-app.post(’/api/auth/reset-password’, async (req, res) => {
+app.post('/api/auth/reset-password', async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 
 ```
@@ -3677,16 +3677,16 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Reset password error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to reset password’ });
+console.error('Reset password error:', error);
+res.status(500).json({ ok: false, error: 'Failed to reset password' });
 }
 });
 
 // GET /api/rewards/dashboard
-app.get(’/api/rewards/dashboard’, authenticateToken, async (req, res) => {
+app.get('/api/rewards/dashboard', authenticateToken, async (req, res) => {
 try {
 if (!db || !USERS_COL || !REFERRALS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 const { userId } = req.user;
 
@@ -3802,33 +3802,33 @@ res.json(responseData);
 ```
 
 } catch (error) {
-console.error(‘Dashboard error:’, error);
-if (error.message?.includes(‘RESOURCE_EXHAUSTED’)) {
+console.error('Dashboard error:', error);
+if (error.message?.includes('RESOURCE_EXHAUSTED')) {
 const cached = DASHBOARD_CACHE.get(req.user?.userId);
 if (cached) return res.json({ …cached.data, _stale: true });
-return res.status(503).json({ ok: false, error: ‘Service temporarily busy’ });
+return res.status(503).json({ ok: false, error: 'Service temporarily busy' });
 }
-res.status(500).json({ ok: false, error: ‘Failed to load dashboard’ });
+res.status(500).json({ ok: false, error: 'Failed to load dashboard' });
 }
 });;
 
 // PUT /api/rewards/wallet
-app.put(’/api/rewards/wallet’, authenticateToken, async (req, res) => {
+app.put('/api/rewards/wallet', authenticateToken, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 const { userId } = req.user;
 const { walletAddress } = req.body;
 if (!walletAddress) {
-return res.status(400).json({ ok: false, error: ‘Wallet address required’ });
+return res.status(400).json({ ok: false, error: 'Wallet address required' });
 }
 if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress.trim())) {
-return res.status(400).json({ ok: false, error: ‘Invalid BSC wallet format’ });
+return res.status(400).json({ ok: false, error: 'Invalid BSC wallet format' });
 }
 const userDoc = await USERS_COL.doc(userId).get();
 if (!userDoc.exists) {
-return res.status(404).json({ ok: false, error: ‘User not found’ });
+return res.status(404).json({ ok: false, error: 'User not found' });
 }
 const userData = userDoc.data();
 if (userData.walletAddress && userData.walletAddress !== walletAddress) {
@@ -3854,20 +3854,20 @@ updatedAt: new Date()
 }
 res.json({
 ok: true,
-message: ‘Wallet address updated’,
+message: 'Wallet address updated',
 walletAddress: walletAddress.trim()
 });
 } catch (error) {
-console.error(‘Update wallet error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to update wallet’ });
+console.error('Update wallet error:', error);
+res.status(500).json({ ok: false, error: 'Failed to update wallet' });
 }
 });
 
 // PUT /api/rewards/invite-code - Link an invite code (one-time only)
-app.put(’/api/rewards/invite-code’, authenticateToken, async (req, res) => {
+app.put('/api/rewards/invite-code', authenticateToken, async (req, res) => {
 try {
 if (!db || !USERS_COL) {
-return res.status(500).json({ ok: false, error: ‘Firestore not configured’ });
+return res.status(500).json({ ok: false, error: 'Firestore not configured' });
 }
 const { userId } = req.user;
 const { inviteCode } = req.body;
@@ -3948,34 +3948,34 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Link invite code error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to link invite code’ });
+console.error('Link invite code error:', error);
+res.status(500).json({ ok: false, error: 'Failed to link invite code' });
 }
 });
 
 // GET /api/rewards/export (Admin only)
-app.get(’/api/rewards/export’, async (req, res) => {
+app.get('/api/rewards/export', async (req, res) => {
 try {
-const adminSecret = req.headers[‘x-admin-secret’];
+const adminSecret = req.headers['x-admin-secret'];
 if (adminSecret !== process.env.ADMIN_SECRET) {
-return res.status(403).json({ error: ‘Forbidden’ });
+return res.status(403).json({ error: 'Forbidden' });
 }
 if (!db || !USERS_COL) {
-return res.status(500).json({ error: ‘Firestore not configured’ });
+return res.status(500).json({ error: 'Firestore not configured' });
 }
-const weekFilter = req.query.week || ‘current’;
+const weekFilter = req.query.week || 'current';
 const currentWeekKey = getWeekKey();
 let query = USERS_COL
-.where(‘tokensThisWeek’, ‘>’, 0)
-.where(‘walletAddress’, ‘!=’, null);
+.where('tokensThisWeek', '>', 0)
+.where('walletAddress', '!=', null);
 const snapshot = await query.get();
 const users = [];
 for (const doc of snapshot.docs) {
 const data = doc.data();
-if (weekFilter === ‘last’ && (data.tokensLastWeek || 0) <= 0) continue;
-if (weekFilter === ‘current’ && (data.tokensThisWeek || 0) <= 0) continue;
+if (weekFilter === 'last' && (data.tokensLastWeek || 0) <= 0) continue;
+if (weekFilter === 'current' && (data.tokensThisWeek || 0) <= 0) continue;
 users.push({
-email: data.email || ‘N/A’,
+email: data.email || 'N/A',
 userId: data.userId,
 walletAddress: data.walletAddress,
 referralCode: data.referralCode,
@@ -3998,8 +3998,8 @@ currentWeekKey,
 users
 });
 } catch (error) {
-console.error(‘Export error:’, error);
-res.status(500).json({ ok: false, error: ‘Failed to export data’ });
+console.error('Export error:', error);
+res.status(500).json({ ok: false, error: 'Failed to export data' });
 }
 });
 
@@ -4008,11 +4008,11 @@ ADMIN PANEL ROUTES
 ——————————————————— */
 
 // GET /api/admin/users - List all users with emails and tokens
-app.get(’/api/admin/users’, async (req, res) => {
+app.get('/api/admin/users', async (req, res) => {
 try {
-const adminSecret = req.headers[‘x-admin-secret’];
+const adminSecret = req.headers['x-admin-secret'];
 if (adminSecret !== process.env.ADMIN_SECRET) {
-return res.status(403).json({ ok: false, error: ‘Forbidden’ });
+return res.status(403).json({ ok: false, error: 'Forbidden' });
 }
 
 ```
@@ -4161,18 +4161,18 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Admin users error:’, error);
-console.error(‘Admin users error stack:’, error.stack);
-res.status(500).json({ ok: false, error: ‘Failed to fetch users’, details: error.message });
+console.error('Admin users error:', error);
+console.error('Admin users error stack:', error.stack);
+res.status(500).json({ ok: false, error: 'Failed to fetch users', details: error.message });
 }
 });
 
 // GET /api/admin/check-registered - Debug endpoint to see all registered users
-app.get(’/api/admin/check-registered’, async (req, res) => {
+app.get('/api/admin/check-registered', async (req, res) => {
 try {
-const adminSecret = req.query.secret || req.headers[‘x-admin-secret’];
+const adminSecret = req.query.secret || req.headers['x-admin-secret'];
 if (adminSecret !== process.env.ADMIN_SECRET) {
-return res.status(403).json({ error: ‘Forbidden’ });
+return res.status(403).json({ error: 'Forbidden' });
 }
 
 ```
@@ -4241,17 +4241,17 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Check registered error:’, error);
-res.status(500).json({ error: ‘Failed to check registered users’, details: error.message });
+console.error('Check registered error:', error);
+res.status(500).json({ error: 'Failed to check registered users', details: error.message });
 }
 });
 
 // GET /api/admin/sync-emails - Sync emails from auth to users collection
-app.post(’/api/admin/sync-emails’, async (req, res) => {
+app.post('/api/admin/sync-emails', async (req, res) => {
 try {
-const adminSecret = req.query.secret || req.headers[‘x-admin-secret’];
+const adminSecret = req.query.secret || req.headers['x-admin-secret'];
 if (adminSecret !== process.env.ADMIN_SECRET) {
-return res.status(403).json({ error: ‘Forbidden’ });
+return res.status(403).json({ error: 'Forbidden' });
 }
 
 ```
@@ -4303,16 +4303,16 @@ res.json({
 ```
 
 } catch (error) {
-console.error(‘Sync emails error:’, error);
-res.status(500).json({ error: ‘Failed to sync emails’, details: error.message });
+console.error('Sync emails error:', error);
+res.status(500).json({ error: 'Failed to sync emails', details: error.message });
 }
 });
 
 // GET /api/admin/dashboard - Simple HTML admin panel
-app.get(’/api/admin/dashboard’, (req, res) => {
+app.get('/api/admin/dashboard', (req, res) => {
 const adminSecret = req.query.secret;
 if (adminSecret !== process.env.ADMIN_SECRET) {
-return res.status(403).send(’<h1>Forbidden</h1><p>Invalid admin secret</p>’);
+return res.status(403).send('<h1>Forbidden</h1><p>Invalid admin secret</p>');
 }
 
 res.send(`
@@ -4756,10 +4756,10 @@ res.send(`
 });
 
 // NEW ENDPOINT TO ADD:
-app.get(’/api/admin/cache-stats’, async (req, res) => {
-const adminSecret = req.headers[‘x-admin-secret’];
+app.get('/api/admin/cache-stats', async (req, res) => {
+const adminSecret = req.headers['x-admin-secret'];
 if (adminSecret !== process.env.ADMIN_SECRET) {
-return res.status(403).json({ error: ‘Forbidden’ });
+return res.status(403).json({ error: 'Forbidden' });
 }
 
 res.json({
@@ -4795,24 +4795,24 @@ console.log(`▶ NotifAi News on http://localhost:${PORT}`);
 });
 
 // Optional: control first ingest with an env flag
-const RUN_FIRST_INGEST = process.env.RUN_FIRST_INGEST === “true”;
+const RUN_FIRST_INGEST = process.env.RUN_FIRST_INGEST === "true";
 
 (async () => {
 try {
 if (RUN_FIRST_INGEST) {
-console.log(“Scheduling first ingest in background…”);
-// run AFTER startup, and don’t block boot
+console.log("Scheduling first ingest in background…");
+// run AFTER startup, and don't block boot
 setTimeout(() => {
-console.time(“first-ingest”);
-console.log(“Background first ingest…”);
+console.time("first-ingest");
+console.log("Background first ingest…");
 ingestOnce()
-.then(() => console.timeEnd(“first-ingest”))
+.then(() => console.timeEnd("first-ingest"))
 .catch((e) =>
-console.error(“First ingest failed:”, e?.message || e)
+console.error("First ingest failed:", e?.message || e)
 );
 }, 5000); // 5 seconds after boot
 } else {
-console.log(“Skipping first ingest at startup (RUN_FIRST_INGEST != ‘true’).”);
+console.log("Skipping first ingest at startup (RUN_FIRST_INGEST != 'true').");
 }
 
 ```
@@ -4831,6 +4831,6 @@ if (INGEST_MINUTES > 0) {
 ```
 
 } catch (e) {
-console.error(“Ingest scheduler init failed:”, e?.message || e);
+console.error("Ingest scheduler init failed:", e?.message || e);
 }
 })();
