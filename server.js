@@ -245,6 +245,8 @@ const FEEDS_GLOBAL = {
     "https://feeds.bbci.co.uk/news/world/rss.xml",
     "https://www.theguardian.com/world/rss",
     "https://www.aljazeera.com/xml/rss/all.xml",
+    "https://www.presstv.ir/rss.xml",                                               // PressTV (Iran, English)
+    "https://news.google.com/rss/search?q=site:english.almayadeen.net&hl=en-US&gl=US&ceid=US:en",  // Al Mayadeen English (Lebanon) via Google News RSS
   ],
   crypto: [
     "https://cointelegraph.com/rss",
@@ -403,7 +405,7 @@ const TRANSLATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 // Response-level cache for translated article lists (region:lang -> { data, ts })
 const TRANSLATED_RESPONSE_CACHE = new Map();
-const TRANSLATED_RESPONSE_TTL = 10 * 60 * 1000; // 10 minutes
+const TRANSLATED_RESPONSE_TTL = 60 * 60 * 1000; // 60 minutes (was 10 min — reduced API calls 6x)
 
 // Cache for translate-ui responses (lang:hash -> { map, ts })
 const UI_TRANSLATE_CACHE = new Map();
@@ -550,6 +552,22 @@ async function googleTranslateText(text, target) {
   throw lastError;
 }
 
+// ---- Daily translation budget tracking ----
+let translateCharsBudget = {
+  date: new Date().toISOString().slice(0, 10),
+  chars: 0,
+};
+const DAILY_CHAR_CAP = parseInt(process.env.TRANSLATE_DAILY_CHAR_CAP || "500000", 10); // ~$10/day max
+
+function trackTranslateChars(n) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (translateCharsBudget.date !== today) {
+    translateCharsBudget = { date: today, chars: 0 };
+  }
+  translateCharsBudget.chars += n;
+  return translateCharsBudget.chars <= DAILY_CHAR_CAP;
+}
+
 async function translateTextCached(db, targetLang, text) {
   const target = normLang(targetLang);
   const raw = String(text || "").trim();
@@ -557,16 +575,33 @@ async function translateTextCached(db, targetLang, text) {
   if (!raw) return raw;
   if (!target || target === "en") return raw;
 
+  // Skip if text is very short (likely already a label or number)
+  if (raw.length < 3) return raw;
+
   const key = `${target}:${sha1(raw)}`;
 
-  // memory cache only — no Firestore reads/writes for translations
+  // 1. Check memory cache first (fastest)
   const m = TRANSLATION_MEM.get(key);
   if (m && Date.now() - m.ts < TRANSLATION_TTL_MS) return m.text;
 
-  // translate with error handling - never crash the server
+  // 2. Check Firestore persistent cache (survives restarts)
+  const cached = await firestoreGetTranslation(db, key);
+  if (cached) {
+    TRANSLATION_MEM.set(key, { text: cached, ts: Date.now() });
+    return cached;
+  }
+
+  // 3. Check daily budget before calling Google
+  if (!trackTranslateChars(raw.length)) {
+    console.warn(`[TRANSLATE] Daily char cap reached (${translateCharsBudget.chars}/${DAILY_CHAR_CAP}), skipping`);
+    return raw;
+  }
+
+  // 4. Call Google Translate and cache in both layers
   try {
     const translated = await googleTranslateText(raw, target);
     TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
+    firestoreSetTranslation(db, key, translated); // fire-and-forget, no await
     return translated;
   } catch (err) {
     console.error(`[TRANSLATE] Failed for "${raw.slice(0, 50)}..." to ${target}:`, err.message);
@@ -1931,10 +1966,20 @@ app.get("/api/articles", async (req, res) => {
     const startTime = Date.now();
 
     // Collect all texts that need translation (title + summary only, NOT debates)
+    // OPTIMIZATION: Skip regional articles that are already in the target language
+    // (CN articles are generated in Chinese, ID articles in Indonesian by OpenAI)
+    const regionNativeLang = normLang(langForRegion(reg));
+    const requestedLang = normLang(lang);
+    const skipRegional = regionNativeLang === requestedLang; // e.g. CN user viewing CN articles
+
     const translationTasks = [];
     const taskMeta = [];
 
     for (const [category, articles] of Object.entries(out)) {
+      // Regional lanes (us/finance/entertainment) are already in native language
+      const isGlobalLane = (category === "world" || category === "crypto");
+      if (skipRegional && !isGlobalLane) continue; // already in target language
+
       for (let i = 0; i < articles.length; i++) {
         const article = articles[i];
         
@@ -2125,6 +2170,10 @@ app.get("/api/blogs", async (req, res) => {
 });
 // -------------------- END AI BLOGS ENDPOINT --------------------
 
+// Cache for translated individual articles (id:lang -> { data, ts })
+const ARTICLE_TRANSLATE_CACHE = new Map();
+const ARTICLE_TRANSLATE_TTL = 30 * 60 * 1000; // 30 minutes
+
 app.get("/api/article/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -2137,7 +2186,25 @@ app.get("/api/article/:id", async (req, res) => {
     const fallbackLang = langForRegion(regionCode || "us");
     const lang = getRequestedLang(req, fallbackLang);
 
-    const out = lang === "en" ? found : await translateArticleForLang(db, lang, found);
+    // If article is already in the target language (e.g. CN articles already in Chinese,
+    // ID articles already in Indonesian), skip translation entirely
+    const articleNativeLang = normLang(langForRegion(regionCode));
+    const requestedLang = normLang(lang);
+    if (requestedLang === articleNativeLang || lang === "en") {
+      return res.json(found);
+    }
+
+    // Check article-level translation cache
+    const artCacheKey = `art:${id}:${requestedLang}`;
+    const cached = ARTICLE_TRANSLATE_CACHE.get(artCacheKey);
+    if (cached && Date.now() - cached.ts < ARTICLE_TRANSLATE_TTL) {
+      return res.json(cached.data);
+    }
+
+    const out = await translateArticleForLang(db, lang, found);
+
+    // Cache the translated article
+    ARTICLE_TRANSLATE_CACHE.set(artCacheKey, { data: out, ts: Date.now() });
     return res.json(out);
   } catch (e) {
     console.error("GET /api/article/:id error", e?.message || e);
@@ -4777,7 +4844,9 @@ app.get('/api/admin/cache-stats', async (req, res) => {
       referrals: REFERRAL_CACHE.size,
       translations: TRANSLATION_MEM.size,
       translatedResponses: TRANSLATED_RESPONSE_CACHE.size,
+      translatedArticles: ARTICLE_TRANSLATE_CACHE.size,
       uiTranslations: UI_TRANSLATE_CACHE.size,
+      translateBudget: { date: translateCharsBudget.date, charsUsed: translateCharsBudget.chars, dailyCap: DAILY_CHAR_CAP },
       dashboards: DASHBOARD_CACHE.size,
       writeQueue: WRITE_QUEUE.size,
       pendingRequests: PENDING_REQUESTS.size,
