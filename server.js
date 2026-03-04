@@ -260,7 +260,7 @@ conflicts: [
   // — Iran / Middle East conflict —
   "https://www.presstv.ir/rss",                            // PressTV (Iran state media, English)
   "https://english.khamenei.ir/rss/",                      // Khamenei.ir (Iran official, English)
-  "https://www.aljazeera.com/xml/rss/all.xml",             // Al Jazeera (neutral)
+  "https://apnews.com/rss/world-news",                     // AP News (fast, neutral wire)
   "https://www.middleeasteye.net/rss",                     // Middle East Eye (neutral)
   "https://rss.cnn.com/rss/edition_meast.rss",             // CNN Middle East
   "https://www.reuters.com/world/middle-east/rss.xml",     // Reuters Middle East
