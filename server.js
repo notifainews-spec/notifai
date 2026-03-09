@@ -2064,37 +2064,49 @@ res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categorie
 });
 
 app.post("/api/translate-ui", async (req, res) => {
-try {
-const { lang, items } = req.body || {};
-const target = normLang(lang);
-if (!target || target === "en") return res.json({ ok: true, map: {} });
+  try {
+    const { lang, items } = req.body || {};
+    const target = normLang(lang);
 
-const inItems = Array.isArray(items) ? items : [];
+    if (!target || target === "en") {
+      return res.json({ ok: true, map: {} });
+    }
 
-// Cache key based on lang + sorted item keys
-const itemKeys = inItems.map(it => String(it?.key || "")).sort().join(",");
-const uiCacheKey = `${target}:${sha1(itemKeys)}`;
-const cached = UI_TRANSLATE_CACHE.get(uiCacheKey);
-if (cached && Date.now() - cached.ts < UI_TRANSLATE_TTL) {
-  return res.json({ ok: true, map: cached.map });
-}
+    const inItems = Array.isArray(items) ? items : [];
 
-const out = {};
+    const pairs = inItems
+      .map((it) => ({
+        key: String(it?.key || "").trim(),
+        text: String(it?.text || "").trim(),
+      }))
+      .filter((it) => it.key && it.text);
 
-for (const it of inItems) {
-  const k = String(it?.key || "").trim();
-  const v = String(it?.text || "").trim();
-  if (!k || !v) continue;
-  out[k] = await translateTextCached(db, target, v);
-}
+    const signature = pairs
+      .map((it) => `${it.key}::${it.text}`)
+      .sort()
+      .join("|");
 
-UI_TRANSLATE_CACHE.set(uiCacheKey, { map: out, ts: Date.now() });
-return res.json({ ok: true, map: out });
+    const uiCacheKey = `${target}:${sha1(signature)}`;
+    const cached = UI_TRANSLATE_CACHE.get(uiCacheKey);
+    if (cached && Date.now() - cached.ts < UI_TRANSLATE_TTL) {
+      return res.json({ ok: true, map: cached.map });
+    }
 
-} catch (e) {
-console.error("/api/translate-ui error", e?.message || e);
-return res.status(500).json({ ok: false, error: "Translate failed" });
-}
+    const translatedValues = await Promise.all(
+      pairs.map((it) => translateTextCached(db, target, it.text))
+    );
+
+    const out = {};
+    pairs.forEach((it, idx) => {
+      out[it.key] = translatedValues[idx];
+    });
+
+    UI_TRANSLATE_CACHE.set(uiCacheKey, { map: out, ts: Date.now() });
+    return res.json({ ok: true, map: out });
+  } catch (e) {
+    console.error("/api/translate-ui error", e?.message || e);
+    return res.status(500).json({ ok: false, error: "Translate failed" });
+  }
 });
 
 /* ––––––––––––––––––––––––––––
@@ -2217,24 +2229,39 @@ res.status(500).json({ error: "Failed to generate blogs" });
 // –––––––––– END AI BLOGS ENDPOINT ––––––––––
 
 app.get("/api/article/:id", async (req, res) => {
-try {
-const id = req.params.id;
-const all = loadArticles();
-const found = all.find((x) => x.id === id);
-if (!found) return res.status(404).json({ error: "not found" });
+  try {
+    const id = req.params.id;
+    const all = loadArticles();
+    const found = all.find((x) => x.id === id);
+    if (!found) return res.status(404).json({ error: "not found" });
 
-const cat = found?.category || "";
-const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
-const fallbackLang = langForRegion(regionCode || "us");
-const lang = getRequestedLang(req, fallbackLang);
+    const cat = found?.category || "";
+    const regionCode = cat.includes(":") ? cat.split(":")[0] : "us";
+    const fallbackLang = langForRegion(regionCode || "us");
+    const lang = getRequestedLang(req, fallbackLang);
 
-const out = lang === "en" ? found : await translateArticleForLang(db, lang, found);
-return res.json(out);
+    if (lang === "en") {
+      return res.json(found);
+    }
 
-} catch (e) {
-console.error("GET /api/article/:id error", e?.message || e);
-return res.status(500).json({ error: "Failed to load article" });
-}
+    const cacheKey = `article-detail:${id}:${lang}`;
+    const cached = TRANSLATED_RESPONSE_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < TRANSLATED_RESPONSE_TTL) {
+      return res.json(cached.data);
+    }
+
+    const out = await translateArticleDetailForLang(db, lang, found);
+
+    TRANSLATED_RESPONSE_CACHE.set(cacheKey, {
+      data: out,
+      ts: Date.now(),
+    });
+
+    return res.json(out);
+  } catch (e) {
+    console.error("GET /api/article/:id error", e?.message || e);
+    return res.status(500).json({ error: "Failed to load article" });
+  }
 });
 
 // Chat-style follow-up questions for a specific persona about one article
