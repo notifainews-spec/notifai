@@ -480,182 +480,241 @@ return x;
 }
 
 async function firestoreGetTranslation(db, key) {
-try {
-if (!db) return null;
+  try {
+    if (!db) return null;
 
-// Deduplicate concurrent requests
-const pendingKey = `translate:${key}`;
-if (PENDING_REQUESTS.has(pendingKey)) {
-  console.log(`[DEDUP] Reusing pending request for ${key.slice(0, 20)}...`);
-  return await PENDING_REQUESTS.get(pendingKey);
-}
+    const pendingKey = `firestore-read:${key}`;
+    if (PENDING_REQUESTS.has(pendingKey)) {
+      return await PENDING_REQUESTS.get(pendingKey);
+    }
 
-const promise = (async () => {
-  const ref = db.collection("translations_v1").doc(key);
-  const snap = await ref.get();
-  if (!snap.exists) return null;
-  const data = snap.data();
-  if (!data?.text) return null;
-  if (data.ts && Date.now() - data.ts > TRANSLATION_TTL_MS) return null;
-  return data.text;
-})();
+    const promise = (async () => {
+      const ref = db.collection("translations_v1").doc(key);
+      const snap = await ref.get();
+      if (!snap.exists) return null;
 
-PENDING_REQUESTS.set(pendingKey, promise);
-const result = await promise;
-PENDING_REQUESTS.delete(pendingKey);
+      const data = snap.data();
+      if (!data?.text) return null;
+      if (data.ts && Date.now() - data.ts > TRANSLATION_TTL_MS) return null;
 
-return result;
+      return data.text;
+    })();
 
-} catch {
-return null;
-}
+    PENDING_REQUESTS.set(pendingKey, promise);
+
+    try {
+      return await promise;
+    } finally {
+      PENDING_REQUESTS.delete(pendingKey);
+    }
+  } catch (err) {
+    console.warn("[TRANSLATE_CACHE] Firestore read failed:", err?.message || err);
+    return null;
+  }
 }
 
 async function firestoreSetTranslation(db, key, text) {
-try {
-if (!db) return;
-await db.collection("translations_v1").doc(key).set({
-text,
-ts: Date.now(),
-}, { merge: true });
-} catch {
-// ignore
-}
+  try {
+    if (!db) return;
+    await db.collection("translations_v1").doc(key).set(
+      {
+        text,
+        ts: Date.now(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn("[TRANSLATE_CACHE] Firestore write failed:", err?.message || err);
+  }
 }
 
 async function googleTranslateText(text, target) {
-const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-if (!apiKey) throw new Error("Missing GOOGLE_TRANSLATE_API_KEY");
+  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
+  if (!apiKey) throw new Error("Missing GOOGLE_TRANSLATE_API_KEY");
 
-const body = {
-q: [String(text || "")],
-target: normLang(target),
-format: "text",
-};
+  const raw = String(text || "");
+  const normalizedTarget = normLang(target);
 
-const maxRetries = 3;
-let lastError;
+  console.log(`[TRANSLATE] request target=${normalizedTarget} chars=${raw.length}`);
 
-for (let attempt = 0; attempt < maxRetries; attempt++) {
-try {
-const res = await fetch(
-`https://translation.googleapis.com/language/translate/v2?key=${apiKey}`,
-{
-method: "POST",
-headers: { "Content-Type": "application/json" },
-body: JSON.stringify(body),
-}
-);
+  const body = {
+    q: [raw],
+    target: normalizedTarget,
+    format: "text",
+  };
 
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    
-    // If rate limited, wait and retry
-    if (res.status === 403 && (t.includes("Rate Limit") || t.includes("userRateLimitExceeded"))) {
-      const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000); // 1s, 2s, 4s, max 8s
-      console.warn(`[TRANSLATE] Rate limited, waiting ${waitMs}ms before retry ${attempt + 1}/${maxRetries}`);
-      await new Promise(resolve => setTimeout(resolve, waitMs));
-      lastError = new Error(`Translate HTTP ${res.status}: Rate limit exceeded`);
-      continue; // Retry
+  const maxRetries = 3;
+  let lastError;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const res = await fetch(
+        `https://translation.googleapis.com/language/translate/v2?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+
+        if (
+          res.status === 403 &&
+          (t.includes("Rate Limit") || t.includes("userRateLimitExceeded"))
+        ) {
+          const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+          console.warn(
+            `[TRANSLATE] Rate limited, waiting ${waitMs}ms before retry ${attempt + 1}/${maxRetries}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          lastError = new Error(`Translate HTTP ${res.status}: Rate limit exceeded`);
+          continue;
+        }
+
+        throw new Error(`Translate HTTP ${res.status}: ${t.slice(0, 250)}`);
+      }
+
+      const json = await res.json();
+      const translated = json?.data?.translations?.[0]?.translatedText || "";
+      return translated || raw;
+    } catch (err) {
+      lastError = err;
+
+      if (
+        err?.message &&
+        err.message.includes("Rate Limit") &&
+        attempt < maxRetries - 1
+      ) {
+        const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+        console.warn(
+          `[TRANSLATE] Error, waiting ${waitMs}ms before retry ${attempt + 1}/${maxRetries}:`,
+          err.message
+        );
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        continue;
+      }
+
+      throw err;
     }
-    
-    // Other errors, throw immediately
-    throw new Error(`Translate HTTP ${res.status}: ${t.slice(0, 250)}`);
   }
 
-  const json = await res.json();
-  const translated = json?.data?.translations?.[0]?.translatedText || "";
-  return translated;
-  
-} catch (err) {
-  lastError = err;
-  if (err.message && err.message.includes("Rate Limit") && attempt < maxRetries - 1) {
-    const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000);
-    console.warn(`[TRANSLATE] Error, waiting ${waitMs}ms before retry ${attempt + 1}/${maxRetries}:`, err.message);
-    await new Promise(resolve => setTimeout(resolve, waitMs));
-    continue;
-  }
-  throw err;
-}
-
-}
-
-throw lastError;
+  throw lastError;
 }
 
 async function translateTextCached(db, targetLang, text) {
-const target = normLang(targetLang);
-const raw = String(text || "").trim();
+  const target = normLang(targetLang);
+  const raw = String(text || "").trim();
 
-if (!raw) return raw;
-if (!target || target === "en") return raw;
+  if (!raw) return raw;
+  if (!target || target === "en") return raw;
 
-const key = `${target}:${sha1(raw)}`;
+  const key = `${target}:${sha1(raw)}`;
 
-// memory cache only — no Firestore reads/writes for translations
-const m = TRANSLATION_MEM.get(key);
-if (m && Date.now() - m.ts < TRANSLATION_TTL_MS) return m.text;
-
-// translate with error handling - never crash the server
-try {
-const translated = await googleTranslateText(raw, target);
-TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
-return translated;
-} catch (err) {
-console.error(`[TRANSLATE] Failed for "${raw.slice(0, 50)}..." to ${target}:`, err.message);
-return raw;
-}
-}
-
-async function translateArticleForLang(db, lang, article) {
-if (!article || !lang || lang === "en") return article;
-
-// Translate the fields your UI actually displays in lists and article view:
-const title = await translateTextCached(db, lang, article.title || "");
-const summary = await translateTextCached(db, lang, article.summary || "");
-
-// Translate debate JSON (AI perspectives) if it exists
-let debateJson = article.debateJson;
-if (article.debateJson) {
-try {
-const debate = JSON.parse(article.debateJson);
-
-  // Translate each persona's perspective
-  if (debate.socialist?.open) {
-    debate.socialist.open = await translateTextCached(db, lang, debate.socialist.open);
+  // 1) memory cache
+  const mem = TRANSLATION_MEM.get(key);
+  if (mem && Date.now() - mem.ts < TRANSLATION_TTL_MS) {
+    console.log(`[TRANSLATE_CACHE] memory hit ${key.slice(0, 24)}...`);
+    return mem.text;
   }
-  if (debate.rightwing?.open) {
-    debate.rightwing.open = await translateTextCached(db, lang, debate.rightwing.open);
+
+  // 2) Firestore persistent cache
+  const stored = await firestoreGetTranslation(db, key);
+  if (stored) {
+    console.log(`[TRANSLATE_CACHE] firestore hit ${key.slice(0, 24)}...`);
+    TRANSLATION_MEM.set(key, { text: stored, ts: Date.now() });
+    return stored;
   }
-  if (debate.conspiracy?.open) {
-    debate.conspiracy.open = await translateTextCached(db, lang, debate.conspiracy.open);
+
+  // 3) dedupe concurrent live translation calls
+  const pendingKey = `google-translate:${key}`;
+  if (PENDING_REQUESTS.has(pendingKey)) {
+    console.log(`[TRANSLATE_CACHE] pending reuse ${key.slice(0, 24)}...`);
+    return await PENDING_REQUESTS.get(pendingKey);
   }
-  
-  debateJson = JSON.stringify(debate);
-} catch (e) {
-  console.error("Error translating debate:", e);
-  // Keep original if translation fails
+
+  console.log(`[TRANSLATE_CACHE] miss ${key.slice(0, 24)}...`);
+
+  const promise = (async () => {
+    try {
+      const translated = await googleTranslateText(raw, target);
+
+      TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
+
+      // Persist for future deploys / restarts / other instances
+      firestoreSetTranslation(db, key, translated).catch((err) => {
+        console.warn("[TRANSLATE_CACHE] async write failed:", err?.message || err);
+      });
+
+      return translated;
+    } catch (err) {
+      console.error(
+        `[TRANSLATE] Failed for "${raw.slice(0, 50)}..." to ${target}:`,
+        err?.message || err
+      );
+      return raw;
+    } finally {
+      PENDING_REQUESTS.delete(pendingKey);
+    }
+  })();
+
+  PENDING_REQUESTS.set(pendingKey, promise);
+  return await promise;
 }
 
+async function translateArticleListItemForLang(db, lang, article) {
+  if (!article || !lang || lang === "en") return article;
+
+  return {
+    ...article,
+    title: await translateTextCached(db, lang, article.title || ""),
+    summary: await translateTextCached(db, lang, article.summary || ""),
+    // IMPORTANT: do not translate debateJson in feed/list payloads
+  };
 }
 
-return {
-...article,
-title,
-summary,
-debateJson,
-// keep url/image/category/publishedAt etc unchanged
-};
+async function translateArticleDetailForLang(db, lang, article) {
+  if (!article || !lang || lang === "en") return article;
+
+  let debateJson = article.debateJson;
+
+  if (article.debateJson) {
+    try {
+      const debate = JSON.parse(article.debateJson);
+
+      if (debate.socialist?.open) {
+        debate.socialist.open = await translateTextCached(db, lang, debate.socialist.open);
+      }
+      if (debate.rightwing?.open) {
+        debate.rightwing.open = await translateTextCached(db, lang, debate.rightwing.open);
+      }
+      if (debate.conspiracy?.open) {
+        debate.conspiracy.open = await translateTextCached(db, lang, debate.conspiracy.open);
+      }
+
+      debateJson = JSON.stringify(debate);
+    } catch (e) {
+      console.error("Error translating debate:", e);
+    }
+  }
+
+  return {
+    ...article,
+    title: await translateTextCached(db, lang, article.title || ""),
+    summary: await translateTextCached(db, lang, article.summary || ""),
+    debateJson,
+  };
 }
 
 async function translateBlogForLang(db, lang, blog) {
-if (!blog || !lang || lang === "en") return blog;
+  if (!blog || !lang || lang === "en") return blog;
 
-return {
-...blog,
-title: await translateTextCached(db, lang, blog.title || ""),
-body: await translateTextCached(db, lang, blog.body || ""),
-};
+  return {
+    ...blog,
+    title: await translateTextCached(db, lang, blog.title || ""),
+    body: await translateTextCached(db, lang, blog.body || ""),
+  };
 }
 
 /* ––––––––––––––––––––––––––––
