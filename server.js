@@ -83,6 +83,23 @@ legacyHeaders: false,
 message: { ok: false, error: 'Too many requests' }
 });
 
+// Rate limiter for translation-heavy public endpoints
+const publicApiLimiter = rateLimit({
+windowMs: 60 * 1000,
+max: 30,  // 30 requests/min per IP — generous for real users, blocks abuse
+standardHeaders: true,
+legacyHeaders: false,
+message: { ok: false, error: 'Too many requests — please slow down' }
+});
+
+const translateUiLimiter = rateLimit({
+windowMs: 60 * 1000,
+max: 10,  // UI strings don't change often — 10/min is plenty
+standardHeaders: true,
+legacyHeaders: false,
+message: { ok: false, error: 'Too many translate requests' }
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 /* ––––––––––––––––––––––––––––
@@ -434,7 +451,7 @@ const TRANSLATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 // Response-level cache for translated article lists (region:lang -> { data, ts })
 const TRANSLATED_RESPONSE_CACHE = new Map();
-const TRANSLATED_RESPONSE_TTL = 10 * 60 * 1000; // 10 minutes
+const TRANSLATED_RESPONSE_TTL = 30 * 60 * 1000; // 30 minutes (longer = fewer re-translations per ingest cycle)
 
 // Cache for translate-ui responses (lang:hash -> { map, ts })
 const UI_TRANSLATE_CACHE = new Map();
@@ -474,8 +491,9 @@ return crypto.createHash("sha1").update(String(s || ""), "utf8").digest("hex");
 
 function normLang(lang) {
 const x = String(lang || "en").toLowerCase();
-// Google translate uses "zh-CN"/"zh-TW" sometimes; you use "zh". Keep simple:
-if (x === "cn") return "zh";
+// Normalize ALL Chinese variants to "zh" so cache keys are consistent
+// Previously: normLang("zh-CN")="zh-cn" but normLang("zh")="zh" → duplicate cache keys + double billing
+if (x === "cn" || x === "zh-cn" || x === "zh-tw" || x === "zh-hans" || x === "zh-hant") return "zh";
 return x;
 }
 
@@ -534,12 +552,15 @@ async function googleTranslateText(text, target) {
 
   const raw = String(text || "");
   const normalizedTarget = normLang(target);
+  
+  // Google Translate API expects "zh-CN" not "zh" for Simplified Chinese
+  const apiTarget = normalizedTarget === "zh" ? "zh-CN" : normalizedTarget;
 
-  console.log(`[TRANSLATE] request target=${normalizedTarget} chars=${raw.length}`);
+  console.log(`[TRANSLATE] request target=${apiTarget} chars=${raw.length}`);
 
   const body = {
     q: [raw],
-    target: normalizedTarget,
+    target: apiTarget,
     format: "text",
   };
 
@@ -603,6 +624,46 @@ async function googleTranslateText(text, target) {
   throw lastError;
 }
 
+// –––––––––– DAILY TRANSLATION BUDGET ––––––––––
+const DAILY_CHAR_BUDGET = parseInt(process.env.DAILY_TRANSLATE_CHAR_BUDGET || "500000", 10); // 500K chars/day ≈ $10/day max at Google's $20/M rate
+let translateCharCounter = { day: "", chars: 0, apiCalls: 0 };
+
+function canTranslate(textLength) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (translateCharCounter.day !== today) {
+    translateCharCounter = { day: today, chars: 0, apiCalls: 0 };
+  }
+  return translateCharCounter.chars + textLength <= DAILY_CHAR_BUDGET;
+}
+
+function trackTranslateChars(textLength) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (translateCharCounter.day !== today) {
+    translateCharCounter = { day: today, chars: 0, apiCalls: 0 };
+  }
+  translateCharCounter.chars += textLength;
+  translateCharCounter.apiCalls += 1;
+}
+
+// Map region codes to the language their content is already generated in (by OpenAI at ingest time)
+// If the user requests this language, we SKIP translation entirely
+function nativeLangForRegion(regionCode) {
+  switch (regionCode) {
+    case "cn": return "zh";  // OpenAI generates CN summaries/debates in Chinese
+    case "id": return "id";  // OpenAI generates ID summaries/debates in Indonesian
+    default:   return "en";  // All others: US, UK, PK, NG → English
+  }
+}
+
+// Check if an article is already in the target language (no translation needed)
+function articleAlreadyInLang(article, targetLang) {
+  const cat = article?.category || "";
+  const regionCode = cat.includes(":") ? cat.split(":")[0] : "";
+  if (!regionCode) return false; // global categories (world, crypto, conflicts) are English
+  const nativeLang = nativeLangForRegion(regionCode);
+  return nativeLang === targetLang;
+}
+
 async function translateTextCached(db, targetLang, text) {
   const target = normLang(targetLang);
   const raw = String(text || "").trim();
@@ -615,14 +676,12 @@ async function translateTextCached(db, targetLang, text) {
   // 1) memory cache
   const mem = TRANSLATION_MEM.get(key);
   if (mem && Date.now() - mem.ts < TRANSLATION_TTL_MS) {
-    console.log(`[TRANSLATE_CACHE] memory hit ${key.slice(0, 24)}...`);
     return mem.text;
   }
 
   // 2) Firestore persistent cache
   const stored = await firestoreGetTranslation(db, key);
   if (stored) {
-    console.log(`[TRANSLATE_CACHE] firestore hit ${key.slice(0, 24)}...`);
     TRANSLATION_MEM.set(key, { text: stored, ts: Date.now() });
     return stored;
   }
@@ -630,15 +689,21 @@ async function translateTextCached(db, targetLang, text) {
   // 3) dedupe concurrent live translation calls
   const pendingKey = `google-translate:${key}`;
   if (PENDING_REQUESTS.has(pendingKey)) {
-    console.log(`[TRANSLATE_CACHE] pending reuse ${key.slice(0, 24)}...`);
     return await PENDING_REQUESTS.get(pendingKey);
   }
 
-  console.log(`[TRANSLATE_CACHE] miss ${key.slice(0, 24)}...`);
+  console.log(`[TRANSLATE] cache miss → Google API | target=${target} chars=${raw.length}`);
+
+  // 4) Check daily budget before calling Google API
+  if (!canTranslate(raw.length)) {
+    console.warn(`[TRANSLATE] Daily budget exhausted (${translateCharCounter.chars}/${DAILY_CHAR_BUDGET} chars, ${translateCharCounter.apiCalls} calls). Returning original.`);
+    return raw;
+  }
 
   const promise = (async () => {
     try {
       const translated = await googleTranslateText(raw, target);
+      trackTranslateChars(raw.length);
 
       TRANSLATION_MEM.set(key, { text: translated, ts: Date.now() });
 
@@ -808,7 +873,7 @@ return out;
 // — LANGUAGE: requested lang support —
 const SUPPORTED_LANGS = new Set([
 "en",
-"zh", "zh-CN",
+"zh",     // Simplified Chinese (canonical form — all variants normalize to "zh")
 "ur",
 "ar",
 "es",
@@ -825,15 +890,13 @@ if (!raw) return "en";
 
 // normalize common variants
 const lower = raw.toLowerCase();
-if (lower === "cn" || lower === "zh-hans" || lower === "zh") return "zh-CN";
+// All Chinese variants → "zh" (must match normLang for consistent cache keys)
+if (lower === "cn" || lower === "zh-hans" || lower === "zh" || lower === "zh-cn" || lower === "zh-tw" || lower === "zh-hant") return "zh";
 if (lower === "id-id") return "id";
 if (lower === "ar-sa") return "ar";
 if (lower === "ur-pk") return "ur";
 
-// keep case for zh-CN; otherwise use lowercase
-const normalized = raw === "zh-CN" ? "zh-CN" : lower;
-
-return SUPPORTED_LANGS.has(normalized) ? normalized : "en";
+return SUPPORTED_LANGS.has(lower) ? lower : "en";
 }
 
 function getRequestedLang(req, fallback = "en") {
@@ -847,8 +910,8 @@ return picked;
 // Language per region (for OpenAI prompts)
 function langForRegion(region) {
 switch (region) {
-case "cn": return "zh-CN"; // 简体中文
-case "id": return "id";    // Bahasa Indonesia
+case "cn": return "zh"; // Simplified Chinese (canonical form)
+case "id": return "id"; // Bahasa Indonesia
 default:   return "en";
 }
 }
@@ -1265,7 +1328,7 @@ OpenAI (localized)
 ——————————————————— */
 async function summarizeWithOpenAI(title, text, lang = "en") {
 const langHints = {
-"zh-CN": "用简体中文回答。保持中立、清晰、精炼（约120字）。",
+"zh": "用简体中文回答。保持中立、清晰、精炼（约120字）。",
 "id":    "Jawab dalam Bahasa Indonesia. Netral, jelas, ringkas (~120 kata).",
 "en":    "Reply in English. Neutral, clear, concise (~120 words)."
 };
@@ -1285,7 +1348,7 @@ return r.choices?.[0]?.message?.content?.trim() || "";
 
 function personaPrompts(lang = "en") {
 // keep the tone rules, but ask reply language
-const postfix = (lang === "zh-CN")
+const postfix = (lang === "zh")
 ? "用简体中文回答。紧扣文章主题。1–3句。"
 : (lang === "id")
 ? "Jawab dalam Bahasa Indonesia. Tetap pada topik artikel. 1–3 kalimat."
@@ -1333,7 +1396,7 @@ Persona chat helper for Ask-AI endpoint
 function personaChatSystem(persona, lang = "en") {
 let langHint;
 switch (lang) {
-case "zh-CN":
+case "zh":
 langHint =
 "用简体中文回答。语气自然、口语化，最多 6 句。重点表达你的立场和判断，而不是长篇解释。";
 break;
@@ -1957,7 +2020,7 @@ MAX_PER_CATEGORY, INGEST_MAX_PER_CAT, INGEST_PER_FEED, FETCH_CONCURRENCY, INGEST
 });
 
 // region query: ?region=us|cn|pk|id|uk|ng
-app.get("/api/articles", async (req, res) => {
+app.get("/api/articles", publicApiLimiter, async (req, res) => {
 const region = String(req.query.region || "us").toLowerCase();
 const reg = REGIONS.includes(region) ? region : "us";
 const limit = parseInt(req.query.limit || String(MAX_PER_CATEGORY || 12), 10);
@@ -2004,10 +2067,10 @@ if (lane === "entertainment" && out.entertainment.length < limit) out.entertainm
 
 // STEP 2: Now translate ONLY what we're sending (if not English)
 if (lang !== "en") {
-// Response-level cache: same region+lang within TTL = zero translation calls
+// Response-level cache: stable key using content hash (NOT latestId which changes every ingest cycle)
 const totalArticles = Object.values(out).reduce((s, arr) => s + arr.length, 0);
-const latestId = Object.values(out).flat()[0]?.id || '';
-const cacheKey = `${reg}:${lang}:${totalArticles}:${latestId}`;
+const contentHash = sha1(Object.values(out).flat().map(a => a.id).join(','));
+const cacheKey = `${reg}:${lang}:${totalArticles}:${contentHash}`;
 const cached = TRANSLATED_RESPONSE_CACHE.get(cacheKey);
 if (cached && Date.now() - cached.ts < TRANSLATED_RESPONSE_TTL) {
 console.log(`[API] Serving cached translated response for ${cacheKey}`);
@@ -2024,6 +2087,9 @@ const taskMeta = [];
 for (const [category, articles] of Object.entries(out)) {
   for (let i = 0; i < articles.length; i++) {
     const article = articles[i];
+    
+    // SKIP: article is already in the target language (e.g. CN articles for Chinese users, ID for Indonesian)
+    if (articleAlreadyInLang(article, lang)) continue;
     
     // Add title translation task
     if (article.title) {
@@ -2063,7 +2129,7 @@ return res.json(responseData);
 res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
 });
 
-app.post("/api/translate-ui", async (req, res) => {
+app.post("/api/translate-ui", translateUiLimiter, async (req, res) => {
   try {
     const { lang, items } = req.body || {};
     const target = normLang(lang);
@@ -2196,7 +2262,7 @@ headlineKey,
 
 // ––––––––––– AI BLOGS ENDPOINT –––––––––––
 // Returns one blog per persona (Jessica, John, Joe) for today.
-app.get("/api/blogs", async (req, res) => {
+app.get("/api/blogs", publicApiLimiter, async (req, res) => {
 try {
 const lang = normLang(req.query.lang || "en");  // ← ADD THIS LINE
 
@@ -2228,7 +2294,7 @@ res.status(500).json({ error: "Failed to generate blogs" });
 });
 // –––––––––– END AI BLOGS ENDPOINT ––––––––––
 
-app.get("/api/article/:id", async (req, res) => {
+app.get("/api/article/:id", publicApiLimiter, async (req, res) => {
   try {
     const id = req.params.id;
     const all = loadArticles();
@@ -2241,6 +2307,11 @@ app.get("/api/article/:id", async (req, res) => {
     const lang = getRequestedLang(req, fallbackLang);
 
     if (lang === "en") {
+      return res.json(found);
+    }
+
+    // Skip translation if article is already in the target language (CN articles for Chinese users, etc.)
+    if (articleAlreadyInLang(found, lang)) {
       return res.json(found);
     }
 
@@ -4798,6 +4869,14 @@ writeQueue: WRITE_QUEUE.size,
 pendingRequests: PENDING_REQUESTS.size,
 verifiedUsers: VERIFIED_USER_CACHE.size,
 deviceMappings: DEVICE_MAP_CACHE.size
+},
+translateBudget: {
+day: translateCharCounter.day || "none",
+charsUsedToday: translateCharCounter.chars,
+apiCallsToday: translateCharCounter.apiCalls,
+dailyLimit: DAILY_CHAR_BUDGET,
+percentUsed: ((translateCharCounter.chars / DAILY_CHAR_BUDGET) * 100).toFixed(1) + '%',
+estimatedDailyCostUSD: '$' + ((translateCharCounter.chars / 1_000_000) * 20).toFixed(2),
 },
 cacheTTLs: {
 user: `${USER_CACHE_TTL / 1000 / 60}min`,
