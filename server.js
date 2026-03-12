@@ -61,10 +61,10 @@ legacyHeaders: false,
 AD-BASED REWARDS CONFIGURATION
 ——————————————————— */
 const AD_REWARDS_CONFIG = {
-TOKENS_PER_AD: 5,
-DAILY_TOKEN_CAP: 100,            // Max 100 tokens/day from ads (20 ads × 5 tokens)
-MAX_ADS_PER_DAY: 20,
-AD_COOLDOWN_MS: 5 * 60 * 1000,
+TOKENS_PER_AD: 10,
+DAILY_TOKEN_CAP: 300,            // Max 300 tokens/day from ads (30 ads × 10 tokens)
+MAX_ADS_PER_DAY: 30,
+AD_COOLDOWN_MS: 3 * 60 * 1000,
 MAX_ADS_PER_HOUR: 20,
 INVITE: {
 REQUIRED_ADS: 10,
