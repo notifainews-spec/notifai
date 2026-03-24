@@ -1390,6 +1390,92 @@ conspiracy:  { name: "Joe Musk",        open: c }
 }
 
 /* ––––––––––––––––––––––––––––
+PRE-TRANSLATE AT INGEST TIME (replaces runtime Google Translate $500/mo → ~$5/mo)
+Uses GPT-4o-mini to translate title + summary + debate opens into ALL
+supported languages in a SINGLE API call per article.
+——————————————————— */
+const PRE_TRANSLATE_LANGS = ["zh", "es", "de", "nl", "fr", "hi", "id", "ja", "ur", "ar"];
+const LANG_NAMES_MAP = {
+  en: "English", zh: "Simplified Chinese", es: "Spanish", de: "German",
+  nl: "Dutch", fr: "French", hi: "Hindi", id: "Indonesian",
+  ja: "Japanese", ur: "Urdu", ar: "Arabic"
+};
+
+async function preTranslateArticle(title, summary, debate, nativeLang = "en") {
+  // Which languages do we need? All except the one it's already written in.
+  const targets = PRE_TRANSLATE_LANGS.filter(l => l !== nativeLang);
+  // CN/ID articles need English too
+  if (nativeLang !== "en") targets.unshift("en");
+
+  const langList = targets.map(l => `"${l}" (${LANG_NAMES_MAP[l] || l})`).join(", ");
+
+  const src = { title: title || "" , summary: summary || "" };
+  if (debate?.socialist?.open)  src.socialist_open  = debate.socialist.open;
+  if (debate?.rightwing?.open)   src.rightwing_open   = debate.rightwing.open;
+  if (debate?.conspiracy?.open)  src.conspiracy_open  = debate.conspiracy.open;
+
+  const sys = `You are a professional translator. Translate every value in the provided JSON into each of these languages: ${langList}.
+Return ONLY valid JSON (no markdown fences) with this structure:
+{ "LANG_CODE": { "title":"…", "summary":"…", "socialist_open":"…", "rightwing_open":"…", "conspiracy_open":"…" }, … }
+Rules: natural translation, keep proper nouns/brand names as-is, Simplified Chinese for "zh".`;
+
+  try {
+    const r = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: sys }, { role: "user", content: JSON.stringify(src) }],
+      temperature: 0.3,
+      max_tokens: 8000,
+      response_format: { type: "json_object" },
+    });
+    const parsed = JSON.parse(r.choices?.[0]?.message?.content?.trim() || "{}");
+
+    const out = {};
+    for (const lang of targets) {
+      const t = parsed[lang];
+      if (!t) continue;
+      let debateJson = null;
+      if (debate) {
+        debateJson = JSON.stringify({
+          socialist:  { name: debate.socialist?.name  || "Jessica Rebella", open: t.socialist_open  || debate.socialist?.open  || "" },
+          rightwing:  { name: debate.rightwing?.name   || "John Davis",      open: t.rightwing_open  || debate.rightwing?.open   || "" },
+          conspiracy: { name: debate.conspiracy?.name  || "Joe Musk",        open: t.conspiracy_open || debate.conspiracy?.open || "" },
+        });
+      }
+      out[lang] = { title: t.title || title, summary: t.summary || summary, ...(debateJson ? { debateJson } : {}) };
+    }
+    console.log(`[PRE-TRANSLATE] Article → ${Object.keys(out).length} languages`);
+    return out;
+  } catch (err) {
+    console.error("[PRE-TRANSLATE] Article failed:", err?.message || err);
+    return {};
+  }
+}
+
+async function preTranslateBlog(title, body) {
+  const langList = PRE_TRANSLATE_LANGS.map(l => `"${l}" (${LANG_NAMES_MAP[l] || l})`).join(", ");
+  const sys = `You are a professional translator. Translate the title and body into each of these languages: ${langList}.
+Return ONLY valid JSON: { "LANG_CODE": { "title":"…", "body":"…" }, … }
+Natural translation, keep proper nouns as-is, Simplified Chinese for "zh".`;
+
+  try {
+    const r = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: sys }, { role: "user", content: JSON.stringify({ title, body: (body || "").slice(0, 3000) }) }],
+      temperature: 0.3,
+      max_tokens: 16000,
+      response_format: { type: "json_object" },
+    });
+    const parsed = JSON.parse(r.choices?.[0]?.message?.content?.trim() || "{}");
+    console.log(`[PRE-TRANSLATE] Blog → ${Object.keys(parsed).length} languages`);
+    return parsed;
+  } catch (err) {
+    console.error("[PRE-TRANSLATE] Blog failed:", err?.message || err);
+    return {};
+  }
+}
+// –––––––––– END PRE-TRANSLATE ––––––––––
+
+/* ––––––––––––––––––––––––––––
 Persona chat helper for Ask-AI endpoint
 (short, opinionated, debate-ready replies)
 ——————————————————— */
@@ -1574,6 +1660,15 @@ const blogs = [];
 for (const p of BLOG_PERSONAS) {
 try {
 const blog = await generateBlogForPersona(p.key, today);
+
+// PRE-TRANSLATE blog into all languages
+try {
+  blog.translations = await preTranslateBlog(blog.title, blog.body);
+} catch (e) {
+  console.error("[BLOG] Pre-translate failed for", p.key, e?.message || e);
+  blog.translations = {};
+}
+
 blogs.push(blog);
 } catch (e) {
 console.error("Failed generating blog for", p.key, e);
@@ -1935,6 +2030,14 @@ if (all.find(x => x.url === art.url)) continue;
   const summary = await summarizeWithOpenAI(art.title, art.text, "en");
   const debate  = await personaDebate(art.title, art.text, "en");
 
+  // PRE-TRANSLATE: one OpenAI call → all 10 languages (~$0.003 vs $0.10 Google)
+  let translations = {};
+  try {
+    translations = await preTranslateArticle(art.title, summary, debate, "en");
+  } catch (e) {
+    console.error("[INGEST] Pre-translate failed, old articles will use Google fallback:", e?.message || e);
+  }
+
   all.push({
     id: nanoid(),
     url: art.url,
@@ -1945,6 +2048,7 @@ if (all.find(x => x.url === art.url)) continue;
     publishedAt: art.publishedAt,
     summary,
     debateJson: JSON.stringify(debate),
+    translations,
     createdAt: new Date().toISOString(),
   });
   created.push(1);
@@ -1967,6 +2071,14 @@ for (const lane of ["politics", "finance", "entertainment"]) {
     const summary = await summarizeWithOpenAI(art.title, art.text, lang);
     const debate  = await personaDebate(art.title, art.text, lang);
 
+    // PRE-TRANSLATE: one OpenAI call → all languages
+    let translations = {};
+    try {
+      translations = await preTranslateArticle(art.title, summary, debate, lang);
+    } catch (e) {
+      console.error("[INGEST] Pre-translate failed for regional:", e?.message || e);
+    }
+
     all.push({
       id: nanoid(),
       url: art.url,
@@ -1977,6 +2089,7 @@ for (const lane of ["politics", "finance", "entertainment"]) {
       publishedAt: art.publishedAt,
       summary,
       debateJson: JSON.stringify(debate),
+      translations,
       createdAt: new Date().toISOString(),
     });
     created.push(1);
@@ -2065,9 +2178,8 @@ if (lane === "entertainment" && out.entertainment.length < limit) out.entertainm
 
 }
 
-// STEP 2: Now translate ONLY what we're sending (if not English)
+// STEP 2: Serve pre-translated content (if not English)
 if (lang !== "en") {
-// Response-level cache: stable key using content hash (NOT latestId which changes every ingest cycle)
 const totalArticles = Object.values(out).reduce((s, arr) => s + arr.length, 0);
 const contentHash = sha1(Object.values(out).flat().map(a => a.id).join(','));
 const cacheKey = `${reg}:${lang}:${totalArticles}:${contentHash}`;
@@ -2077,55 +2189,63 @@ console.log(`[API] Serving cached translated response for ${cacheKey}`);
 return res.json(cached.data);
 }
 
-console.log(`[API] Starting translation to ${lang}...`);
 const startTime = Date.now();
-
-// Collect all texts that need translation (title + summary only, NOT debates)
-const translationTasks = [];
-const taskMeta = [];
+let preHits = 0, fallbackCount = 0;
+const fallbackTasks = [];
+const fallbackMeta = [];
 
 for (const [category, articles] of Object.entries(out)) {
   for (let i = 0; i < articles.length; i++) {
     const article = articles[i];
-    
-    // SKIP: article is already in the target language (e.g. CN articles for Chinese users, ID for Indonesian)
-    if (articleAlreadyInLang(article, lang)) continue;
-    
-    // Add title translation task
-    if (article.title) {
-      translationTasks.push(translateTextCached(db, lang, article.title));
-      taskMeta.push({ category, index: i, field: 'title' });
+    if (articleAlreadyInLang(article, lang)) {
+      delete articles[i].translations; // strip blob from response
+      continue;
     }
-    
-    // Add summary translation task
-    if (article.summary) {
-      translationTasks.push(translateTextCached(db, lang, article.summary));
-      taskMeta.push({ category, index: i, field: 'summary' });
+
+    const pre = article.translations?.[lang];
+    if (pre) {
+      // FREE — use pre-computed translation from ingest
+      articles[i] = { ...article, title: pre.title || article.title, summary: pre.summary || article.summary };
+      delete articles[i].translations;
+      preHits++;
+    } else {
+      // FALLBACK — old article without pre-translations → Google Translate
+      fallbackCount++;
+      if (article.title) {
+        fallbackTasks.push(translateTextCached(db, lang, article.title));
+        fallbackMeta.push({ category, index: i, field: 'title' });
+      }
+      if (article.summary) {
+        fallbackTasks.push(translateTextCached(db, lang, article.summary));
+        fallbackMeta.push({ category, index: i, field: 'summary' });
+      }
+      delete articles[i].translations;
     }
   }
 }
 
-console.log(`[API] Translating ${translationTasks.length} texts in parallel...`);
+if (fallbackTasks.length > 0) {
+  console.log(`[API] ${preHits} pre-translated, ${fallbackCount} fallback to Google (${fallbackTasks.length} texts)`);
+  const results = await Promise.all(fallbackTasks);
+  results.forEach((text, idx) => {
+    const m = fallbackMeta[idx];
+    out[m.category][m.index][m.field] = text;
+  });
+} else {
+  console.log(`[API] All ${preHits} articles from pre-translations — 0 Google API calls`);
+}
 
-// Execute all translations in parallel
-const translations = await Promise.all(translationTasks);
-
-// Apply translations back to articles
-translations.forEach((translatedText, idx) => {
-  const meta = taskMeta[idx];
-  out[meta.category][meta.index][meta.field] = translatedText;
-});
-
-const elapsed = Date.now() - startTime;
-console.log(`[API] Translation completed in ${elapsed}ms`);
-
-// Cache the translated response
+console.log(`[API] lang=${lang} done in ${Date.now() - startTime}ms`);
 const responseData = { site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out };
 TRANSLATED_RESPONSE_CACHE.set(cacheKey, { data: responseData, ts: Date.now() });
 return res.json(responseData);
 
 }
 
+// English: strip translations blob to save bandwidth
+for (const articles of Object.values(out)) {
+  for (const a of articles) delete a.translations;
+}
 res.json({ site: process.env.SITE_NAME || "NotifAi News", region: reg, categories: out });
 });
 
@@ -2253,6 +2373,11 @@ if (
 const order = ["politics", "world", "finance", "crypto", "entertainment"];
 const headlineKey = order.find((k) => lanes[k]);
 
+// Strip translations blob from response to save bandwidth
+for (const k of order) {
+  if (lanes[k]) delete lanes[k].translations;
+}
+
 res.json({
 region: reg,
 lanes,
@@ -2264,21 +2389,41 @@ headlineKey,
 // Returns one blog per persona (Jessica, John, Joe) for today.
 app.get("/api/blogs", publicApiLimiter, async (req, res) => {
 try {
-const lang = normLang(req.query.lang || "en");  // ← ADD THIS LINE
+const lang = normLang(req.query.lang || "en");
 
 const blogs = await getBlogsForToday();
 const today = new Date().toISOString().slice(0, 10);
 
-// Translate blogs if not English (with response-level cache)
+// Response-level cache
 const blogCacheKey = `blogs:${lang}:${today}`;
 const cachedBlogs = TRANSLATED_RESPONSE_CACHE.get(blogCacheKey);
 if (cachedBlogs && Date.now() - cachedBlogs.ts < TRANSLATED_RESPONSE_TTL) {
   return res.json(cachedBlogs.data);
 }
 
-const translatedBlogs = await Promise.all(
-  blogs.map((b) => translateBlogForLang(db, lang, b))
-);
+// Use pre-computed translations (FREE) or fallback to Google
+let translatedBlogs;
+if (lang === "en") {
+  translatedBlogs = blogs.map(b => { const c = { ...b }; delete c.translations; return c; });
+} else {
+  let anyFallback = false;
+  translatedBlogs = await Promise.all(blogs.map(async (b) => {
+    const pre = b.translations?.[lang];
+    if (pre) {
+      const c = { ...b, title: pre.title || b.title, body: pre.body || b.body };
+      delete c.translations;
+      return c;
+    }
+    // Fallback for blogs without pre-translations
+    anyFallback = true;
+    const fb = await translateBlogForLang(db, lang, b);
+    delete fb.translations;
+    return fb;
+  }));
+  if (!anyFallback) {
+    console.log(`[API] Blogs served from pre-translations for ${lang} — 0 Google calls`);
+  }
+}
 
 const blogResponse = { date: today, blogs: translatedBlogs };
 if (lang !== "en") {
@@ -2306,14 +2451,13 @@ app.get("/api/article/:id", publicApiLimiter, async (req, res) => {
     const fallbackLang = langForRegion(regionCode || "us");
     const lang = getRequestedLang(req, fallbackLang);
 
-    if (lang === "en") {
-      return res.json(found);
-    }
+    // Keep pre-translations for lookup, then strip from response
+    const preTranslations = found.translations || {};
+    const article = { ...found };
+    delete article.translations;
 
-    // Skip translation if article is already in the target language (CN articles for Chinese users, etc.)
-    if (articleAlreadyInLang(found, lang)) {
-      return res.json(found);
-    }
+    if (lang === "en") return res.json(article);
+    if (articleAlreadyInLang(article, lang)) return res.json(article);
 
     const cacheKey = `article-detail:${id}:${lang}`;
     const cached = TRANSLATED_RESPONSE_CACHE.get(cacheKey);
@@ -2321,13 +2465,24 @@ app.get("/api/article/:id", publicApiLimiter, async (req, res) => {
       return res.json(cached.data);
     }
 
-    const out = await translateArticleDetailForLang(db, lang, found);
+    // Try pre-computed translation first (FREE — no API call)
+    const pre = preTranslations[lang];
+    if (pre) {
+      const out = {
+        ...article,
+        title: pre.title || article.title,
+        summary: pre.summary || article.summary,
+        debateJson: pre.debateJson || article.debateJson,
+      };
+      TRANSLATED_RESPONSE_CACHE.set(cacheKey, { data: out, ts: Date.now() });
+      console.log(`[API] Article ${id} detail served from pre-translation (${lang})`);
+      return res.json(out);
+    }
 
-    TRANSLATED_RESPONSE_CACHE.set(cacheKey, {
-      data: out,
-      ts: Date.now(),
-    });
-
+    // Fallback for old articles without pre-translations → Google Translate
+    console.log(`[API] Article ${id} missing pre-translation for ${lang}, falling back to Google`);
+    const out = await translateArticleDetailForLang(db, lang, article);
+    TRANSLATED_RESPONSE_CACHE.set(cacheKey, { data: out, ts: Date.now() });
     return res.json(out);
   } catch (e) {
     console.error("GET /api/article/:id error", e?.message || e);
