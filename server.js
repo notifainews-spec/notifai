@@ -1660,15 +1660,7 @@ const blogs = [];
 for (const p of BLOG_PERSONAS) {
 try {
 const blog = await generateBlogForPersona(p.key, today);
-
-// PRE-TRANSLATE blog into all languages
-try {
-  blog.translations = await preTranslateBlog(blog.title, blog.body);
-} catch (e) {
-  console.error("[BLOG] Pre-translate failed for", p.key, e?.message || e);
-  blog.translations = {};
-}
-
+blog.translations = {}; // filled in by background pass
 blogs.push(blog);
 } catch (e) {
 console.error("Failed generating blog for", p.key, e);
@@ -1680,7 +1672,28 @@ date: today,
 items: blogs,
 };
 
+// Background: pre-translate blogs without blocking the response
+backgroundPreTranslateBlogs(blogs).catch(e => {
+  console.error("[BG-TRANSLATE] Blog translation failed:", e?.message || e);
+});
+
 return blogs;
+}
+
+// Background blog translation — updates blogsCache in place
+async function backgroundPreTranslateBlogs(blogs) {
+  for (const blog of blogs) {
+    if (blog.translations && Object.keys(blog.translations).length > 0) continue;
+    try {
+      blog.translations = await preTranslateBlog(blog.title, blog.body);
+    } catch (e) {
+      console.error("[BG-TRANSLATE] Blog failed for", blog.persona, e?.message || e);
+      blog.translations = {};
+    }
+  }
+  // Clear response caches so next request picks up translations
+  TRANSLATED_RESPONSE_CACHE.clear();
+  console.log("[BG-TRANSLATE] Blog translations complete");
 }
 // –––––––––– END AI BLOG HELPERS ––––––––––
 
@@ -2030,14 +2043,6 @@ if (all.find(x => x.url === art.url)) continue;
   const summary = await summarizeWithOpenAI(art.title, art.text, "en");
   const debate  = await personaDebate(art.title, art.text, "en");
 
-  // PRE-TRANSLATE: one OpenAI call → all 10 languages (~$0.003 vs $0.10 Google)
-  let translations = {};
-  try {
-    translations = await preTranslateArticle(art.title, summary, debate, "en");
-  } catch (e) {
-    console.error("[INGEST] Pre-translate failed, old articles will use Google fallback:", e?.message || e);
-  }
-
   all.push({
     id: nanoid(),
     url: art.url,
@@ -2048,8 +2053,8 @@ if (all.find(x => x.url === art.url)) continue;
     publishedAt: art.publishedAt,
     summary,
     debateJson: JSON.stringify(debate),
-    translations,
     createdAt: new Date().toISOString(),
+    // translations added in background pass after save
   });
   created.push(1);
 }
@@ -2071,14 +2076,6 @@ for (const lane of ["politics", "finance", "entertainment"]) {
     const summary = await summarizeWithOpenAI(art.title, art.text, lang);
     const debate  = await personaDebate(art.title, art.text, lang);
 
-    // PRE-TRANSLATE: one OpenAI call → all languages
-    let translations = {};
-    try {
-      translations = await preTranslateArticle(art.title, summary, debate, lang);
-    } catch (e) {
-      console.error("[INGEST] Pre-translate failed for regional:", e?.message || e);
-    }
-
     all.push({
       id: nanoid(),
       url: art.url,
@@ -2089,8 +2086,8 @@ for (const lane of ["politics", "finance", "entertainment"]) {
       publishedAt: art.publishedAt,
       summary,
       debateJson: JSON.stringify(debate),
-      translations,
       createdAt: new Date().toISOString(),
+      // translations added in background pass after save
     });
     created.push(1);
   }
@@ -2114,7 +2111,67 @@ if (added>0) saveArticles(all);
 } catch {}
 }
 
+// BACKGROUND: Pre-translate articles that don't have translations yet.
+// This runs AFTER articles are saved, so stories are visible immediately.
+// If it crashes or is interrupted, articles still work — Google Translate fallback kicks in.
+if (created.length > 0) {
+  backgroundPreTranslate().catch(e => {
+    console.error("[BG-TRANSLATE] Background pass failed:", e?.message || e);
+  });
+}
+
 return created;
+}
+
+// Background pre-translation: runs after ingest, doesn't block article visibility
+async function backgroundPreTranslate() {
+  const all = loadArticles();
+  const untranslated = all.filter(a => !a.translations || Object.keys(a.translations).length === 0);
+  
+  if (untranslated.length === 0) {
+    console.log("[BG-TRANSLATE] All articles already have translations");
+    return;
+  }
+  
+  console.log(`[BG-TRANSLATE] Starting background translation for ${untranslated.length} articles...`);
+  let translated = 0;
+  
+  for (const article of untranslated) {
+    try {
+      const cat = article.category || "";
+      const regionCode = cat.includes(":") ? cat.split(":")[0] : "";
+      const nativeLang = regionCode ? nativeLangForRegion(regionCode) : "en";
+      
+      let debate = null;
+      try { debate = article.debateJson ? JSON.parse(article.debateJson) : null; } catch {}
+      
+      const translations = await preTranslateArticle(
+        article.title, article.summary, debate, nativeLang
+      );
+      
+      if (Object.keys(translations).length > 0) {
+        article.translations = translations;
+        translated++;
+        
+        // Save every 5 articles to avoid losing progress
+        if (translated % 5 === 0) {
+          saveArticles(all);
+          console.log(`[BG-TRANSLATE] Progress: ${translated}/${untranslated.length} articles translated, saved checkpoint`);
+        }
+      }
+    } catch (e) {
+      console.error(`[BG-TRANSLATE] Failed for article ${article.id}:`, e?.message || e);
+      // Continue with next article — don't let one failure stop the batch
+    }
+  }
+  
+  // Final save
+  if (translated > 0) {
+    saveArticles(all);
+    // Clear response caches so next request picks up new translations
+    TRANSLATED_RESPONSE_CACHE.clear();
+    console.log(`[BG-TRANSLATE] Done: ${translated}/${untranslated.length} articles translated`);
+  }
 }
 
 /* ––––––––––––––––––––––––––––
